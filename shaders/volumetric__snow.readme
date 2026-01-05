@@ -1,0 +1,14 @@
+Requires quad attached to camera, face z, faces flipped.
+Make sure to throw a fastnoise3D into noise3D uniform. 128/128/128 dimensions works well
+
+“depth-marching” can be extremly bad for performance if near is set too low! keep it over 0.95!
+
+The ground frost effect is light on performance at least.
+
+Just learning things atm but this ended up being decent-ish.
+
+EDIT: Updated with a tweak to increase performance.
+
+more info at:
+
+https://godotshaders.com/shader/screen-space-frost-with-volumetric-snow/
