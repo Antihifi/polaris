@@ -24,6 +24,11 @@ TimeManager="*res://src/systems/time_manager.gd"
 SelectionManager="*res://src/control/selection_manager.gd"
 GameManager="*res://src/game_manager.gd"
 
+[display]
+
+window/size/viewport_width=2560
+window/size/viewport_height=1440
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/ninetailsrabbit.indie_blueprint_rpg/plugin.cfg", "res://addons/terrain_3d/plugin.cfg")
