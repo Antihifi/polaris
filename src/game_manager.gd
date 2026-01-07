@@ -2,6 +2,10 @@ extends Node
 ## Singleton managing core game state, win/lose conditions, and game flow.
 ## Access via GameManager autoload.
 
+# Ambient sounds
+var wind_ambient: AudioStream = preload("res://sounds/storm-wind-1.wav")
+var _wind_player: AudioStreamPlayer
+
 signal game_started
 signal game_over(won: bool, score: int)
 signal survivor_count_changed(alive: int, total: int)
@@ -19,6 +23,9 @@ enum GameState {
 @export var min_survivors: int = 10
 @export var max_survivors: int = 16
 @export var starting_morale: float = 75.0
+
+@export_category("Audio")
+@export_range(0.0, 1.0, 0.05) var ambient_volume: float = 0.5
 
 # Current state
 var current_state: GameState = GameState.MAIN_MENU
@@ -43,6 +50,15 @@ func _ready() -> void:
 	if has_node("/root/TimeManager"):
 		var time_manager := get_node("/root/TimeManager")
 		time_manager.rescue_arrived.connect(_on_rescue_arrived)
+
+	# Create looping ambient wind player
+	_wind_player = AudioStreamPlayer.new()
+	_wind_player.stream = wind_ambient
+	_wind_player.volume_db = linear_to_db(ambient_volume)
+	_wind_player.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(_wind_player)
+	_wind_player.finished.connect(_on_wind_finished)
+	_wind_player.play()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -265,3 +281,18 @@ func get_game_stats() -> Dictionary:
 		"average_morale": avg_morale,
 		"game_state": GameState.keys()[current_state]
 	}
+
+
+# --- Audio ---
+
+func _on_wind_finished() -> void:
+	## Loop the ambient wind sound.
+	if is_instance_valid(_wind_player):
+		_wind_player.play()
+
+
+func set_ambient_volume(volume: float) -> void:
+	## Set ambient volume (0.0 to 1.0).
+	ambient_volume = clampf(volume, 0.0, 1.0)
+	if is_instance_valid(_wind_player):
+		_wind_player.volume_db = linear_to_db(ambient_volume)

@@ -1,5 +1,6 @@
 extends Node
-## Singleton managing game time, day/night cycle, seasons, and rescue timer.
+## Singleton managing game time, seasons, and rescue timer.
+## Integrates with Sky3D for day/night cycle visuals.
 ## Access via TimeManager autoload.
 
 signal hour_passed(hour: int, day: int)
@@ -16,14 +17,21 @@ enum Season {
 	SPRING
 }
 
+# Sky3D integration
+var sky3d: Node = null  # Reference to Sky3D node
+
 # Time configuration
 @export_category("Time Settings")
-@export var seconds_per_game_hour: float = 30.0  # Real seconds per in-game hour
+@export var minutes_per_game_day: float = 15.0  # Real minutes per in-game day (matches Sky3D default)
 @export var hours_per_day: int = 24
 @export var days_per_season: int = 90
 
-# Current time state
-var current_hour: int = 8  # Start at 8 AM
+# Arctic location settings (high latitude for extreme day/night variation)
+@export_category("Location")
+@export var arctic_latitude: float = 74.0  # ~74°N for Franklin expedition area
+
+# Current time state (synced from Sky3D)
+var current_hour: int = 8
 var current_day: int = 1
 var current_season: Season = Season.SUMMER
 var days_until_rescue: int = 0
@@ -33,57 +41,93 @@ var total_days_to_rescue: int = 0
 var time_scale: float = 1.0  # 0 = paused, 1 = normal, 2 = fast, 4 = faster
 var is_paused: bool = false
 
-# Internal timer
-var _time_accumulator: float = 0.0
+# Internal tracking
+var _last_hour: int = -1
+var _last_day: int = -1
 
-# Season configurations
+# Season configurations (temperature only - Sky3D handles lighting)
 const SEASON_CONFIG: Dictionary = {
 	Season.SUMMER: {
 		"name": "Summer",
-		"sunrise_hour": 4,
-		"sunset_hour": 22,
 		"base_temperature": -5.0,  # Celsius
-		"light_intensity": 1.0
+		"month_start": 6  # June
 	},
 	Season.AUTUMN: {
 		"name": "Autumn",
-		"sunrise_hour": 7,
-		"sunset_hour": 17,
 		"base_temperature": -15.0,
-		"light_intensity": 0.8
+		"month_start": 9  # September
 	},
 	Season.WINTER: {
 		"name": "Winter",
-		"sunrise_hour": 10,
-		"sunset_hour": 14,
 		"base_temperature": -35.0,
-		"light_intensity": 0.5
+		"month_start": 12  # December
 	},
 	Season.SPRING: {
 		"name": "Spring",
-		"sunrise_hour": 6,
-		"sunset_hour": 18,
 		"base_temperature": -10.0,
-		"light_intensity": 0.9
+		"month_start": 3  # March
 	}
 }
 
 
 func _ready() -> void:
+	# Find Sky3D in the scene tree (deferred to ensure scene is ready)
+	call_deferred("_find_sky3d")
+
 	# Calculate rescue timer (1 year + random extra months)
 	_initialize_rescue_timer()
 
 
-func _process(delta: float) -> void:
-	if is_paused or time_scale <= 0.0:
+func _find_sky3d() -> void:
+	## Locate Sky3D node and configure it for our game.
+	sky3d = _find_node_by_class(get_tree().current_scene, "Sky3D")
+	if sky3d:
+		print("[TimeManager] Found Sky3D, integrating...")
+		_configure_sky3d()
+		# Connect to TimeOfDay signals
+		var tod: Node = sky3d.tod
+		if tod:
+			tod.time_changed.connect(_on_sky3d_time_changed)
+			tod.day_changed.connect(_on_sky3d_day_changed)
+			print("[TimeManager] Connected to Sky3D TimeOfDay signals")
+	else:
+		print("[TimeManager] WARNING: Sky3D not found, using fallback time system")
+
+
+func _configure_sky3d() -> void:
+	## Configure Sky3D for arctic survival game.
+	if not sky3d:
 		return
 
-	_time_accumulator += delta * time_scale
+	# Set arctic latitude for realistic polar day/night cycles
+	var tod: Node = sky3d.tod
+	if tod:
+		tod.latitude = deg_to_rad(arctic_latitude)
+		print("[TimeManager] Set latitude to ", arctic_latitude, "°N")
 
-	# Check if an hour has passed
-	while _time_accumulator >= seconds_per_game_hour:
-		_time_accumulator -= seconds_per_game_hour
-		_advance_hour()
+	# Set initial time scale
+	_update_sky3d_time_scale()
+
+
+func _find_node_by_class(node: Node, class_name_str: String) -> Node:
+	if node.get_class() == class_name_str or (node.has_method("get_script") and node.get_script() and node.get_script().get_global_name() == class_name_str):
+		return node
+	# Also check script class_name
+	if "Sky3D" in node.name:
+		return node
+	for child in node.get_children():
+		var result := _find_node_by_class(child, class_name_str)
+		if result:
+			return result
+	return null
+
+
+func _process(_delta: float) -> void:
+	if not sky3d:
+		return
+
+	# Sync our time tracking with Sky3D
+	_sync_from_sky3d()
 
 
 func _initialize_rescue_timer() -> void:
@@ -94,41 +138,49 @@ func _initialize_rescue_timer() -> void:
 	days_until_rescue = total_days_to_rescue
 
 
-func _advance_hour() -> void:
-	current_hour += 1
+func _sync_from_sky3d() -> void:
+	## Sync our time state from Sky3D's TimeOfDay.
+	if not sky3d or not sky3d.tod:
+		return
 
-	if current_hour >= hours_per_day:
-		current_hour = 0
-		_advance_day()
+	var tod: Node = sky3d.tod
+	var sky_hour := int(tod.current_time)
+	var sky_day: int = tod.day
 
-	hour_passed.emit(current_hour, current_day)
+	# Check for hour change
+	if sky_hour != _last_hour:
+		_last_hour = sky_hour
+		current_hour = sky_hour
+		hour_passed.emit(current_hour, current_day)
+		_update_survivor_needs()
 
-	# Update all survivors' needs
-	_update_survivor_needs()
+	# Check for day change
+	if sky_day != _last_day and _last_day != -1:
+		_last_day = sky_day
+		_on_day_advanced()
+
+	_last_day = sky_day
 
 
-func _advance_day() -> void:
+func _on_sky3d_time_changed(_value: float) -> void:
+	## Called when Sky3D time changes.
+	pass  # We handle this in _sync_from_sky3d for smoother tracking
+
+
+func _on_sky3d_day_changed(_value: int) -> void:
+	## Called when Sky3D day changes.
+	_on_day_advanced()
+
+
+func _on_day_advanced() -> void:
+	## Handle day advancement logic.
 	current_day += 1
 	days_until_rescue -= 1
 
 	day_passed.emit(current_day)
 
-	# Check for season change
-	var season_day := (current_day - 1) % (days_per_season * 4)
-	var new_season := Season.SUMMER
-
-	if season_day < days_per_season:
-		new_season = Season.SUMMER
-	elif season_day < days_per_season * 2:
-		new_season = Season.AUTUMN
-	elif season_day < days_per_season * 3:
-		new_season = Season.WINTER
-	else:
-		new_season = Season.SPRING
-
-	if new_season != current_season:
-		current_season = new_season
-		season_changed.emit(current_season)
+	# Determine season from Sky3D month
+	_update_season_from_sky3d()
 
 	# Check rescue timer
 	if days_until_rescue <= 30:
@@ -136,6 +188,43 @@ func _advance_day() -> void:
 
 	if days_until_rescue <= 0:
 		rescue_arrived.emit()
+
+
+func _update_season_from_sky3d() -> void:
+	## Determine current season based on Sky3D month.
+	if not sky3d or not sky3d.tod:
+		return
+
+	var month: int = sky3d.tod.month
+	var new_season := current_season
+
+	# Northern hemisphere seasons
+	if month >= 6 and month <= 8:
+		new_season = Season.SUMMER
+	elif month >= 9 and month <= 11:
+		new_season = Season.AUTUMN
+	elif month == 12 or month <= 2:
+		new_season = Season.WINTER
+	else:  # 3, 4, 5
+		new_season = Season.SPRING
+
+	if new_season != current_season:
+		current_season = new_season
+		season_changed.emit(current_season)
+
+
+func _update_sky3d_time_scale() -> void:
+	## Update Sky3D's time progression based on our time scale.
+	if not sky3d:
+		return
+
+	if is_paused or time_scale <= 0.0:
+		sky3d.pause()
+	else:
+		sky3d.resume()
+		# Adjust minutes_per_day based on time scale
+		# Base: 15 minutes per day, faster speeds = shorter real-time days
+		sky3d.minutes_per_day = minutes_per_game_day / time_scale
 
 
 func _update_survivor_needs() -> void:
@@ -156,12 +245,14 @@ func _update_survivor_needs() -> void:
 func pause() -> void:
 	is_paused = true
 	time_scale = 0.0
+	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 
 
 func unpause() -> void:
 	is_paused = false
 	time_scale = 1.0
+	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 
 
@@ -176,6 +267,7 @@ func set_time_scale(scale: float) -> void:
 	## Set time scale. 0 = paused, 1 = normal, 2 = fast, 4 = faster.
 	time_scale = clampf(scale, 0.0, 4.0)
 	is_paused = time_scale <= 0.0
+	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 
 
@@ -198,15 +290,16 @@ func get_current_temperature() -> float:
 	var config: Dictionary = SEASON_CONFIG[current_season]
 	var base_temp: float = config.base_temperature
 
-	# Temperature variation by time of day
-	var sunrise: int = config.sunrise_hour
-	var sunset: int = config.sunset_hour
-	var midday := (sunrise + sunset) / 2
-
+	# Temperature variation by time of day (warmer during day, colder at night)
 	var time_modifier: float = 0.0
-	if current_hour >= sunrise and current_hour <= sunset:
-		# Daytime - warmer
-		var day_progress := float(current_hour - sunrise) / float(sunset - sunrise)
+	if is_daytime():
+		# Daytime - warmer, peaks at midday
+		var hour_float: float = current_hour
+		if sky3d and sky3d.tod:
+			hour_float = sky3d.tod.current_time
+		# Simple sine curve for temperature variation
+		var day_progress := (hour_float - 6.0) / 12.0  # Assume ~6am to 6pm core
+		day_progress = clampf(day_progress, 0.0, 1.0)
 		time_modifier = sin(day_progress * PI) * 5.0  # Up to 5 degrees warmer at midday
 	else:
 		# Nighttime - colder
@@ -216,64 +309,46 @@ func get_current_temperature() -> float:
 
 
 func is_daytime() -> bool:
-	var config: Dictionary = SEASON_CONFIG[current_season]
-	return current_hour >= config.sunrise_hour and current_hour < config.sunset_hour
+	## Returns true if sun is above horizon (uses Sky3D if available).
+	if sky3d:
+		return sky3d.is_day()
+	# Fallback
+	return current_hour >= 6 and current_hour < 20
 
 
 func is_nighttime() -> bool:
+	## Returns true if sun is below horizon (uses Sky3D if available).
+	if sky3d:
+		return sky3d.is_night()
 	return not is_daytime()
 
 
-func get_daylight_hours() -> int:
-	var config: Dictionary = SEASON_CONFIG[current_season]
-	return config.sunset_hour - config.sunrise_hour
+func get_sun_light_energy() -> float:
+	## Get current sun light energy from Sky3D.
+	if sky3d and sky3d.sun:
+		return sky3d.sun.light_energy
+	return 1.0 if is_daytime() else 0.0
 
 
-func get_light_intensity() -> float:
-	## Get current light intensity for DirectionalLight3D.
-	var config: Dictionary = SEASON_CONFIG[current_season]
-	var base_intensity: float = config.light_intensity
-
-	if is_nighttime():
-		return base_intensity * 0.1  # Very dim at night
-
-	# Smooth transition at sunrise/sunset
-	var sunrise: int = config.sunrise_hour
-	var sunset: int = config.sunset_hour
-
-	if current_hour < sunrise + 2:
-		# Sunrise transition
-		var progress := float(current_hour - sunrise + 2) / 2.0
-		return base_intensity * clampf(progress, 0.1, 1.0)
-	elif current_hour > sunset - 2:
-		# Sunset transition
-		var progress := float(sunset - current_hour) / 2.0
-		return base_intensity * clampf(progress, 0.1, 1.0)
-
-	return base_intensity
+func get_moon_light_energy() -> float:
+	## Get current moon light energy from Sky3D.
+	if sky3d and sky3d.moon:
+		return sky3d.moon.light_energy
+	return 0.3 if is_nighttime() else 0.0
 
 
-func get_sun_rotation() -> float:
-	## Get sun rotation angle for day/night cycle (0-360 degrees).
-	var config: Dictionary = SEASON_CONFIG[current_season]
-	var sunrise: int = config.sunrise_hour
-	var sunset: int = config.sunset_hour
+func get_wind_speed() -> float:
+	## Get current wind speed from Sky3D (m/s).
+	if sky3d:
+		return sky3d.wind_speed
+	return 1.0
 
-	# Map hour to rotation (sunrise = -90, noon = 0, sunset = 90)
-	var day_length: int = sunset - sunrise
-	var midday: float = (sunrise + sunset) / 2.0
 
-	if current_hour >= sunrise and current_hour <= sunset:
-		var progress: float = (current_hour - midday) / (day_length / 2.0)
-		return progress * 90.0
-	else:
-		# Night - sun below horizon
-		if current_hour > sunset:
-			var night_progress: float = (current_hour - sunset) / float(24 - sunset + sunrise)
-			return 90.0 + night_progress * 180.0
-		else:
-			var night_progress: float = (sunrise - current_hour) / float(sunrise)
-			return -90.0 - (1.0 - night_progress) * 180.0
+func get_wind_direction() -> float:
+	## Get current wind direction from Sky3D (radians, 0 = north).
+	if sky3d:
+		return sky3d.wind_direction
+	return 0.0
 
 
 # --- Getters ---
@@ -283,13 +358,31 @@ func get_season_name() -> String:
 
 
 func get_formatted_date() -> String:
-	## Returns date string like "Day 45 - Autumn".
+	## Returns date string like "Day 45 - Autumn" or full date from Sky3D.
+	if sky3d and sky3d.tod:
+		return "%s - %s" % [sky3d.game_date, get_season_name()]
 	return "Day %d - %s" % [current_day, get_season_name()]
 
 
 func get_formatted_time() -> String:
-	## Returns time string like "14:00".
+	## Returns time string like "14:30" from Sky3D.
+	if sky3d:
+		return sky3d.game_time.substr(0, 5)  # "HH:MM" without seconds
 	return "%02d:00" % current_hour
+
+
+func get_sky3d_date() -> String:
+	## Returns Sky3D's date string (YYYY-MM-DD).
+	if sky3d:
+		return sky3d.game_date
+	return ""
+
+
+func get_sky3d_time() -> String:
+	## Returns Sky3D's time string (HH:MM:SS).
+	if sky3d:
+		return sky3d.game_time
+	return ""
 
 
 func get_rescue_progress() -> float:

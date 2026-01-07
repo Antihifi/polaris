@@ -23,6 +23,7 @@ IndieBlueprintRecipeManager="*res://addons/ninetailsrabbit.indie_blueprint_rpg/s
 TimeManager="*res://src/systems/time_manager.gd"
 SelectionManager="*res://src/control/selection_manager.gd"
 GameManager="*res://src/game_manager.gd"
+SoundManager="*res://addons/sound_manager/sound_manager.gd"
 
 [display]
 
@@ -31,7 +32,7 @@ window/size/viewport_height=1440
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/ninetailsrabbit.indie_blueprint_rpg/plugin.cfg", "res://addons/terrain_3d/plugin.cfg")
+enabled=PackedStringArray("res://addons/godot_3d_auto_collision_generator/plugin.cfg", "res://addons/mixamo_animation_retargeter/plugin.cfg", "res://addons/ninetailsrabbit.indie_blueprint_rpg/plugin.cfg", "res://addons/sky_3d/plugin.cfg", "res://addons/sound_manager/plugin.cfg", "res://addons/terrain_3d/plugin.cfg")
 
 [filesystem]
 
