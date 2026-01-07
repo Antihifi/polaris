@@ -33,6 +33,10 @@ window/size/viewport_height=1440
 
 enabled=PackedStringArray("res://addons/ninetailsrabbit.indie_blueprint_rpg/plugin.cfg", "res://addons/terrain_3d/plugin.cfg")
 
+[filesystem]
+
+import/blender/enabled=false
+
 [input]
 
 ui_shift={

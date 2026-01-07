@@ -10,6 +10,7 @@ signal reached_destination
 @export var rotation_speed: float = 10.0
 
 @onready var navigation_agent: NavigationAgent3D = $NavigationAgent3D
+@onready var animation_player: AnimationPlayer = null
 
 var is_selected: bool = false
 var is_moving: bool = false
@@ -24,6 +25,14 @@ func _ready() -> void:
 	# Setup navigation callbacks
 	navigation_agent.velocity_computed.connect(_on_velocity_computed)
 	navigation_agent.navigation_finished.connect(_on_navigation_finished)
+
+	# Find AnimationPlayer in children (CaptainAnimations/AnimationPlayer)
+	animation_player = _find_animation_player(self)
+	if animation_player:
+		print("[ClickableUnit] Found AnimationPlayer: ", animation_player.name)
+		_play_animation("idle")
+	else:
+		print("[ClickableUnit] WARNING: No AnimationPlayer found")
 
 	# Add to selectable group
 	add_to_group("selectable_units")
@@ -44,6 +53,7 @@ func _physics_process(delta: float) -> void:
 		print("[ClickableUnit] Navigation finished at: ", global_position)
 		is_moving = false
 		velocity = Vector3.ZERO
+		_play_animation("dying")  # Test animation on arrival
 		reached_destination.emit()
 		return
 
@@ -73,11 +83,8 @@ func _physics_process(delta: float) -> void:
 	var target_rotation := atan2(direction.x, direction.z)
 	rotation.y = lerp_angle(rotation.y, target_rotation, rotation_speed * delta)
 
-	# Calculate velocity
-	var desired_velocity := direction * movement_speed
-
-	# Apply movement
-	velocity = desired_velocity
+	# Calculate and apply velocity using proper physics
+	velocity = direction * movement_speed
 	move_and_slide()
 
 	# Debug: show actual movement
@@ -102,6 +109,7 @@ func move_to(target_position: Vector3) -> void:
 	print("[ClickableUnit] Current position: ", global_position)
 	navigation_agent.target_position = target_position
 	is_moving = true
+	_play_animation("walking")
 	print("[ClickableUnit] Navigation target set, is_moving = ", is_moving)
 	print("[ClickableUnit] Nav agent is_target_reachable: ", navigation_agent.is_target_reachable())
 	print("[ClickableUnit] Nav agent is_navigation_finished: ", navigation_agent.is_navigation_finished())
@@ -110,6 +118,7 @@ func move_to(target_position: Vector3) -> void:
 func stop() -> void:
 	is_moving = false
 	velocity = Vector3.ZERO
+	_play_animation("idle")
 
 
 func select() -> void:
@@ -129,3 +138,25 @@ func _show_selection_indicator(show: bool) -> void:
 	var indicator := get_node_or_null("SelectionIndicator")
 	if indicator:
 		indicator.visible = show
+
+
+func _find_animation_player(node: Node) -> AnimationPlayer:
+	## Recursively search for an AnimationPlayer in the node tree.
+	for child in node.get_children():
+		if child is AnimationPlayer:
+			return child
+		var found := _find_animation_player(child)
+		if found:
+			return found
+	return null
+
+
+func _play_animation(anim_name: String) -> void:
+	## Play an animation if the AnimationPlayer exists and has the animation.
+	if not animation_player:
+		return
+	if animation_player.has_animation(anim_name):
+		animation_player.play(anim_name)
+		print("[ClickableUnit] Playing animation: ", anim_name)
+	else:
+		print("[ClickableUnit] Animation not found: ", anim_name)

@@ -232,9 +232,21 @@ GameManager.check_win_condition()
 ## Navigation Setup
 
 Terrain3D requires NavigationRegion3D with baked NavigationMesh:
-1. Add NavigationRegion3D to main scene
-2. Configure navigation mesh for terrain
-3. Characters use NavigationAgent3D to pathfind
+1. Select Terrain3D node → Terrain3D menu → "Set up Navigation"
+2. Use the "Navigable" terrain tool to paint walkable areas (shows magenta)
+3. Select Terrain3D → Terrain3D menu → "Bake NavMesh"
+4. Save the scene immediately after baking
+5. Characters use NavigationAgent3D to pathfind
+
+**Important:** Do NOT use the standard NavigationRegion3D bake button - only use Terrain3D's baker.
+
+## Known Issues / TODO
+
+**Slope Navigation (LOW PRIORITY):**
+- Characters can get stuck on steeper slopes due to known Godot 4 NavigationAgent3D issues
+- See: https://github.com/godotengine/godot/issues/88237
+- Potential fixes: Adjust NavigationMesh `agent_max_slope`, `agent_max_climb` settings
+- Or adjust `cell_size`/`cell_height` in NavigationMesh for finer resolution on slopes
 
 ## Common Tasks
 
