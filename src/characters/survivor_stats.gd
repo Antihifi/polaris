@@ -22,7 +22,9 @@ class_name SurvivorStats extends Resource
 
 @export_range(0.0, 100.0) var energy: float = 100.0:
 	set(value):
-		energy = clampf(value, 0.0, 100.0)
+		# Energy is capped by health - can't have more energy than health allows
+		var max_energy := get_max_energy()
+		energy = clampf(value, 0.0, max_energy)
 
 # Decay rates (per in-game hour)
 @export_category("Decay Rates")
@@ -92,6 +94,23 @@ func is_tired() -> bool:
 
 func is_dead() -> bool:
 	return health <= 0.0
+
+
+func get_max_energy() -> float:
+	## Maximum energy is limited by health. Low health = can't sustain high energy.
+	## At 100% health, max energy is 100. At 50% health, max energy is ~75.
+	## At 20% health, max energy is ~40. At 10% health, max energy is ~25.
+	if health >= 80.0:
+		return 100.0
+	elif health >= 50.0:
+		# Linear interpolation from 100 at health=80 to 75 at health=50
+		return 75.0 + (health - 50.0) * (25.0 / 30.0)
+	elif health >= 20.0:
+		# Steeper drop: from 75 at health=50 to 40 at health=20
+		return 40.0 + (health - 20.0) * (35.0 / 30.0)
+	else:
+		# Critical: from 40 at health=20 to 10 at health=0
+		return 10.0 + health * (30.0 / 20.0)
 
 
 func get_work_efficiency() -> float:
@@ -174,11 +193,28 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_near_fire: boo
 
 	warmth += warmth_change
 
-	# Energy decays when working, recovers when resting
+	# Energy management - affected by working, health, and other conditions
+	var energy_change: float = 0.0
 	if is_working:
-		energy -= energy_decay_rate
+		# Base working drain
+		var work_drain := energy_decay_rate
+		# Drain more when in poor condition
+		work_drain *= get_energy_drain_multiplier()
+		energy_change -= work_drain
 	else:
-		energy += energy_decay_rate * 0.5  # Slow passive recovery
+		# Resting recovery (slower when in poor condition)
+		var recovery := energy_decay_rate * 0.5
+		if health < 50.0:
+			recovery *= health / 50.0  # Reduced recovery when injured
+		energy_change += recovery
+
+	# If energy exceeds max (health dropped), force it down
+	var max_energy := get_max_energy()
+	if energy > max_energy:
+		# Gradually drain excess energy
+		energy_change -= minf(energy - max_energy, 5.0)
+
+	energy += energy_change
 
 	# Health damage from critical needs
 	if is_starving():
@@ -190,6 +226,34 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_near_fire: boo
 	morale -= morale_decay_rate
 	if is_starving() or is_freezing():
 		morale -= 1.0  # Extra morale loss from suffering
+
+
+func get_energy_drain_multiplier() -> float:
+	## Returns how much faster energy drains based on current condition.
+	## Poor health, hunger, or warmth = faster energy drain.
+	var multiplier: float = 1.0
+
+	# Low health increases drain significantly
+	if health < 30.0:
+		multiplier += 1.5  # 2.5x drain at very low health
+	elif health < 60.0:
+		multiplier += 0.75  # 1.75x drain at moderate health
+	elif health < 80.0:
+		multiplier += 0.25  # 1.25x drain
+
+	# Hunger increases drain
+	if is_starving():
+		multiplier += 1.0
+	elif is_hungry():
+		multiplier += 0.5
+
+	# Cold increases drain
+	if is_freezing():
+		multiplier += 1.0
+	elif is_cold():
+		multiplier += 0.5
+
+	return multiplier
 
 
 func eat_food(nutrition_value: float) -> void:

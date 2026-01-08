@@ -263,12 +263,20 @@ func _process_flee(delta: float) -> void:
 func select() -> void:
 	is_selected = true
 	selected.emit()
-	# Visual feedback would go here (outline shader, etc.)
+	_show_selection_indicator(true)
 
 
 func deselect() -> void:
 	is_selected = false
 	deselected.emit()
+	_show_selection_indicator(false)
+
+
+func _show_selection_indicator(show: bool) -> void:
+	## Toggle selection indicator visibility.
+	var indicator := get_node_or_null("SelectionIndicator")
+	if indicator:
+		indicator.visible = show
 
 
 # --- Health / Death ---
