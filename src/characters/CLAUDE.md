@@ -52,12 +52,15 @@ func move_to(target_position: Vector3) -> void:
     _start_footsteps()
 ```
 
-Movement velocity scales with `TimeManager.time_scale`:
+Movement uses **full 3D direction** from NavigationAgent3D (including Y-axis) to follow terrain height:
 ```gdscript
-var time_scale := _get_time_scale()
+var next_position := navigation_agent.get_next_path_position()
+var direction := (next_position - current_pos).normalized()
 velocity = direction * movement_speed * time_scale
 move_and_slide()
 ```
+
+**Critical:** The NavigationAgent3D's `get_next_path_position()` returns correct Y coordinates from the baked NavMesh. Never flatten direction to XZ plane only - this causes units to float above terrain after traversing slopes.
 
 ### Energy Drain While Walking
 ```gdscript
@@ -332,3 +335,27 @@ Modify `_physics_process()` in `clickable_unit.gd`:
 var terrain_modifier := _get_terrain_speed_modifier(global_position)
 velocity = direction * movement_speed * time_scale * terrain_modifier
 ```
+
+## Known Issues & Fixes
+
+### Units Floating After Slopes (Fixed)
+
+**Problem:** Units would float above terrain after traversing slopes, losing contact with the NavMesh.
+
+**Root Cause:** Original code stripped Y-axis from navigation direction:
+```gdscript
+# BAD - ignores height from NavMesh
+var direction := Vector3(
+    next_position.x - current_pos.x,
+    0.0,  # Bug: always 0
+    next_position.z - current_pos.z
+)
+```
+
+**Solution:** Use full 3D direction from NavigationAgent3D:
+```gdscript
+# GOOD - includes Y coordinate from baked NavMesh
+var direction := next_position - current_pos
+```
+
+The NavigationAgent3D already provides correct Y coordinates from the baked NavMesh - no gravity or terrain height queries needed.

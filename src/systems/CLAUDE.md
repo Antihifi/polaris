@@ -353,3 +353,230 @@ const SEASON_CONFIG: Dictionary = {
 ```gdscript
 @export var minutes_per_game_day: float = 5.0  # Faster: 5 min/day
 ```
+
+---
+
+## CharacterSpawner
+
+Spawns multiple characters using `captain.tscn` as the base unit. Randomizes stats, names, and animation offsets for variety.
+
+### Signals
+```gdscript
+signal survivors_spawned(count: int)       # After all spawned
+signal spawn_progress(current: int, total: int)  # Per-unit progress
+```
+
+### Exports
+```gdscript
+@export var unit_scene: PackedScene        # Default: captain.tscn
+@export var spawn_center: Vector3 = Vector3.ZERO
+@export var spawn_radius: float = 20.0
+@export var min_separation: float = 2.0
+@export var base_movement_speed: float = 5.0
+```
+
+### Name Generation (Franklin Expedition Era)
+```gdscript
+const FIRST_NAMES: Array[String] = [
+    "James", "John", "William", "Thomas", "Henry", "Charles", "Francis",
+    "Solomon", "Cornelius", "Magnus", "Neptune", "Fitzjames"
+    # ... 30 names total
+]
+
+const LAST_NAMES: Array[String] = [
+    "Franklin", "Crozier", "Fitzjames", "Goodsir", "Blanky", "Irving",
+    "Hodgson", "Des Voeux", "Peglar", "McClintock"
+    # ... 29 names total
+]
+```
+
+### Stat Randomization
+All stats varied with ±percentage from base:
+```gdscript
+stats.hunger = _vary_value(85.0, 0.15)           # ±15%
+stats.warmth = _vary_value(80.0, 0.2)            # ±20%
+stats.health = _vary_value(95.0, 0.1)            # ±10%
+stats.morale = _vary_value(70.0, 0.25)           # ±25%
+stats.energy = _vary_value(90.0, 0.15)           # ±15%
+stats.hunting_skill = _vary_value(25.0, 0.5)     # ±50%
+stats.construction_skill = _vary_value(25.0, 0.5)
+stats.medicine_skill = _vary_value(25.0, 0.5)
+stats.navigation_skill = _vary_value(25.0, 0.5)
+stats.survival_skill = _vary_value(25.0, 0.5)
+stats.cold_resistance = _vary_value(25.0, 0.4)   # ±40%
+stats.max_carry_weight = _vary_value(50.0, 0.3)  # ±30%
+```
+
+### Public API
+```gdscript
+func spawn_survivors(count: int, center: Vector3 = Vector3.INF) -> Array[Node]
+func get_all_survivors() -> Array[Node]
+func despawn_all() -> void
+func print_survivor_summary() -> void  # Debug
+```
+
+### Animation Offset (Desynchronization)
+Prevents all units from animating in perfect sync:
+```gdscript
+unit.animation_offset = _rng.randf()  # Random 0-1
+anim_player.seek(offset * anim_length, true)  # Seek into current animation
+```
+
+### Terrain Height Query
+Uses Terrain3D if available:
+```gdscript
+func _get_terrain_height(position: Vector3) -> float:
+    if terrain and terrain.data:
+        var height: float = terrain.data.get_height(position)
+        if not is_nan(height):
+            return height
+    return position.y  # Fallback
+```
+
+---
+
+## ObjectSpawner
+
+Spawns storage containers (barrels, crates) with random items. Uses composition pattern.
+
+### Signals
+```gdscript
+signal containers_spawned(count: int)
+```
+
+### Exports
+```gdscript
+@export var spawn_radius: float = 15.0
+@export var min_separation: float = 3.0
+```
+
+### Item Pools
+```gdscript
+const BARREL_ITEMS: Array[String] = ["hardtack", "salt_pork", "pemmican", "tinned_meat", "rum"]
+const CRATE_ITEMS: Array[String] = ["firewood", "coal", "knife", "hatchet"]
+```
+
+### Container Configuration
+| Type | Scene | Storage Type | Grid Size | Items |
+|------|-------|--------------|-----------|-------|
+| Barrel | `storage_barrel.tscn` | FOOD | 4x8 | food items |
+| Crate | `storage_crate_small.tscn` | GENERAL | 4x4 | fuel/tools |
+
+### Public API
+```gdscript
+func spawn_containers(barrel_count: int, crate_count: int, center: Vector3) -> Array[Node]
+func get_all_containers() -> Array[Node]
+func get_food_containers() -> Array[Node]
+```
+
+### Composition Pattern
+StorageContainer is added as a child component:
+```gdscript
+func _spawn_container(scene: PackedScene, position: Vector3, is_barrel: bool) -> Node:
+    var obj: Node3D = scene.instantiate()
+    get_tree().current_scene.add_child(obj)
+
+    # Add StorageContainer component (composition)
+    var storage := StorageContainer.new()
+    storage.name = "StorageContainer"
+    storage.storage_type = StorageContainer.StorageType.FOOD if is_barrel else GENERAL
+    storage.grid_width = 4
+    storage.grid_height = 8 if is_barrel else 4
+    obj.add_child(storage)
+
+    # Populate with items (deferred for inventory setup)
+    call_deferred("_populate_container", storage, is_barrel)
+    return obj
+```
+
+### Item Population
+Each container gets 2-5 random items from its pool:
+```gdscript
+func _populate_container(storage: StorageContainer, is_barrel: bool) -> void:
+    var item_pool: Array[String] = BARREL_ITEMS if is_barrel else CRATE_ITEMS
+    var item_count := _rng.randi_range(2, 5)
+
+    for i in range(item_count):
+        var item_id: String = item_pool[_rng.randi() % item_pool.size()]
+        storage.add_item_by_id(item_id)
+```
+
+---
+
+## Usage Example
+
+In `MainController` or `GameManager`:
+```gdscript
+var character_spawner := CharacterSpawner.new()
+var object_spawner := ObjectSpawner.new()
+add_child(character_spawner)
+add_child(object_spawner)
+
+# Spawn units and containers
+var center := Vector3(0, 0, 0)
+var units := character_spawner.spawn_survivors(10, center)
+var containers := object_spawner.spawn_containers(6, 6, center)
+
+# Debug output
+character_spawner.print_survivor_summary()
+```
+
+---
+
+## Navigation System
+
+### Terrain3D Navigation Setup
+
+1. Select Terrain3D node → Terrain3D menu → "Set up Navigation"
+2. Paint walkable areas with "Navigable" terrain tool (shows magenta)
+3. Select Terrain3D → Terrain3D menu → "Bake NavMesh"
+4. Save scene immediately after baking
+
+**Important:** Only use Terrain3D's NavMesh baker, not standard NavigationRegion3D bake.
+
+### NavigationMesh Slope Settings
+
+If agents get stuck on slopes, adjust these settings before rebaking:
+
+| Setting | Default | Recommended | Notes |
+|---------|---------|-------------|-------|
+| `agent_max_slope` | 45° | 35-40° | Lower = more conservative paths |
+| `agent_max_climb` | 0.25m | 0.3-0.4m | Step height agents can climb |
+| `cell_size` | 0.25m | 0.25m | Smaller = more detail, slower bake |
+| `cell_height` | 0.25m | 0.2m | Vertical resolution |
+
+### NavigationObstacle3D Configuration
+
+For static obstacles (storage containers, objects), use vertex-based obstacles:
+
+```gdscript
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="mesh_node"]
+avoidance_enabled = true
+radius = 1.0
+height = 1.4
+vertices = PackedVector3Array(-0.7, 0, 0.7, -0.7, 0, -0.7, 0.7, 0, -0.7, 0.7, 0, 0.7)
+```
+
+**Critical:** If mesh is scaled (e.g., `Transform3D(0.015, ...)`), vertices must be in **world space**, not mesh-local coordinates. Multiply mesh vertices by the scale factor.
+
+Example: Mesh vertices at ~45 units with 0.015 scale → world vertices at ~0.7 units.
+
+### NavigationAgent3D Settings (captain.tscn)
+
+```gdscript
+path_desired_distance = 0.5
+avoidance_enabled = true
+neighbor_distance = 10.0
+max_neighbors = 5
+time_horizon_obstacles = 1.0
+max_speed = 5.0
+```
+
+### Known Issues
+
+1. **Slope jittering** (Godot issue #107638): Agents may jitter or get stuck on slopes. Mitigations:
+   - Lower `agent_max_slope` in NavigationMesh
+   - Smooth terrain slopes to avoid abrupt angle changes
+   - Increase `path_desired_distance` on NavigationAgent3D
+
+2. **Scaled mesh obstacles**: NavigationObstacle3D vertices don't inherit parent transform. Always use world-space coordinates.

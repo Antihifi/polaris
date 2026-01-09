@@ -130,17 +130,12 @@ func _physics_process(delta: float) -> void:
 	if _debug_frame_count % 60 == 0:
 		print("[ClickableUnit] Frame ", _debug_frame_count, " | pos: ", current_pos, " -> next: ", next_position)
 
-	# Calculate direction to next waypoint (XZ plane only)
-	var direction := Vector3(
-		next_position.x - current_pos.x,
-		0.0,
-		next_position.z - current_pos.z
-	)
+	# Calculate direction to next waypoint (full 3D - NavigationAgent provides correct Y from NavMesh)
+	var direction := next_position - current_pos
 
 	var distance := direction.length()
 	if distance < 0.1:
-		# Very close horizontally - snap to target Y and wait for next waypoint
-		# This handles the case where nav agent wants us to adjust height first
+		# Very close to waypoint - wait for next one
 		return
 
 	direction = direction.normalized()
