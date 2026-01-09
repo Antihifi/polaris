@@ -1,6 +1,6 @@
 # UI System
 
-Game HUD, time display, and character stats panels.
+Game HUD, time display, character stats panels, inventory UI, and debug tools.
 
 ## Files
 
@@ -10,8 +10,19 @@ Game HUD, time display, and character stats panels.
 | `game_hud.tscn` | HUD scene with TimeHUD and CharacterStats |
 | `time_hud.gd` | Time, date, temperature, speed display |
 | `time_hud.tscn` | Time display panel scene |
-| `character_stats.gd` | Survivor stats panel (follows unit) |
+| `time_hud_buttons.tres` | ButtonGroup for speed toggle buttons |
+| `character_stats.gd` | Survivor stats panel (follows unit in screen space) |
 | `character_stats.tscn` | Stats panel scene with progress bars |
+| `inventory_hud.gd` | CanvasLayer managing inventory panels |
+| `inventory_panel.gd` | Reusable panel wrapper for gloot CtrlInventoryGrid |
+| `inventory_panel.tscn` | Panel template with title, close button, grid |
+| `inventory_item.gd` | CustomInventoryItem with inversion shader for icons |
+| `inventory_item.tscn` | Custom item rendering scene |
+| `selection_box.gd` | Draws selection rectangle during click-drag |
+| `debug_menu.gd` | ESC-toggled debug menu for weather testing |
+| `MinimalUI.tres` | Unified theme resource for all UI elements |
+| `OpenSans-Regular.ttf` | Main font asset |
+| `icons.svg` | Icon assets |
 
 ## Scene Hierarchy
 
@@ -196,6 +207,48 @@ func _update_display() -> void:
     morale_bar.value = stats.morale
 ```
 
+### Trend Indicators
+
+Each stat progress bar has a 1px ColorRect child that shows predicted trends:
+- **RED line** at bar end = stat is declining
+- **GREEN line** at bar end = stat is increasing
+- **Hidden** = stat is stable (no significant change)
+
+Trends are **predicted** based on current conditions, not actual stat changes (which only occur hourly). This gives immediate visual feedback when entering/leaving auras, fires, shelters, etc.
+
+```gdscript
+# Created once in _ready()
+_health_trend = _create_trend_indicator(health_bar)
+
+func _create_trend_indicator(bar: ProgressBar) -> ColorRect:
+    var indicator := ColorRect.new()
+    indicator.custom_minimum_size = Vector2(1, 0)
+    indicator.size_flags_vertical = Control.SIZE_FILL
+    bar.add_child(indicator)
+    return indicator
+
+# Updated every frame via _process -> _update_display
+func _update_trend_indicator(indicator: ColorRect, bar: ProgressBar, trend: float) -> void:
+    if absf(trend) < 0.001:
+        indicator.visible = false
+        return
+    indicator.visible = true
+    indicator.color = Color.GREEN if trend > 0 else Color.RED
+    # Position at end of filled portion
+    var fill_width: float = bar.size.x * (bar.value / bar.max_value)
+    indicator.position = Vector2(fill_width - 1, 0)
+    indicator.size = Vector2(1, bar.size.y)
+```
+
+Trend prediction functions (all use cached O(1) lookups from ClickableUnit):
+| Function | Logic |
+|----------|-------|
+| `_get_hunger_trend()` | Always -1.0 (hunger always decays) |
+| `_get_warmth_trend()` | +5 fire, +1-3 shelter, +1 sunlight, -3 base cold |
+| `_get_energy_trend()` | -1 if moving, +3-6 if resting |
+| `_get_morale_trend()` | Base decay + captain/personable auras - darkness - suffering |
+| `_get_health_trend()` | 0 unless starving (-2) or freezing (-3) or dying (-5) |
+
 ### Real-Time Updates
 Connects to unit's `stats_changed` signal:
 ```gdscript
@@ -329,3 +382,88 @@ func _gui_input(event: InputEvent) -> void:
     elif event is InputEventMouseMotion and _dragging:
         panel.position += event.relative
 ```
+
+---
+
+## InventoryHUD
+
+CanvasLayer managing two inventory panels (container and unit).
+
+### Signals
+```gdscript
+signal container_opened(container: StorageContainer)
+signal container_closed
+signal unit_inventory_opened(unit: ClickableUnit)
+signal unit_inventory_closed
+```
+
+### Controls
+| Key | Action |
+|-----|--------|
+| `I` | Toggle selected unit's inventory |
+| `ESC` | Close any open panels |
+| Click container | Open container inventory |
+| Drag & drop | Transfer items between inventories |
+
+### API
+```gdscript
+func open_container(container: StorageContainer) -> void
+func close_container() -> void
+func open_unit_inventory(unit: ClickableUnit) -> void
+func close_unit_inventory() -> void
+func is_any_panel_open() -> bool
+```
+
+---
+
+## SelectionBox
+
+Draws selection rectangle during click-drag selection.
+
+### Configuration
+```gdscript
+@export var box_color: Color = Color(0.9, 0.9, 0.85, 0.8)
+@export var border_color: Color = Color(0.95, 0.95, 0.9, 1.0)
+@export var border_width: float = 2.0
+```
+
+### Integration
+- Reads `_input_handler.is_box_selecting` state
+- Uses `_input_handler.box_start` and `box_current` for rect
+- Calls `queue_redraw()` every frame during selection
+
+---
+
+## DebugMenu
+
+ESC-toggled menu for testing weather system.
+
+### Features
+- **Light Snow:** Start light snow
+- **Heavy Blizzard:** Start heavy snow
+- **Stop Snow (Fade):** Smooth transition to clear
+- **Stop Snow (Immediate):** Instant clear
+
+### Pause Behavior
+- Pauses game tree when open
+- Calls `TimeManager.pause()`
+- Resumes on close
+
+### Process Mode
+Uses `PROCESS_MODE_ALWAYS` to run while tree is paused.
+
+---
+
+## Keyboard Shortcuts Summary
+
+| Key | Component | Action |
+|-----|-----------|--------|
+| `Space` | GameHUD | Toggle pause |
+| `1` | GameHUD | Set 1x speed |
+| `2` | GameHUD | Set 2x speed |
+| `3` | GameHUD | Set 4x speed |
+| `I` | InventoryHUD | Toggle unit inventory |
+| `ESC` | Multiple | Close panels / Open debug menu |
+| `Ctrl+A` | SelectionManager | Select all units |
+| `Ctrl+1-9` | SelectionManager | Assign control group |
+| `1-9` | SelectionManager | Recall control group |

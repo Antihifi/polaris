@@ -1,6 +1,6 @@
 extends Control
 ## UI panel that displays a selected character's name, survival stats, and skills.
-## Three panels: Name (top), Stats (middle), Skills (bottom).
+## Panels: Name (always shown), Stats (always shown), Skills (toggle), Effects (toggle).
 ## Positions itself above the selected character in screen space.
 
 signal closed
@@ -9,6 +9,19 @@ signal closed
 @onready var name_panel: Panel = $Name
 @onready var stats_panel: Panel = $Stats
 @onready var skills_panel: Panel = $Stats/Skills
+@onready var effects_panel: Panel = $Stats/Effects
+
+# Toggle buttons
+@onready var skills_button: Button = $"Stats/MarginContainer/CenterContainer/VBoxContainer/Button"
+@onready var effects_button: Button = $"Stats/Skills/MarginContainer/CenterContainer/VBoxContainer/ACTIVE EFFECTS"
+
+# Special trait display
+@onready var special_trait_container: HBoxContainer = $"Stats/Skills/MarginContainer/CenterContainer/VBoxContainer/SpecialTrait"
+@onready var special_trait_label: Label = $"Stats/Skills/MarginContainer/CenterContainer/VBoxContainer/SpecialTrait/Label"
+
+# Effects grid container and labels (2-column layout)
+@onready var effects_grid: GridContainer = $"Stats/Effects/MarginContainer/CenterContainer/GridContainer"
+var _effect_labels: Array[Label] = []
 
 # Name label
 var name_label: Label
@@ -29,6 +42,13 @@ var survival_bar: ProgressBar
 
 var _current_unit: ClickableUnit = null
 var _camera: Camera3D = null
+
+# Trend indicator ColorRects (1px lines at end of progress bars)
+var _health_trend: ColorRect
+var _energy_trend: ColorRect
+var _hunger_trend: ColorRect
+var _warmth_trend: ColorRect
+var _morale_trend: ColorRect
 
 ## Height offset above character's position (in world units)
 @export var world_height_offset: float = 4.0
@@ -63,6 +83,28 @@ func _ready() -> void:
 	_configure_skill_bar(navigation_bar)
 	_configure_skill_bar(survival_bar)
 
+	# Create trend indicators for stat bars
+	_health_trend = _create_trend_indicator(health_bar)
+	_energy_trend = _create_trend_indicator(energy_bar)
+	_hunger_trend = _create_trend_indicator(hunger_bar)
+	_warmth_trend = _create_trend_indicator(warmth_bar)
+	_morale_trend = _create_trend_indicator(morale_bar)
+
+	# Connect toggle buttons
+	skills_button.toggled.connect(_on_skills_toggled)
+	effects_button.toggled.connect(_on_effects_toggled)
+
+	# Collect effect labels from grid (Label, Label2, Label3, etc.)
+	for child in effects_grid.get_children():
+		if child is Label:
+			_effect_labels.append(child)
+
+	# Start with Skills and Effects panels hidden
+	skills_panel.visible = false
+	effects_panel.visible = false
+	skills_button.button_pressed = false
+	effects_button.button_pressed = false
+
 	# Start hidden
 	visible = false
 
@@ -70,6 +112,155 @@ func _ready() -> void:
 func _configure_skill_bar(bar: ProgressBar) -> void:
 	## Configure skill progress bars to show raw value instead of percentage.
 	bar.show_percentage = false
+
+
+func _create_trend_indicator(bar: ProgressBar) -> ColorRect:
+	## Create a 1px wide ColorRect as trend indicator for a progress bar.
+	var indicator := ColorRect.new()
+	indicator.custom_minimum_size = Vector2(1, 0)
+	indicator.size_flags_vertical = Control.SIZE_FILL
+	indicator.visible = false
+	bar.add_child(indicator)
+	return indicator
+
+
+func _update_trend_indicator(indicator: ColorRect, bar: ProgressBar, trend: float) -> void:
+	## Update trend indicator position and color based on predicted trend.
+	## trend > 0 = increasing (green), trend < 0 = decreasing (red), trend == 0 = hidden
+	if absf(trend) < 0.001:
+		indicator.visible = false
+		return
+
+	indicator.visible = true
+
+	# Set color based on direction
+	if trend > 0:
+		indicator.color = Color.GREEN
+	else:
+		indicator.color = Color.RED
+
+	# Position at the end of the filled portion of the progress bar
+	var bar_width: float = bar.size.x
+	var fill_ratio: float = bar.value / bar.max_value
+	var fill_width: float = bar_width * fill_ratio
+
+	indicator.position = Vector2(fill_width - 1, 0)
+	indicator.size = Vector2(1, bar.size.y)
+
+
+func _get_hunger_trend() -> float:
+	## Predict hunger trend based on current conditions.
+	## Hunger always decays, but rate varies.
+	if not _current_unit or not _current_unit.stats:
+		return 0.0
+	# Hunger always decreases (negative trend)
+	return -1.0
+
+
+func _get_warmth_trend() -> float:
+	## Predict warmth trend based on fire, shelter, and environment.
+	if not _current_unit:
+		return 0.0
+
+	var trend: float = 0.0
+
+	# Positive effects
+	if _current_unit.is_near_fire():
+		trend += 5.0
+	if _current_unit.is_in_shelter():
+		var shelter_type: int = _current_unit.get_shelter_type()
+		match shelter_type:
+			0: trend += 2.0  # TENT
+			1: trend += 3.0  # IMPROVED_SHELTER
+			2: trend += 1.0  # CAVE
+	if _current_unit.is_in_sunlight():
+		trend += 1.0
+
+	# Cold effect (ambient temperature is usually negative in arctic)
+	# Assume cold is draining warmth unless near fire/shelter
+	trend -= 3.0  # Base cold drain assumption
+
+	return trend
+
+
+func _get_energy_trend() -> float:
+	## Predict energy trend based on movement/work state.
+	if not _current_unit:
+		return 0.0
+
+	# Check if unit is moving (velocity > 0 means working/moving)
+	var velocity: Vector3 = _current_unit.velocity
+	if velocity.length_squared() > 0.1:
+		return -1.0  # Moving = energy drain
+
+	# Resting = energy recovery (faster in shelter)
+	if _current_unit.is_in_shelter():
+		return 6.0
+	return 3.0
+
+
+func _get_morale_trend() -> float:
+	## Predict morale trend based on auras and conditions.
+	if not _current_unit or not _current_unit.stats:
+		return 0.0
+
+	var trend: float = 0.0
+
+	# Base morale decay
+	trend -= _current_unit.stats.morale_decay_rate
+
+	# Positive effects from auras
+	if _current_unit.is_near_captain():
+		trend += 1.0
+	if _current_unit.is_near_personable():
+		trend += 0.5
+
+	# Darkness penalty
+	if not _current_unit.is_in_sunlight():
+		trend -= 0.5
+
+	# Suffering penalties
+	if _current_unit.stats.is_starving() or _current_unit.stats.is_freezing():
+		trend -= 1.0
+
+	return trend
+
+
+func _get_health_trend() -> float:
+	## Predict health trend based on critical conditions.
+	if not _current_unit or not _current_unit.stats:
+		return 0.0
+
+	var stats: SurvivorStats = _current_unit.stats
+
+	# Dying = rapid health loss
+	if stats.is_dying():
+		return -SurvivorStats.DYING_HEALTH_DRAIN
+
+	var trend: float = 0.0
+
+	# Critical conditions damage health
+	if stats.is_starving():
+		trend -= 2.0
+	if stats.is_freezing():
+		trend -= 3.0
+
+	# Health is stable if not in critical condition
+	return trend
+
+
+func _on_skills_toggled(pressed: bool) -> void:
+	## Toggle skills panel visibility when button pressed.
+	skills_panel.visible = pressed
+	# If hiding skills, also hide effects (since effects button is in skills panel)
+	if not pressed:
+		effects_panel.visible = false
+		effects_button.button_pressed = false
+
+
+func _on_effects_toggled(pressed: bool) -> void:
+	## Toggle effects panel visibility when button pressed.
+	effects_panel.visible = pressed
 
 
 func _process(_delta: float) -> void:
@@ -103,6 +294,12 @@ func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
 		_camera = camera
 	else:
 		_camera = get_viewport().get_camera_3d()
+
+	# Reset toggle states - start with only Name and Stats visible
+	skills_panel.visible = false
+	effects_panel.visible = false
+	skills_button.button_pressed = false
+	effects_button.button_pressed = false
 
 	_update_display()
 	_update_panel_position()
@@ -145,15 +342,21 @@ func _update_panel_position() -> void:
 	var panel_size: Vector2 = stats_panel.size
 	position = screen_pos - panel_size / 2.0 + screen_offset
 
-	# Clamp to screen bounds (accounting for all panels)
+	# Calculate total height based on visible panels
+	var total_height: float = name_panel.size.y + stats_panel.size.y + 4.0
+	if skills_panel.visible:
+		total_height += skills_panel.size.y
+	if effects_panel.visible:
+		total_height += effects_panel.size.y
+
+	# Clamp to screen bounds
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
-	var total_height: float = name_panel.size.y + stats_panel.size.y + skills_panel.size.y + 4.0
 	position.x = clampf(position.x, 0, viewport_size.x - panel_size.x)
 	position.y = clampf(position.y, total_height / 2.0, viewport_size.y - total_height / 2.0)
 
 
 func _update_display() -> void:
-	## Update name, stats, and skills displays.
+	## Update name, stats, skills, special trait, and effects displays.
 	if not _current_unit:
 		return
 
@@ -170,9 +373,86 @@ func _update_display() -> void:
 		warmth_bar.value = stats.warmth
 		morale_bar.value = stats.morale
 
+		# Update trend indicators based on predicted trends
+		_update_trend_indicator(_health_trend, health_bar, _get_health_trend())
+		_update_trend_indicator(_energy_trend, energy_bar, _get_energy_trend())
+		_update_trend_indicator(_hunger_trend, hunger_bar, _get_hunger_trend())
+		_update_trend_indicator(_warmth_trend, warmth_bar, _get_warmth_trend())
+		_update_trend_indicator(_morale_trend, morale_bar, _get_morale_trend())
+
 		# Update skills progress bars
 		hunting_bar.value = stats.hunting_skill
 		construction_bar.value = stats.construction_skill
 		medical_bar.value = stats.medicine_skill
 		navigation_bar.value = stats.navigation_skill
 		survival_bar.value = stats.survival_skill
+
+	# Update special trait visibility and text
+	_update_special_trait()
+
+	# Update active effects
+	_update_effects()
+
+
+func _update_special_trait() -> void:
+	## Show special trait only if character has a morale aura.
+	if _current_unit.has_morale_aura():
+		special_trait_container.visible = true
+		var aura_name: String = _current_unit.get_morale_aura_name()
+		var aura_radius: float = _current_unit.get_morale_aura_radius()
+		special_trait_label.text = "%s (%dm)" % [aura_name, int(aura_radius)]
+	else:
+		special_trait_container.visible = false
+
+
+func _update_effects() -> void:
+	## Update active effects display and button visibility.
+	var effects: Array[String] = _get_active_effects()
+
+	# Show effects button only if there are active effects
+	effects_button.visible = effects.size() > 0
+
+	# Update effect labels in grid (hide unused ones)
+	for i in range(_effect_labels.size()):
+		if i < effects.size():
+			_effect_labels[i].visible = true
+			_effect_labels[i].text = effects[i]
+		else:
+			_effect_labels[i].visible = false
+
+
+func _get_active_effects() -> Array[String]:
+	## Returns list of active effect names for the current unit.
+	var effects: Array[String] = []
+
+	if not _current_unit:
+		return effects
+
+	# Check shelter status
+	if _current_unit.is_in_shelter():
+		var shelter_type: int = _current_unit.get_shelter_type()
+		match shelter_type:
+			0:  # TENT
+				effects.append("In Tent (+2 warmth/hr)")
+			1:  # IMPROVED_SHELTER
+				effects.append("In Ship (+3 warmth/hr)")
+			2:  # CAVE
+				effects.append("In Cave (+1 warmth/hr)")
+
+	# Check fire warmth
+	if _current_unit.is_near_fire():
+		effects.append("Near Fire (+5 warmth/hr)")
+
+	# Check captain aura
+	if _current_unit.is_near_captain():
+		effects.append("Captain's Presence (+1 morale/hr)")
+
+	# Check personable/well-liked aura
+	if _current_unit.is_near_personable():
+		effects.append("Well Liked Nearby (+0.5 morale/hr)")
+
+	# Check sunlight/darkness
+	if not _current_unit.is_in_sunlight():
+		effects.append("Darkness (-0.5 morale/hr)")
+
+	return effects
