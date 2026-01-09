@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Polaris** is an arctic survival RTS set in the age of exploration, inspired by The Terror, Franklin/Scott expeditions, Rimworld, and Kenshi. Players manage 10-16 shipwreck survivors trying to endure a year until rescue arrives.
 
-**Engine:** Godot 4.5 (mobile renderer)
-**Main Scene:** `main.tscn`
+- **Engine:** Godot 4.5 (mobile renderer)
+- **Main Scene:** `main.tscn`
+- **Historical Setting:** September 1846, Franklin expedition trapped in ice (uses 60°N in-game, see [Systems CLAUDE.md](src/systems/CLAUDE.md) for latitude quirk)
 
 See `GameDesignDocument.md` for complete design specifications.
 
@@ -20,247 +21,317 @@ Open in Godot 4.5+ and run. The main scene is `main.tscn`.
 **Godot Path**: `/mnt/c/Users/antih/Desktop/Godot_v4.5.1-stable_win64_console.exe`
 
 ```bash
-# Validate script and capture errors
 /mnt/c/Users/antih/Desktop/Godot_v4.5.1-stable_win64_console.exe \
   --headless --script path/to/script.gd 2>&1
 ```
 
-**Error Output Captured:**
-- Script errors with line numbers: `SCRIPT ERROR: ... at: func_name (res://file.gd:42)`
-- Stack traces: `WARNING/ERROR: message\n   at: function (file.cpp:123)`
+## Architecture Overview
 
-## Architecture
+### Project Structure (Implemented)
 
-### Project Structure
 ```
 polaris/
-├── src/                          # Game-specific code (NEW)
-│   ├── characters/               # Survivor system
-│   │   ├── survivor.gd           # CharacterBody3D with NavigationAgent3D
+├── src/                          # Game-specific code
+│   ├── camera/                   # RTS camera system
+│   │   └── rts_camera.gd         # WASD, edge scroll, zoom, MMB orbit
+│   ├── characters/               # Survivor/unit system
+│   │   ├── clickable_unit.gd     # Base click-to-move CharacterBody3D
+│   │   ├── survivor.gd           # Full survivor with traits/states
 │   │   ├── survivor_stats.gd     # Survival needs resource
-│   │   └── trait.gd              # Trait modifiers resource
-│   ├── ai/                       # Character behavior
-│   │   ├── needs_controller.gd   # Autonomous needs management
-│   │   ├── behavior_tree.gd      # State machine for actions
-│   │   └── task_queue.gd         # Player-assigned work
-│   ├── control/                  # Input and selection
-│   │   ├── selection_manager.gd  # Selection singleton
-│   │   └── selectable.gd         # Selectable component
+│   │   ├── trait.gd              # Trait modifiers resource
+│   │   └── eye_controller.gd     # Character eye animation
+│   ├── control/                  # Input handling
+│   │   ├── rts_input_handler.gd  # Click select, right-click move
+│   │   └── selection_manager.gd  # Multi-select, control groups
 │   ├── systems/                  # Core game systems
-│   │   ├── time_manager.gd       # Day/night, seasons, rescue timer
-│   │   ├── weather_system.gd     # Weather effects
-│   │   └── expedition_manager.gd # Sled expeditions
-│   ├── items/                    # Inventory system
-│   │   ├── item_database.gd      # All game items
-│   │   ├── inventory.gd          # Personal inventory
-│   │   └── stockpile.gd          # Camp storage
-│   ├── building/                 # Construction system
-│   │   ├── building_manager.gd   # Building placement
-│   │   ├── blueprint.gd          # Construction ghost
-│   │   └── building.gd           # Base building class
-│   ├── combat/                   # Combat system
-│   │   ├── combat_manager.gd     # Combat resolution
-│   │   └── enemy.gd              # Hostile entities
-│   ├── npcs/                     # Non-player entities
-│   │   └── native_camp.gd        # Trade with natives
+│   │   ├── time_manager.gd       # Sky3D integration, seasons, rescue timer
+│   │   └── weather/              # Weather effects
+│   │       ├── snow_controller.gd    # Snow intensity management
+│   │       └── snow_particles.tscn   # GPU particle system
 │   ├── ui/                       # User interface
-│   │   ├── hud.gd                # Main game HUD
-│   │   ├── character_portraits.gd # Survivor sidebar
-│   │   └── inventory_ui.gd       # Inventory display
-│   └── game_manager.gd           # Core game loop
+│   │   ├── game_hud.gd           # Main HUD manager
+│   │   ├── time_hud.gd           # Clock, date, temperature display
+│   │   └── character_stats.gd    # Survivor stats panel
+│   ├── game_manager.gd           # Game state, win/lose, ambient audio
+│   └── main_controller.gd        # Scene bootstrap
 ├── addons/
-│   ├── ninetailsrabbit.indie_blueprint_rpg/  # RPG mechanics
-│   ├── terrain_3d/                           # Terrain editing
-│   └── 3d_rts_camera/                        # Camera controls
+│   ├── sky_3d/                   # Day/night cycle, sun/moon, atmosphere
+│   ├── terrain_3d/               # Large terrain with LOD
+│   ├── ninetailsrabbit.indie_blueprint_rpg/  # Health, loot, crafting
+│   ├── sound_manager/            # Audio management
+│   └── mixamo_animation_retargeter/  # Animation tools
 ├── characters/                   # Character assets (GLTF models)
+│   └── captain/                  # Captain model with animations
 ├── terrain/                      # Terrain data files
+├── sounds/                       # Audio assets
 └── main.tscn                     # Main game scene
 ```
 
+### Not Yet Implemented
+
+These directories exist but are empty/placeholder:
+- `src/ai/` - Behavior trees, needs controller, task queue
+- `src/building/` - Construction system
+- `src/combat/` - Combat resolution
+- `src/items/` - Inventory system
+- `src/npcs/` - Native camps, trading
+
 ### Autoloads (Singletons)
-**Existing (from addons):**
-- `IndieBlueprintLootManager` - Loot table management
-- `IndieBlueprintTurnityManager` - Turn-based sessions (not used in MVP)
-- `IndieBlueprintRecipeManager` - Crafting recipes
 
-**New (to add):**
-- `TimeManager` - Day/night, seasons, game speed, rescue timer
-- `SelectionManager` - Character selection state
-- `GameManager` - Core game state, win/lose conditions
+Configured in `project.godot`:
 
-### Key Systems
+| Autoload | Path | Purpose |
+|----------|------|---------|
+| `TimeManager` | `src/systems/time_manager.gd` | Day/night, seasons, rescue timer, Sky3D sync |
+| `SelectionManager` | `src/control/selection_manager.gd` | Multi-selection, control groups |
+| `GameManager` | `src/game_manager.gd` | Game state, win/lose, ambient audio |
+| `SoundManager` | `addons/sound_manager/` | Audio pooling and management |
+| `IndieBlueprintLootManager` | `addons/.../loot_manager.gd` | Loot tables |
+| `IndieBlueprintRecipeManager` | `addons/.../recipe_manager.tscn` | Crafting recipes |
 
-**Character System:**
-- Survivors are `CharacterBody3D` with `NavigationAgent3D` for pathfinding
-- `IndieBlueprintHealth` component for health/damage
-- Custom `SurvivorStats` resource for needs (hunger, cold, morale, energy)
-- `Trait` resources modify behavior and stats
+### Key Addons
 
-**Needs/AI:**
-- Priority: Player commands > Critical needs > Assigned work > Idle
-- Characters autonomously seek food, warmth, rest when needs are critical
-- Player assigns work tasks (build, haul, hunt)
+| Addon | Purpose | Integration Point |
+|-------|---------|-------------------|
+| **Sky3D** | Day/night cycle, sun/moon position, atmosphere | `TimeManager` syncs time, sets arctic latitude |
+| **Terrain3D** | Large terrain with LOD, painting, navigation | `RTSInputHandler` queries height for click-to-move |
+| **indie_blueprint_rpg** | Health component, loot tables, crafting | `Survivor` uses `IndieBlueprintHealth` |
 
-**Time System:**
-- Real-time with pause/1x/2x/4x speed controls
-- Day/night cycle affects lighting and temperature
-- Seasons: Summer (90d), Autumn (90d), Winter (90d), Spring (95+d)
-- Rescue timer: 365 + random(30-180) days
+## System Integration Map
 
-**Building System:**
-- Blueprint placement -> Material hauling -> Construction time -> Complete
-- Buildings: Tent, Improved Shelter, Storage Pile, Fire Pit, Workshop
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        main.tscn                                │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
+│  │RTScamera │  │ Sky3D    │  │Terrain3D │  │ Captain  │        │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
+└───────┼─────────────┼─────────────┼─────────────┼──────────────┘
+        │             │             │             │
+        ▼             ▼             ▼             ▼
+┌───────────────┐ ┌───────────┐ ┌───────────┐ ┌───────────────────┐
+│RTSInputHandler│ │TimeManager│ │Height     │ │ClickableUnit      │
+│ - click select│◄┤ - syncs   │ │queries    │ │ - NavigationAgent │
+│ - right-click │ │   time    │ │for move   │ │ - SurvivorStats   │
+│   move        │ │ - seasons │ │targets    │ │ - animations      │
+└───────┬───────┘ └───────────┘ └───────────┘ └─────────┬─────────┘
+        │                                               │
+        ▼                                               ▼
+┌───────────────┐                               ┌───────────────────┐
+│  GameHUD      │                               │ stats_changed     │
+│ - TimeHUD     │◄──────────────────────────────┤ signal updates UI │
+│ - CharStats   │                               └───────────────────┘
+└───────────────┘
+```
 
-**Combat:**
-- Simple Rimworld-style auto-attack
-- Enemies: Wolves (pack), Polar Bears (solitary)
-- Uses `IndieBlueprintHealth` for damage
+## Documentation Requirements
 
-## Key Addon: indie-blueprint-rpg
+**ALWAYS update documentation as you work.** Documentation must be kept current at every level:
 
-Located in `addons/ninetailsrabbit.indie_blueprint_rpg/src/`:
+### Root CLAUDE.md
+- High-level architecture and project overview
+- Cross-cutting concerns and conventions
+- Links to subsystem documentation
 
-**health/** - Health component
-- Attach `IndieBlueprintHealth` as child node to any entity
-- Methods: `damage(amount)`, `health(amount)`, `enable_invulnerability(bool, time)`
-- Signals: `health_changed(amount, type)`, `died`
+### Subsystem CLAUDE.md Files
+Each major directory (`src/camera/`, `src/characters/`, `src/control/`, `src/systems/`, `ui/`, etc.) must have its own `CLAUDE.md` containing:
+- Purpose and responsibilities of that subsystem
+- All files in the directory with their purposes
+- Signals, enums, and key configuration
+- API documentation for public functions
+- Integration points with other systems
+- **Known quirks, workarounds, and gotchas** (critical for future debugging)
+- Common modifications and how to make them
 
-**probability/loot/** - Loot generation
-- `LootTableData` resource defines probability rules
-- `LootItem` wraps items with weight/rarity/chance
-- `LootieTable.generate(times)` returns `Array[LootItem]`
+### When to Update Documentation
+- **After fixing a bug**: Document the root cause and solution, especially if non-obvious
+- **After adding features**: Document new signals, functions, configuration options
+- **After discovering quirks**: Immediately document addon/engine quirks with workarounds
+- **After refactoring**: Update affected file lists and integration points
 
-**items/craft/** - Crafting system
-- `CraftableItem` and `Recipe` resources
-- `IndieBlueprintRecipeManager` singleton manages recipes
+### Documentation Format
+- Use tables for file listings and configuration
+- Include code examples for common patterns
+- Mark important warnings with **bold** or dedicated sections
+- Keep documentation practical - focus on "what you need to know to work with this code"
 
-**stats/** - RPG stats (extend for survival needs)
-- `RpgCharacterMetaStats` base stats resource
+---
 
 ## Code Conventions
 
-**Critical Rules:**
-- NEVER null check without understanding WHY it's null
-- Use descriptive var names: `snow_streak_particles` not `particles`
-- Expose vars to Inspector when possible and logical
-- Prefer ints over floats (especially for display/debug)
-- Use composition over inheritance
-- Signals for communication, not direct references
+### Critical Rules
 
-**Static Typing:**
+1. **NEVER null check without understanding WHY it's null**
+2. **Use descriptive var names:** `snow_streak_particles` not `particles`
+3. **Expose vars to Inspector** when possible and logical
+4. **Prefer ints over floats** (especially for display/debug)
+5. **Composition over inheritance** - always
+6. **Keep scripts SMALL** - each script does one thing well (~100-150 lines max)
+7. **Signals for communication**, not direct references
+
+### Composition & Script Size
+
+- **Behavior as components**: AI behaviors, controllers, etc. are child nodes with focused scripts
+- Child scripts reference parent via `get_parent()` pattern
+- Example: `NeedsController` is a child of `ClickableUnit`, not part of the unit script
+- If a script exceeds ~150 lines, split it into focused child components
+
+### Static Typing (Required)
+
 ```gdscript
 var survivor: Survivor = $Survivor
 func calculate_cold(temperature: float) -> float:
+var time_scale: float = _time_manager.time_scale  # Explicit type for dict values
 ```
 
-**Signals for Events:**
+### Signals Pattern
+
 ```gdscript
-signal need_critical(need_type: String, value: float)
-signal survivor_died(survivor: Survivor)
+# Define
+signal stats_changed
+signal need_critical(need_name: String, value: float)
+
+# Emit
+stats_changed.emit()
+need_critical.emit("hunger", stats.hunger)
+
+# Connect
+unit.stats_changed.connect(_on_stats_changed)
 ```
 
-**Resources for Data:**
+### Resources for Data
+
 ```gdscript
 class_name SurvivorStats extends Resource
-@export var hunger: float = 100.0
-@export var cold: float = 100.0
+@export_range(0.0, 100.0) var hunger: float = 100.0:
+    set(value):
+        hunger = clampf(value, 0.0, 100.0)
 ```
 
-**Components as Child Nodes:**
-```
-Survivor (CharacterBody3D)
-├── CollisionShape3D
-├── NavigationAgent3D
-├── IndieBlueprintHealth
-├── NeedsController
-└── Model (Node3D)
-```
+### Node Groups
 
-**Autoload Access:**
-```gdscript
-TimeManager.pause()
-SelectionManager.select(survivor)
-GameManager.check_win_condition()
-```
+| Group | Members | Purpose |
+|-------|---------|---------|
+| `survivors` | All survivor units | TimeManager hourly updates |
+| `selectable_units` | Clickable entities | Input handler queries |
+| `terrain` | Terrain3D node | Height queries |
 
 ## Common Godot 4 Pitfalls
 
-**Reserved Keywords:**
-- `trait` is reserved in GDScript 4 - use `survivor_trait` or similar instead
+### Reserved Keywords
+- `trait` is reserved - use `survivor_trait` instead
 
-**Tweens:**
-- Call `set_loops()` without args for infinite: `create_tween().set_loops()`
-- ALWAYS bind to node: `node.create_tween()` not `create_tween()` (prevents "Target object freed" errors)
-- Check `is_instance_valid()` before animating nodes that might be freed
+### Property Checking
+```gdscript
+# WRONG - will crash
+if node.has("property"):  # ❌
 
-**get_rect():**
-- Control nodes: Have `get_rect()` and `get_global_rect()`
-- Node2D nodes (Sprite2D, etc.): Only `get_rect()`, NO `get_global_rect()`
-- `get_rect()` behavior differs: Control=global, Node2D=local relative to pivot
-- Don't mix Control/Node2D in parent-child for bounds checking
+# RIGHT
+if "property" in node:    # ✅
+var val = node.get("property")  # Returns null if missing
+```
 
-**Property Checking:**
-- `.has()` is ONLY for Dictionaries/Arrays, NOT for Nodes/Objects
-- WRONG: `node.has("property")` ❌ (will crash with "Invalid call. Nonexistent function 'has'")
-- RIGHT: `"property" in node` ✅
-- Alternative: `node.get("property")` returns null if doesn't exist
-- Example:
-  ```gdscript
-  # Check property exists (Dictionary)
-  if my_dict.has("key"):  # ✅ Valid - Dictionary
+### Dictionary Type Inference
+```gdscript
+# BAD - type cannot be inferred
+var sunrise := config.sunrise_hour
 
-  # Check property exists (Node)
-  if "health" in player:  # ✅ Valid - Node property check
-  if player.has("health"):  # ❌ INVALID - will crash
-  ```
+# GOOD - explicit type
+var sunrise: int = config.sunrise_hour
+```
 
-**Type Inference:**
-- Dictionary values have no inferred type - always explicitly type:
-  ```gdscript
-  # BAD - type cannot be inferred
-  var sunrise := config.sunrise_hour
+### Tweens
+```gdscript
+# ALWAYS bind to node (prevents "Target object freed")
+var tween := node.create_tween()  # ✅
+var tween := create_tween()       # ❌
 
-  # GOOD - explicit type
-  var sunrise: int = config.sunrise_hour
-  ```
+# Check validity before animating
+if is_instance_valid(target):
+    target.create_tween().tween_property(...)
+```
 
-**Input Actions:**
-- The RTS camera uses `ui_shift` for speed boost - add this to Project Settings > Input Map
-- Default `ui_*` actions: `ui_left`, `ui_right`, `ui_up`, `ui_down`, `ui_accept`, `ui_cancel`
-- `ui_shift` is NOT a default action - must be manually added
+### Input Actions
+- `ui_shift` is NOT a default action - manually added in Project Settings
+- Default actions: `ui_left`, `ui_right`, `ui_up`, `ui_down`, `ui_accept`, `ui_cancel`
 
-## Navigation Setup
+## Navigation Setup (Terrain3D)
 
-Terrain3D requires NavigationRegion3D with baked NavigationMesh:
-1. Select Terrain3D node → Terrain3D menu → "Set up Navigation"
-2. Use the "Navigable" terrain tool to paint walkable areas (shows magenta)
-3. Select Terrain3D → Terrain3D menu → "Bake NavMesh"
-4. Save the scene immediately after baking
-5. Characters use NavigationAgent3D to pathfind
+1. Select Terrain3D node -> Terrain3D menu -> "Set up Navigation"
+2. Use "Navigable" terrain tool to paint walkable areas (shows magenta)
+3. Select Terrain3D -> Terrain3D menu -> "Bake NavMesh"
+4. Save scene immediately after baking
 
-**Important:** Do NOT use the standard NavigationRegion3D bake button - only use Terrain3D's baker.
+**Important:** Do NOT use standard NavigationRegion3D bake - only Terrain3D's baker.
 
-## Known Issues / TODO
+## Key Files Quick Reference
 
-**Slope Navigation (LOW PRIORITY):**
-- Characters can get stuck on steeper slopes due to known Godot 4 NavigationAgent3D issues
-- See: https://github.com/godotengine/godot/issues/88237
-- Potential fixes: Adjust NavigationMesh `agent_max_slope`, `agent_max_climb` settings
-- Or adjust `cell_size`/`cell_height` in NavigationMesh for finer resolution on slopes
+| Need | File | Key Functions/Signals |
+|------|------|----------------------|
+| Camera control | `src/camera/rts_camera.gd` | `focus_on()`, `zoom_changed` signal |
+| Click handling | `src/control/rts_input_handler.gd` | `_handle_left_click()`, `_handle_right_click()` |
+| Time/date | `src/systems/time_manager.gd` | `get_formatted_time()`, `hour_passed` signal |
+| Unit movement | `src/characters/clickable_unit.gd` | `move_to()`, `stats_changed` signal |
+| Survival stats | `src/characters/survivor_stats.gd` | `apply_hourly_decay()`, `get_work_efficiency()` |
+| Game state | `src/game_manager.gd` | `start_new_game()`, `game_over` signal |
+
+## Subsystem Documentation
+
+Each major system has its own CLAUDE.md with detailed documentation:
+
+- [Camera System](src/camera/CLAUDE.md) - RTS camera with orbit, zoom, focus
+- [Character System](src/characters/CLAUDE.md) - Survivors, stats, traits
+- [Control System](src/control/CLAUDE.md) - Input handling, selection
+- [Game Systems](src/systems/CLAUDE.md) - Time, weather, Sky3D integration
+- [UI System](src/ui/CLAUDE.md) - HUD, stats panels, time display
+
+## Scene Structure
+
+### Main Scene Hierarchy
+
+```
+main.tscn (9KB)
+├── DirectionalLight3D
+├── Captain [instance: captain.tscn]
+├── RTScamera [instance: src/camera/rts_camera.tscn]
+├── Sky3D (WorldEnvironment) - day/night cycle
+│   ├── SunLight, MoonLight
+│   ├── SkyDome
+│   └── TimeOfDay
+├── Crates [instance: objects/crates1.tscn]
+├── SnowController [instance: src/systems/weather/snow_controller.tscn]
+└── world_map [instance: terrain/world_map.tscn]
+    ├── NavigationRegion3D
+    │   ├── navigation_mesh → terrain/navigation_mesh.tres
+    │   └── Terrain3D (data: res://terrain/)
+    └── Textures: snow_01, rock_dark_01 (external PNGs)
+```
+
+### Terrain3D Best Practices
+
+To keep scene files small and readable:
+- **Textures**: Always use ExtResource (external PNG files), never inline
+- **NavigationMesh**: Extract to external `.tres` file after baking
+- **Terrain data**: Stored in `res://terrain/` directory (binary .res files)
 
 ## Common Tasks
 
-**Add new item type:**
-1. Create `LootItem` resource in `res://items/`
-2. Set weight/rarity/chance as needed
-3. Add to relevant `LootTableData`
+### Add new survivor trait
+1. Add static factory method to `src/characters/trait.gd`
+2. Add to `get_all_traits()` array
+3. Handle conflicts in `get_random_traits()` if needed
 
-**Add new building:**
-1. Create building scene in `src/building/buildings/`
-2. Extend `Building` base class
-3. Register in `BuildingManager`
+### Modify survival mechanics
+1. Update decay/recovery in `src/characters/survivor_stats.gd`
+2. Update `get_energy_drain_multiplier()` for condition effects
+3. Emit `stats_changed` signal for UI updates
 
-**Add new trait:**
-1. Create `Trait` resource
-2. Define stat modifiers and behavior flags
-3. Apply to survivors during generation
+### Change time/date settings
+1. Edit exports in `src/systems/time_manager.gd`:
+   - `starting_month`, `starting_day`, `starting_year`
+   - `arctic_latitude` for day/night variation
+   - `minutes_per_game_day` for game speed
+
+### Add weather effects
+1. Create particle scene in `src/systems/weather/`
+2. Add intensity config to `snow_controller.gd`
+3. Connect to Sky3D fog settings

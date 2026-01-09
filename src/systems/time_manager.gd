@@ -27,8 +27,11 @@ var sky3d: Node = null  # Reference to Sky3D node
 @export var days_per_season: int = 90
 
 # Arctic location settings (high latitude for extreme day/night variation)
+# NOTE: Using 60°N instead of real 74°N - Sky3D's calculation is too aggressive at extreme latitudes
 @export_category("Location")
-@export var arctic_latitude: float = 74.0  # ~74°N for Franklin expedition area
+@export var arctic_latitude: float = 60.0  # Reduced from 74°N for better day/night cycles
+@export var arctic_longitude: float = -95.0  # ~95°W for King William Island area
+@export var utc_offset: float = -6.0  # Central Time zone (closest to expedition location)
 
 # Current time state (synced from Sky3D)
 var current_hour: int = 8
@@ -94,16 +97,44 @@ func _find_sky3d() -> void:
 		print("[TimeManager] WARNING: Sky3D not found, using fallback time system")
 
 
+## Starting date for the expedition (September 1846 - when Franklin expedition became trapped in ice)
+## NOTE: Using 2024 temporarily to test if Sky3D has issues with historical dates
+@export var starting_month: int = 9
+@export var starting_day: int = 12
+@export var starting_year: int = 2024  # Changed from 1846 to test
+@export var starting_hour: float = 8.0
+
 func _configure_sky3d() -> void:
 	## Configure Sky3D for arctic survival game.
 	if not sky3d:
 		return
 
-	# Set arctic latitude for realistic polar day/night cycles
+	# Set arctic location for realistic polar day/night cycles
 	var tod: Node = sky3d.tod
 	if tod:
+		# Location: King William Island area (Franklin expedition)
 		tod.latitude = deg_to_rad(arctic_latitude)
-		print("[TimeManager] Set latitude to ", arctic_latitude, "°N")
+		tod.longitude = deg_to_rad(arctic_longitude)
+		tod.utc = utc_offset
+
+		# Set starting date - expedition trapped in ice (September 1846)
+		# This is critical for proper sun position at arctic latitudes
+		tod.year = starting_year
+		tod.month = starting_month
+		tod.day = starting_day
+		tod.current_time = starting_hour
+
+		print("[TimeManager] Set location to ", arctic_latitude, "°N, ", arctic_longitude, "°W, UTC", utc_offset)
+		print("[TimeManager] Starting date: ", tod.game_date, " at ", tod.game_time)
+		print("[TimeManager] Sky3D TOD values - year: ", tod.year, " month: ", tod.month, " day: ", tod.day)
+		print("[TimeManager] Sky3D latitude (rad): ", tod.latitude, " = ", rad_to_deg(tod.latitude), "°")
+		print("[TimeManager] Sky3D game_time_enabled: ", sky3d.game_time_enabled)
+		print("[TimeManager] Sky3D minutes_per_day: ", sky3d.minutes_per_day)
+
+		# Force a celestial update after we set the date
+		if tod.has_method("_update_celestial_coords"):
+			tod._update_celestial_coords()
+			print("[TimeManager] Forced celestial coords update")
 
 	# Set initial time scale
 	_update_sky3d_time_scale()
@@ -122,12 +153,24 @@ func _find_node_by_class(node: Node, class_name_str: String) -> Node:
 	return null
 
 
+var _debug_time_log_counter: int = 0
+
 func _process(_delta: float) -> void:
 	if not sky3d:
 		return
 
 	# Sync our time tracking with Sky3D
 	_sync_from_sky3d()
+
+	# Debug: log time every ~5 seconds (300 frames at 60fps)
+	_debug_time_log_counter += 1
+	if _debug_time_log_counter >= 300:
+		_debug_time_log_counter = 0
+		var debug_info := ""
+		if sky3d and sky3d.tod:
+			var tod: Node = sky3d.tod
+			debug_info = "Date: %d-%02d-%02d | Lat: %.1f°" % [tod.year, tod.month, tod.day, rad_to_deg(tod.latitude)]
+		print("[TimeManager] Time: ", get_formatted_time(), " | ", debug_info)
 
 
 func _initialize_rescue_timer() -> void:
@@ -220,11 +263,14 @@ func _update_sky3d_time_scale() -> void:
 
 	if is_paused or time_scale <= 0.0:
 		sky3d.pause()
+		print("[TimeManager] Sky3D paused")
 	else:
-		sky3d.resume()
 		# Adjust minutes_per_day based on time scale
 		# Base: 15 minutes per day, faster speeds = shorter real-time days
-		sky3d.minutes_per_day = minutes_per_game_day / time_scale
+		var new_minutes_per_day := minutes_per_game_day / time_scale
+		sky3d.minutes_per_day = new_minutes_per_day
+		sky3d.resume()
+		print("[TimeManager] Sky3D speed set to ", new_minutes_per_day, " minutes/day (", time_scale, "x)")
 
 
 func _update_survivor_needs() -> void:
