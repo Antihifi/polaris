@@ -6,12 +6,14 @@ extends Node
 @export var camera: Camera3D
 @export var terrain_collision_mask: int = 1  # Layer for terrain/ground
 @export var unit_collision_mask: int = 2     # Layer for selectable units
+@export var container_collision_mask: int = 8  # Layer 4 for containers (1 << 3)
 
 ## Enable multi-selection with shift-click and box select
 @export var multi_select_enabled: bool = true
 
 signal unit_double_clicked(unit: Node)
 signal selection_changed(units: Array)
+signal container_clicked(container: StorageContainer)
 
 # Single selection (legacy support for ClickableUnit)
 var selected_unit: ClickableUnit = null
@@ -91,6 +93,12 @@ func _handle_left_click_down(screen_position: Vector2) -> void:
 		# Clicked directly on a unit
 		_handle_unit_click(clicked_unit, add_to_selection)
 	else:
+		# Check for container click
+		var clicked_container := _raycast_for_container(screen_position)
+		if clicked_container:
+			container_clicked.emit(clicked_container)
+			return
+
 		# Start box selection if multi-select enabled
 		if multi_select_enabled:
 			is_box_selecting = true
@@ -134,6 +142,51 @@ func _raycast_for_unit(screen_position: Vector2) -> Node:
 	var parent: Node = hit.get_parent()
 	if parent is ClickableUnit or parent is Survivor:
 		return parent
+
+	return null
+
+
+func _raycast_for_container(screen_position: Vector2) -> StorageContainer:
+	## Raycast to find a container at screen position using dedicated container layer.
+	## Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+
+	# First try: raycast against container collision layer (Area3D click areas)
+	var container_query := PhysicsRayQueryParameters3D.create(from, to, container_collision_mask)
+	container_query.collide_with_areas = true
+	container_query.collide_with_bodies = false
+	var container_result := space_state.intersect_ray(container_query)
+
+	if not container_result.is_empty():
+		var hit: Object = container_result.collider
+		if hit is Area3D:
+			# Area3D is child of container root, which has StorageContainer as child
+			var container_root: Node = hit.get_parent()
+			if container_root:
+				return container_root.get_node_or_null("StorageContainer") as StorageContainer
+
+	# Fallback: raycast against any physics body and walk up to find container
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	var result := space_state.intersect_ray(query)
+
+	if result.is_empty():
+		return null
+
+	var hit: Object = result.collider
+	if not hit or not hit is Node:
+		return null
+
+	# Walk up parent chain to find container root (up to 5 levels)
+	var current: Node = hit as Node
+	for i in range(5):
+		if not current:
+			break
+		if current.is_in_group("containers"):
+			return current.get_node_or_null("StorageContainer") as StorageContainer
+		current = current.get_parent()
 
 	return null
 

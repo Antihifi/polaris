@@ -1,0 +1,85 @@
+{
+	"hardtack": {
+		"name": "Hardtack",
+		"image": "res://inventory_icons/hardtack.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 15.0,
+		"max_stack_size": 5,
+		"weight": 0.3
+	},
+	"salt_pork": {
+		"name": "Salt Pork",
+		"image": "res://inventory_icons/salt_pork.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 35.0,
+		"max_stack_size": 5,
+		"weight": 1.0
+	},
+	"pemmican": {
+		"name": "Pemmican",
+		"image": "res://inventory_icons/pemmican.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 40.0,
+		"max_stack_size": 5,
+		"weight": 0.5
+	},
+	"tinned_meat": {
+		"name": "Tinned Meat",
+		"image": "res://inventory_icons/tinned_meat.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 30.0,
+		"max_stack_size": 5,
+		"weight": 0.8
+	},
+	"rum": {
+		"name": "Rum",
+		"image": "res://inventory_icons/rum.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 5.0,
+		"morale_value": 15.0,
+		"warmth_value": 10.0,
+		"max_stack_size": 5,
+		"weight": 0.7
+	},
+	"firewood": {
+		"name": "Firewood",
+		"image": "res://inventory_icons/firewood.png",
+		"size": "Vector2i(2, 2)",
+		"category": "fuel",
+		"burn_duration": 45.0,
+		"max_stack_size": 3,
+		"weight": 3.0
+	},
+	"coal": {
+		"name": "Coal",
+		"image": "res://inventory_icons/coal.png",
+		"size": "Vector2i(2, 2)",
+		"category": "fuel",
+		"burn_duration": 90.0,
+		"max_stack_size": 3,
+		"weight": 2.5
+	},
+	"knife": {
+		"name": "Knife",
+		"image": "res://inventory_icons/knife.png",
+		"size": "Vector2i(1, 2)",
+		"category": "tool",
+		"max_stack_size": 1,
+		"durability": 100.0,
+		"weight": 0.4
+	},
+	"hatchet": {
+		"name": "Hatchet",
+		"image": "res://inventory_icons/hatchet.png",
+		"size": "Vector2i(2, 2)",
+		"category": "tool",
+		"max_stack_size": 1,
+		"durability": 100.0,
+		"weight": 1.5
+	}
+}

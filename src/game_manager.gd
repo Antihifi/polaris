@@ -25,7 +25,13 @@ enum GameState {
 @export var starting_morale: float = 75.0
 
 @export_category("Audio")
-@export_range(0.0, 1.0, 0.05) var ambient_volume: float = 0.5
+## Base ambient volume at maximum zoom out (0.0 to 1.0).
+@export_range(0.0, 1.0, 0.05) var ambient_volume_max: float = 0.4
+## Ambient volume at maximum zoom in (0.0 to 1.0).
+@export_range(0.0, 1.0, 0.05) var ambient_volume_min: float = 0.1
+
+# Camera reference for zoom-based audio
+var _rts_camera: Camera3D = null
 
 # Current state
 var current_state: GameState = GameState.MAIN_MENU
@@ -54,20 +60,19 @@ func _ready() -> void:
 	# Create looping ambient wind player
 	_wind_player = AudioStreamPlayer.new()
 	_wind_player.stream = wind_ambient
-	_wind_player.volume_db = linear_to_db(ambient_volume)
+	_wind_player.volume_db = linear_to_db(ambient_volume_max)
 	_wind_player.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(_wind_player)
 	_wind_player.finished.connect(_on_wind_finished)
 	_wind_player.play()
 
+	# Connect to camera zoom after scene is ready
+	call_deferred("_connect_camera_zoom")
 
-func _unhandled_input(event: InputEvent) -> void:
-	if current_state != GameState.PLAYING:
-		return
 
-	# Pause toggle
-	if event.is_action_pressed("ui_cancel"):
-		toggle_pause()
+func _unhandled_input(_event: InputEvent) -> void:
+	# Pause is now handled by DebugMenu (ESC key)
+	pass
 
 
 # --- Game Flow ---
@@ -291,8 +296,25 @@ func _on_wind_finished() -> void:
 		_wind_player.play()
 
 
-func set_ambient_volume(volume: float) -> void:
-	## Set ambient volume (0.0 to 1.0).
-	ambient_volume = clampf(volume, 0.0, 1.0)
+func _connect_camera_zoom() -> void:
+	## Find and connect to the RTS camera's zoom signal.
+	var tree := get_tree()
+	if not tree or not tree.current_scene:
+		return
+
+	# Find RTScamera in the scene
+	_rts_camera = tree.current_scene.get_node_or_null("RTScamera")
+	if _rts_camera and _rts_camera.has_signal("zoom_changed"):
+		_rts_camera.zoom_changed.connect(_on_camera_zoom_changed)
+		# Set initial volume based on current zoom
+		if _rts_camera.has_method("get_zoom_ratio"):
+			_on_camera_zoom_changed(_rts_camera.orbit_distance, _rts_camera.get_zoom_ratio())
+
+
+func _on_camera_zoom_changed(_zoom_level: float, zoom_ratio: float) -> void:
+	## Adjust ambient wind volume based on camera zoom.
+	## zoom_ratio: 0.0 = zoomed in, 1.0 = zoomed out
+	## Wind is louder when zoomed out (overview), quieter when zoomed in (intimate).
 	if is_instance_valid(_wind_player):
-		_wind_player.volume_db = linear_to_db(ambient_volume)
+		var volume := lerpf(ambient_volume_min, ambient_volume_max, zoom_ratio)
+		_wind_player.volume_db = linear_to_db(volume)

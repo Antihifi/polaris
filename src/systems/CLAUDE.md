@@ -1,14 +1,18 @@
 # Game Systems
 
-Core game systems: time management, Sky3D integration, weather effects.
+Core game systems: time management, spawning, Sky3D integration, weather effects.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `time_manager.gd` | Autoload: time, seasons, rescue timer, Sky3D sync |
+| `character_spawner.gd` | Multi-character spawning with randomized stats/names |
+| `object_spawner.gd` | Storage container spawning with item population |
 | `weather/snow_controller.gd` | Snow intensity, fog, particle management |
 | `weather/snow_particles.tscn` | GPU particle system for snowfall |
+| `weather/blizzard_fog.gdshader` | Animated fog shader for blizzards |
+| `weather/CLAUDE.md` | Detailed weather system documentation |
 
 ## TimeManager (Autoload)
 

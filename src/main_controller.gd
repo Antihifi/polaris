@@ -12,9 +12,15 @@ extends Node
 ## Spawn radius around captain
 @export var spawn_radius: float = 30.0
 
+## Number of containers to spawn (barrels and crates)
+@export var barrel_count: int = 6
+@export var crate_count: int = 6
+
 var input_handler: Node
 var game_hud: CanvasLayer
 var character_spawner: Node
+var object_spawner: Node
+var inventory_hud: CanvasLayer
 
 
 func _ready() -> void:
@@ -25,7 +31,7 @@ func _ready() -> void:
 	add_child(input_handler)
 
 	# Create and add the game HUD
-	var hud_scene := preload("res://src/ui/game_hud.tscn")
+	var hud_scene := preload("res://ui/game_hud.tscn")
 	game_hud = hud_scene.instantiate()
 	add_child(game_hud)
 
@@ -35,11 +41,29 @@ func _ready() -> void:
 	character_spawner.spawn_radius = spawn_radius
 	add_child(character_spawner)
 
+	# Create object spawner (containers)
+	object_spawner = preload("res://src/systems/object_spawner.gd").new()
+	object_spawner.name = "ObjectSpawner"
+	object_spawner.spawn_radius = spawn_radius
+	add_child(object_spawner)
+
+	# Create inventory HUD (use scene for easier UI customization)
+	var inventory_hud_scene := preload("res://ui/inventory_hud.tscn")
+	inventory_hud = inventory_hud_scene.instantiate()
+	add_child(inventory_hud)
+
+	# Connect container click to inventory HUD
+	input_handler.container_clicked.connect(_on_container_clicked)
+
+	# Add NeedsController to captain
+	_add_needs_controller(captain)
+
 	# Focus camera on captain initially
 	if rts_camera.has_method("focus_on"):
 		rts_camera.focus_on(captain, true)
 
-	# Spawn test survivors if configured
+	# Spawn containers and test survivors
+	call_deferred("_spawn_initial_objects")
 	if test_survivor_count > 0:
 		_spawn_test_survivors()
 
@@ -54,6 +78,10 @@ func _spawn_test_survivors() -> void:
 
 	var survivors: Array[Node] = character_spawner.spawn_survivors(test_survivor_count, spawn_center)
 	print("[MainController] Spawned %d survivors" % survivors.size())
+
+	# Add NeedsController to each spawned survivor
+	for survivor in survivors:
+		_add_needs_controller(survivor)
 
 	# Print summary
 	character_spawner.print_survivor_summary()
@@ -93,3 +121,30 @@ func get_all_survivors() -> Array[Node]:
 		survivors.append(captain)
 	survivors.append_array(character_spawner.get_all_survivors())
 	return survivors
+
+
+func _spawn_initial_objects() -> void:
+	## Spawn containers around the captain.
+	if barrel_count <= 0 and crate_count <= 0:
+		return
+
+	var spawn_center := captain.global_position if captain else Vector3.ZERO
+	print("[MainController] Spawning %d barrels and %d crates around %s" % [barrel_count, crate_count, spawn_center])
+
+	object_spawner.spawn_containers(barrel_count, crate_count, spawn_center)
+
+
+func _on_container_clicked(container: StorageContainer) -> void:
+	## Handle container click - open inventory UI.
+	container.open()
+	inventory_hud.open_container(container)
+
+
+func _add_needs_controller(unit: Node) -> void:
+	## Add NeedsController component to a unit.
+	if not unit:
+		return
+	var NeedsControllerScript: Script = preload("res://src/ai/needs_controller.gd")
+	var needs: Node = NeedsControllerScript.new()
+	needs.name = "NeedsController"
+	unit.add_child(needs)

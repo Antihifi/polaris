@@ -7,6 +7,7 @@ signal selected
 signal deselected
 signal reached_destination
 signal stats_changed  # Emitted when stats are updated
+signal inventory_changed  # Emitted when unit inventory contents change
 
 @export_category("Identity")
 @export var unit_name: String = "Survivor"
@@ -50,6 +51,11 @@ var _last_energy_signal: float = 100.0  # Track last energy value for signal emi
 ## Animation offset (0-1) to desync animations between units
 var animation_offset: float = 0.0
 
+## Unit inventory (3x3 grid)
+var inventory: Inventory = null
+var _inventory_protoset: JSON = null
+const INVENTORY_GRID_SIZE := Vector2i(3, 3)
+
 
 func _ready() -> void:
 	print("[ClickableUnit] _ready() called on: ", name)
@@ -91,6 +97,9 @@ func _ready() -> void:
 	_time_manager = get_node_or_null("/root/TimeManager")
 	if _time_manager and _time_manager.has_signal("time_scale_changed"):
 		_time_manager.time_scale_changed.connect(_on_time_scale_changed)
+
+	# Setup inventory
+	_setup_inventory()
 
 	print("[ClickableUnit] Ready complete, added to selectable_units and survivors groups")
 
@@ -344,3 +353,65 @@ func get_display_info() -> Dictionary:
 		"morale": stats.morale,
 		"is_moving": is_moving
 	}
+
+
+# --- Inventory ---
+
+func _setup_inventory() -> void:
+	## Create unit inventory with GridConstraint.
+	_inventory_protoset = load("res://data/items_protoset.json")
+
+	inventory = Inventory.new()
+	inventory.name = "Inventory"
+	inventory.protoset = _inventory_protoset
+	add_child(inventory)
+
+	var grid := GridConstraint.new()
+	grid.name = "GridConstraint"
+	grid.size = INVENTORY_GRID_SIZE
+	inventory.add_child(grid)
+
+	inventory.item_added.connect(_on_inventory_changed)
+	inventory.item_removed.connect(_on_inventory_changed)
+
+
+func _on_inventory_changed(_item: InventoryItem) -> void:
+	inventory_changed.emit()
+
+
+func has_food_in_inventory() -> bool:
+	## Check if unit has any food items.
+	if not inventory:
+		return false
+	for item in inventory.get_items():
+		if item.get_property("category", "misc") == "food":
+			return true
+	return false
+
+
+func get_food_from_inventory() -> InventoryItem:
+	## Get first food item from inventory (does NOT remove it).
+	if not inventory:
+		return null
+	for item in inventory.get_items():
+		if item.get_property("category", "misc") == "food":
+			return item
+	return null
+
+
+func eat_food_item(item: InventoryItem) -> void:
+	## Consume a food item, restoring hunger/morale.
+	if not item or not inventory or not stats:
+		return
+
+	var nutrition: float = item.get_property("nutritional_value", 10.0)
+	var morale_boost: float = item.get_property("morale_value", 0.0)
+	var warmth_boost: float = item.get_property("warmth_value", 0.0)
+
+	stats.hunger = minf(stats.hunger + nutrition, 100.0)
+	stats.morale = minf(stats.morale + morale_boost, 100.0)
+	stats.warmth = minf(stats.warmth + warmth_boost, 100.0)
+
+	inventory.remove_item(item)
+	stats_changed.emit()
+	print("[ClickableUnit] %s ate %s (+%.0f hunger)" % [unit_name, item.get_property("name", "food"), nutrition])
