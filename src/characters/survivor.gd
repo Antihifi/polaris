@@ -272,11 +272,11 @@ func deselect() -> void:
 	_show_selection_indicator(false)
 
 
-func _show_selection_indicator(show: bool) -> void:
+func _show_selection_indicator(visible: bool) -> void:
 	## Toggle selection indicator visibility.
 	var indicator := get_node_or_null("SelectionIndicator")
 	if indicator:
-		indicator.visible = show
+		indicator.visible = visible
 
 
 # --- Health / Death ---
@@ -289,7 +289,7 @@ func _on_health_died() -> void:
 	set_physics_process(false)
 
 
-func _on_health_changed(amount: int, _type: int) -> void:
+func _on_health_changed(_amount: int, _type: int) -> void:
 	# Sync health component with stats
 	if health_component:
 		stats.health = health_component.current_health
@@ -313,7 +313,7 @@ func heal(amount: float) -> void:
 
 # --- Needs Update ---
 
-func update_needs(delta_hours: float, is_in_shelter: bool, is_near_fire: bool, ambient_temp: float) -> void:
+func update_needs(_delta_hours: float, is_in_shelter: bool, is_near_fire: bool, ambient_temp: float) -> void:
 	## Called by TimeManager each in-game hour.
 	var is_working := current_state == State.WORKING
 

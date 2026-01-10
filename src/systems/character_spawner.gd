@@ -31,6 +31,12 @@ const LAST_NAMES: Array[String] = [
 ## Base movement speed for spawned units (captain default is 5.0)
 @export var base_movement_speed: float = 5.0
 
+## Chance for spawned units to have the "Personable" morale aura trait
+@export_range(0.0, 1.0) var personable_chance: float = 0.1
+
+## Preload scripts for spawned units
+const MoraleAuraScript: GDScript = preload("res://src/systems/morale_aura.gd")
+
 var _spawned_units: Array[Node] = []
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _terrain_cache: Node = null
@@ -39,9 +45,13 @@ var _terrain_cache: Node = null
 func _ready() -> void:
 	_rng.randomize()
 
-	# Load captain scene as default unit
+	# Load men.tscn as default unit (fallback to captain.tscn if not available)
 	if not unit_scene:
-		unit_scene = preload("res://captain.tscn")
+		if ResourceLoader.exists("res://src/characters/men.tscn"):
+			unit_scene = preload("res://src/characters/men.tscn")
+		else:
+			unit_scene = preload("res://src/characters/captain.tscn")
+			push_warning("[CharacterSpawner] men.tscn not found, using captain.tscn")
 
 
 func spawn_survivors(count: int, center: Vector3 = Vector3.INF) -> Array[Node]:
@@ -66,7 +76,7 @@ func spawn_survivors(count: int, center: Vector3 = Vector3.INF) -> Array[Node]:
 	return spawned
 
 
-func _spawn_single_unit(position: Vector3, index: int) -> Node:
+func _spawn_single_unit(position: Vector3, _index: int) -> Node:
 	## Create and configure a single unit.
 	var unit: Node = unit_scene.instantiate()
 
@@ -95,7 +105,28 @@ func _spawn_single_unit(position: Vector3, index: int) -> Node:
 	# Randomize initial rotation so they face different directions
 	unit.rotation.y = _rng.randf() * TAU
 
+	# 10% chance to be "Well Liked" (provides 20m morale aura to nearby survivors)
+	_maybe_add_well_liked_aura(unit)
+
+	# AI is already set up in men.tscn (BTPlayer + ManAIComponent)
+
 	return unit
+
+
+func _maybe_add_well_liked_aura(unit: Node) -> void:
+	## Roll for Well Liked trait and add MoraleAura if successful.
+	if _rng.randf() > personable_chance:
+		return
+
+	# Create MoraleAura as child of unit
+	var aura: Area3D = Area3D.new()
+	aura.set_script(MoraleAuraScript)
+	aura.name = "MoraleAura"
+	aura.aura_type = 1  # WELL_LIKED enum value
+	aura.radius = 20.0  # Well Liked has 20m social influence radius
+	unit.add_child(aura)
+
+	print("[CharacterSpawner] %s is Well Liked (20m morale aura)" % unit.unit_name)
 
 
 func _randomize_stats(unit: Node) -> void:
@@ -105,12 +136,12 @@ func _randomize_stats(unit: Node) -> void:
 
 	var stats: SurvivorStats = unit.stats
 
-	# Vary base needs (start with some variation in condition)
-	stats.hunger = _vary_value(85.0, 0.15)
-	stats.warmth = _vary_value(80.0, 0.2)
-	stats.health = _vary_value(95.0, 0.1)
-	stats.morale = _vary_value(70.0, 0.25)
-	stats.energy = _vary_value(90.0, 0.15)
+	# Start core stats low (55-60%) to force immediate need-seeking behavior for testing
+	stats.hunger = _rng.randf_range(55.0, 60.0)
+	stats.warmth = _rng.randf_range(55.0, 60.0)
+	stats.health = _rng.randf_range(55.0, 60.0)
+	stats.morale = _rng.randf_range(55.0, 60.0)
+	stats.energy = _rng.randf_range(55.0, 60.0)
 
 	# Vary skills significantly
 	stats.hunting_skill = _vary_value(25.0, 0.5)

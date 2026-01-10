@@ -54,6 +54,160 @@ All survivors dead.
 | Morale | Affected by events, comfort, companions | Reduced efficiency, mental breaks |
 | Energy | Depleted by work, restored by rest | Collapse, forced rest |
 
+### Character Types
+
+| Type | Count | Control | Behavior |
+|------|-------|---------|----------|
+| **Officers** | Up to 12 | Player-controlled | Active tasks: hunting, exploring, building, cooking |
+| **The Men** | Remaining | AI-controlled | Survival tasks: eat, sleep, warm, fuel fires |
+| **Captain** | 1 | Player-controlled | Provides morale aura, can promote Men to Officers |
+
+When an Officer dies, Captain promotes a random Man to Officer status.
+
+### Stat Interactions & Cascading Effects
+
+**Energy → Hunger Cascade:**
+| Energy Level | Hunger Drain Multiplier |
+|--------------|------------------------|
+| ≥50% | 1.0x (normal) |
+| 25-49% | 1.5x (increased appetite) |
+| <25% | 2.5x (body burning reserves) |
+
+**Body Temperature → Energy & Hunger:**
+| Warmth Level | Energy Drain | Hunger Drain |
+|--------------|--------------|--------------|
+| ≥50% | 1.0x | 1.0x |
+| 25-49% | 1.5x | 1.25x |
+| <25% | 2.5x | 2.0x |
+
+**Combined Critical State:**
+When multiple stats are critically low (<25%), health and morale decline rapidly:
+- 2+ critical stats: 2x health/morale drain
+- 3+ critical stats: 4x health/morale drain
+
+### Dying Condition
+
+When hunger, energy, OR warmth reaches 0:
+- Unit enters "Dying" state
+- Health drains at 5.0/hour
+- Cause of death: Starvation, Exhaustion, or Hypothermia
+- Only medical intervention or immediate need fulfillment can save them
+- Dead characters become lootable corpses containing 2-6 human meat (1x1 each)
+
+### Mental Breaks (Morale = 0)
+
+When morale reaches 0, character "snaps" and exhibits dangerous behavior:
+
+| Condition | Break Type | Behavior |
+|-----------|------------|----------|
+| Morale = 0, Hunger > 25 | Berserk | Attacks other survivors |
+| Morale = 0, Hunger ≤ 25 | Food Binge | Consumes all available food recklessly |
+| Morale = 0, Hunger = 0 | Wendigo | Kills and consumes other survivors |
+
+**Note:** High morale characters will NOT break regardless of physical condition. They will simply die of starvation/exposure/exhaustion with dignity.
+
+### Morale Modifiers
+
+**Boosters:**
+| Source | Boost | Frequency |
+|--------|-------|-----------|
+| Direct sunlight (daytime outdoors) | +0.5/hr | Continuous |
+| Proximity to Captain (<20m) | +1.0/hr | Continuous |
+| Proximity to "Personable" survivor | +0.5/hr | Continuous |
+| Rum consumption | +15 | One-time |
+| Quality food (canned meat, salt pork, fresh seal) | +5 | Per meal |
+| Near fire with 1+ others | +0.25/hr | Continuous |
+| Near fire with friend | +1.0/hr | Continuous |
+| End of storm/blizzard | +10 | One-time |
+| Hunting kill | +20 | One-time |
+| Witness hunting kill (<150m) | +5 | One-time |
+
+**Drains:**
+| Source | Drain | Frequency |
+|--------|-------|-----------|
+| Prolonged low light (winter darkness) | -0.5/hr | Continuous |
+| Death of friend | -30 | One-time |
+| Death of other survivor | -15 | One-time |
+| Witness cannibalism (<150m) | -20 | One-time |
+| Consuming human meat | -40 | Per meal |
+| Snowstorm | -0.25/hr | Continuous |
+| Blizzard | -1.0/hr | Continuous |
+| Forced march in blizzard | -2.0/hr | Continuous |
+| Multiple days of low-quality food | -5/day | After 2+ days |
+| Man-hauling sleds | -0.25/hr | Continuous |
+
+### Temperature Modifiers
+
+**Warmers:**
+| Source | Effect |
+|--------|--------|
+| Rum | +10 warmth (one-time) |
+| Fire proximity (<5m) | +5.0/hr |
+| Basic shelter (tent) | +2.0/hr, halves cold damage |
+| Improved shelter | +3.0/hr, 75% cold reduction |
+| Direct sunlight | +1.0/hr |
+| Inuit cold gear | 80% cold reduction |
+| Western cold gear | 40% cold reduction |
+
+**Cold Exposure (without appropriate gear):**
+| Ambient Temp | Effect | Mitigation |
+|--------------|--------|------------|
+| 0°C to -19°C | -2.0 warmth/hr | Western or Inuit CWG negates |
+| -20°C to -39°C | -4.0 warmth/hr | Inuit CWG negates |
+| ≤-40°C | -8.0 warmth/hr (extreme) | -2.0 with Western CWG, -0.5 with Inuit CWG |
+
+**Night Multiplier:**
+Being in darkness (nighttime) DOUBLES cold effects when combined with sub-zero temperatures.
+
+### Health Modifiers
+
+**Recovery (requires all base stats ≥75%):**
+- Base: +1.0 health/hr
+- With western medicine: +2.0 health/hr
+- With Inuit medicine: +2.0 health/hr
+
+**Damage Sources:**
+| Source | Damage |
+|--------|--------|
+| Any base stat (temp/energy/hunger) at 0 | -5.0 health/hr |
+| Lead poisoning (bad canned food) | -2.0 health/hr until treated |
+| Scurvy (no vitamin C for 14+ days) | -1.0 health/hr, -50% work efficiency |
+
+**Scurvy Prevention:**
+- Pemmican: Small vitamin C (resets timer by 3 days)
+- Seal liver: Large vitamin C (resets timer fully)
+
+### Energy Modifiers
+
+**Recovery:**
+| Source | Effect |
+|--------|--------|
+| Resting (idle, not working) | +3.0 energy/hr |
+| Sleeping in tent | +6.0 energy/hr |
+| Sleeping in improved shelter | +8.0 energy/hr |
+| Rum | +5 energy (one-time) |
+| Any food consumption | +2 energy (one-time) |
+| Direct sunlight | +0.5 energy/hr |
+| Warm day (>0°C) | +1.0 energy/hr |
+
+**Drains:**
+| Activity | Drain |
+|----------|-------|
+| Walking | -0.5 energy/hr |
+| Running | -2.0 energy/hr |
+| Man-hauling | -3.0 energy/hr |
+| Building/construction | -1.5 energy/hr |
+| Hunting | -1.0 energy/hr |
+| Fishing | -0.5 energy/hr |
+| Fighting | -4.0 energy/hr |
+| Carrying heavy load | +50% to activity drain |
+
+**Cascading Drains:**
+- Hungry (<50%): +25% energy drain
+- Very hungry (<25%): +75% energy drain
+- Cold (<50%): +25% energy drain
+- Freezing (<25%): +75% energy drain
+
 ### Skills (affect task efficiency)
 - **Hunting** - Success rate for hunting, butchering yield
 - **Construction** - Building speed

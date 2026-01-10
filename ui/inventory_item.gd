@@ -64,6 +64,10 @@ func _ready() -> void:
 	_on_resized()
 	_refresh()
 
+	# Update tooltip after frame to ensure parent relationship is established
+	# (gloot sets item before adding us to tree, so signal misses first assignment)
+	call_deferred("_update_tooltip")
+
 
 func _on_resized() -> void:
 	# Background is inset by PADDING on all sides
@@ -77,6 +81,7 @@ func _on_item_changed() -> void:
 	_old_item = item
 	_connect_item_signals(item)
 	_refresh()
+	_update_tooltip()
 
 
 func _on_icon_stretch_mode_changed() -> void:
@@ -129,3 +134,72 @@ func _update_stack_size() -> void:
 func _refresh() -> void:
 	_update_texture()
 	_update_stack_size()
+
+
+func _update_tooltip() -> void:
+	## Build descriptive tooltip text from item properties.
+	## Sets tooltip on parent (CtrlDraggableInventoryItem) since gloot sets
+	## mouse_filter = IGNORE on this control, preventing direct tooltip display.
+	var tooltip: String = ""
+
+	if is_instance_valid(item):
+		var item_name: String = item.get_property("name", "Unknown")
+		var category: String = item.get_property("category", "misc")
+
+		# Build description based on item type
+		match category:
+			"food":
+				tooltip = _get_food_tooltip(item_name)
+			"fuel":
+				tooltip = _get_fuel_tooltip(item_name)
+			"tool":
+				tooltip = _get_tool_tooltip(item_name)
+			_:
+				tooltip = item_name
+
+	# Set on self (for direct usage) and parent (for gloot draggable wrapper)
+	tooltip_text = tooltip
+	var parent: Control = get_parent() as Control
+	if parent:
+		parent.tooltip_text = tooltip
+
+
+func _get_food_tooltip(item_name: String) -> String:
+	## Return descriptive tooltip for food items.
+	match item_name:
+		"Hardtack":
+			return "HARDTACK\nA dry, long-lasting biscuit.\nNot tasty, but it keeps."
+		"Salt Pork":
+			return "SALT PORK\nSalted and preserved pork.\nA staple of naval rations."
+		"Pemmican":
+			return "PEMMICAN\nDried meat mixed with fat.\nHighly nutritious and portable."
+		"Tinned Meat":
+			return "TINNED MEAT\nPreserved meat in a tin.\nConvenient but heavy."
+		"Rum":
+			return "RUM\nNaval rum ration.\nLifts spirits and warms\nthe body, if briefly."
+		"Human Meat":
+			return "HUMAN MEAT\nThe flesh of a fallen\ncomrade. A desperate act\nwith terrible consequences\nfor the mind."
+		_:
+			return item_name + "\nFood item."
+
+
+func _get_fuel_tooltip(item_name: String) -> String:
+	## Return descriptive tooltip for fuel items.
+	match item_name:
+		"Firewood":
+			return "FIREWOOD\nBundles of dried wood.\nBurns quickly but provides\ngood heat for a fire."
+		"Coal":
+			return "COAL\nDense and long-burning.\nThe best fuel for keeping\na fire going through\nthe arctic night."
+		_:
+			return item_name + "\nFuel for fires."
+
+
+func _get_tool_tooltip(item_name: String) -> String:
+	## Return descriptive tooltip for tool items.
+	match item_name:
+		"Knife":
+			return "KNIFE\nA versatile blade.\nUseful for hunting,\nbutchering, and crafting."
+		"Hatchet":
+			return "HATCHET\nA small axe.\nEssential for chopping\nwood and construction."
+		_:
+			return item_name + "\nA useful tool."

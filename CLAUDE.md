@@ -2,6 +2,29 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ DEBUGGING: CHECK LOGS FIRST
+
+**ALWAYS check the Godot logs before asking the user about runtime errors.** The logs contain print statements, errors, and debug output that are essential for diagnosing issues.
+
+### Log Location
+```
+/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.log
+```
+
+### Quick Commands
+```bash
+# View latest log (most recent output)
+cat "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.log" | tail -200
+
+# Search for specific errors
+grep -i "error\|fail\|exception" "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.log" | tail -50
+
+# Find timestamped logs (if godot.log is stale)
+ls -la "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/"
+```
+
+---
+
 ## Project Overview
 
 **Polaris** is an arctic survival RTS set in the age of exploration, inspired by The Terror, Franklin/Scott expeditions, Rimworld, and Kenshi. Players manage 10-16 shipwreck survivors trying to endure a year until rescue arrives.
@@ -67,10 +90,14 @@ polaris/
 └── main.tscn                     # Main game scene
 ```
 
+### Partially Implemented
+
+These directories have initial work or design documentation:
+- `src/ai/` - LimboAI behavior trees for Officers/Men (see [AI System](src/ai/CLAUDE.md) for implementation guide)
+
 ### Not Yet Implemented
 
 These directories exist but are empty/placeholder:
-- `src/ai/` - Behavior trees, needs controller, task queue
 - `src/building/` - Construction system
 - `src/combat/` - Combat resolution
 - `src/items/` - Inventory system
@@ -93,6 +120,7 @@ Configured in `project.godot`:
 
 | Addon | Purpose | Integration Point |
 |-------|---------|-------------------|
+| **LimboAI** | Behavior trees + state machines for AI | `BTPlayer` on each survivor unit (see [AI System](src/ai/CLAUDE.md)) |
 | **Sky3D** | Day/night cycle, sun/moon position, atmosphere | `TimeManager` syncs time, sets arctic latitude |
 | **Terrain3D** | Large terrain with LOD, painting, navigation | `RTSInputHandler` queries height for click-to-move |
 | **indie_blueprint_rpg** | Health component, loot tables, crafting | `Survivor` uses `IndieBlueprintHealth` |
@@ -167,6 +195,7 @@ Each major directory (`src/camera/`, `src/characters/`, `src/control/`, `src/sys
 5. **Composition over inheritance** - always
 6. **Keep scripts SMALL** - each script does one thing well (~100-150 lines max)
 7. **Signals for communication**, not direct references
+8. **Flag performance concerns** - always warn about potentially expensive operations (see Performance section)
 
 ### Composition & Script Size
 
@@ -217,6 +246,20 @@ class_name SurvivorStats extends Resource
 
 ## Common Godot 4 Pitfalls
 
+### Scene Creation - ASK, Don't Generate
+
+**NEVER programmatically generate complex .tscn scene files.** Godot's scene format has complex UIDs, ArrayMesh binary data, and resource references that are easily corrupted when written by hand or script.
+
+Instead:
+- **ASK the user** to create scenes in the Godot editor
+- Provide clear instructions for what nodes/properties to set up
+- Only edit simple properties in existing scenes (transforms, exports, etc.)
+
+This applies especially to:
+- Scenes with custom meshes (ArrayMesh, QuadMesh with specific vertices)
+- Scenes with shader materials and noise textures
+- Any scene requiring specific UID references
+
 ### Reserved Keywords
 - `trait` is reserved - use `survivor_trait` instead
 
@@ -254,6 +297,42 @@ if is_instance_valid(target):
 - `ui_shift` is NOT a default action - manually added in Project Settings
 - Default actions: `ui_left`, `ui_right`, `ui_up`, `ui_down`, `ui_accept`, `ui_cancel`
 
+## Performance Guidelines
+
+**Always warn about potentially expensive implementations.** When adding features that run frequently (every frame, every physics tick), document the cost and scaling behavior.
+
+### Per-Frame Operations (Watch List)
+
+Operations in `_process()` or `_physics_process()` that could become expensive:
+
+| Location | Operation | Cost | Notes |
+|----------|-----------|------|-------|
+| `rts_camera.gd` | `_constrain_to_units()` | O(n) units | Runs during WASD movement; fine for 10-16 units |
+
+### Red Flags to Document
+
+When implementing features, **always document** if you introduce:
+
+1. **Group queries in process loops** - `get_nodes_in_group()` allocates a new array each call
+2. **Distance checks against all entities** - O(n) per frame adds up
+3. **Raycasts per entity** - Physics queries are expensive
+4. **String operations in hot paths** - GDScript strings allocate
+5. **Signal spam** - Emitting signals every frame to many listeners
+
+### Acceptable Patterns
+
+- **O(n) with small n** - Iterating 10-16 survivors is negligible
+- **Conditional execution** - Only run expensive code when actually needed (e.g., only during movement)
+- **Cached queries** - Store group results and update on spawn/despawn signals
+
+### When to Optimize
+
+Don't pre-optimize, but **do document**. If profiling shows issues:
+1. Cache expensive queries
+2. Use spatial partitioning for large entity counts
+3. Throttle updates (every N frames instead of every frame)
+4. Move to signals instead of polling
+
 ## Navigation Setup (Terrain3D)
 
 1. Select Terrain3D node -> Terrain3D menu -> "Set up Navigation"
@@ -278,6 +357,7 @@ if is_instance_valid(target):
 
 Each major system has its own CLAUDE.md with detailed documentation:
 
+- [AI System](src/ai/CLAUDE.md) - **LimboAI behavior trees for Officers/Men, utility-based needs scoring**
 - [Camera System](src/camera/CLAUDE.md) - RTS camera with orbit, zoom, focus
 - [Character System](src/characters/CLAUDE.md) - Survivors, stats, traits
 - [Control System](src/control/CLAUDE.md) - Input handling, selection

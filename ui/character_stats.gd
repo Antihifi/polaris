@@ -19,12 +19,15 @@ signal closed
 @onready var special_trait_container: HBoxContainer = $"Stats/Skills/MarginContainer/CenterContainer/VBoxContainer/SpecialTrait"
 @onready var special_trait_label: Label = $"Stats/Skills/MarginContainer/CenterContainer/VBoxContainer/SpecialTrait/Label"
 
-# Effects grid container and labels (2-column layout)
-@onready var effects_grid: GridContainer = $"Stats/Effects/MarginContainer/CenterContainer/GridContainer"
+# Effects container and labels (vertical log format)
+@onready var effects_container: VBoxContainer = $"Stats/Effects/MarginContainer/VBoxContainer"
 var _effect_labels: Array[Label] = []
 
 # Name label
 var name_label: Label
+
+# Action label
+var action_label: Label
 
 # Stats progress bars
 var health_bar: ProgressBar
@@ -42,6 +45,7 @@ var survival_bar: ProgressBar
 
 var _current_unit: ClickableUnit = null
 var _camera: Camera3D = null
+var _time_manager: Node = null
 
 # Trend indicator ColorRects (1px lines at end of progress bars)
 var _health_trend: ColorRect
@@ -57,8 +61,14 @@ var _morale_trend: ColorRect
 
 
 func _ready() -> void:
+	# Get TimeManager reference for real-time daylight checks
+	_time_manager = get_node_or_null("/root/TimeManager")
+
 	# Get name label reference
 	name_label = $Name/MarginContainer/CenterContainer/Label
+
+	# Get action label reference
+	action_label = $Action/MarginContainer/CenterContainer/Label
 
 	# Get references to stats progress bars
 	var stats_vbox: VBoxContainer = $Stats/MarginContainer/CenterContainer/VBoxContainer
@@ -94,8 +104,8 @@ func _ready() -> void:
 	skills_button.toggled.connect(_on_skills_toggled)
 	effects_button.toggled.connect(_on_effects_toggled)
 
-	# Collect effect labels from grid (Label, Label2, Label3, etc.)
-	for child in effects_grid.get_children():
+	# Collect effect labels from container (Label, Label2, Label3, etc.)
+	for child in effects_container.get_children():
 		if child is Label:
 			_effect_labels.append(child)
 
@@ -112,6 +122,16 @@ func _ready() -> void:
 func _configure_skill_bar(bar: ProgressBar) -> void:
 	## Configure skill progress bars to show raw value instead of percentage.
 	bar.show_percentage = false
+
+
+func _is_in_daylight() -> bool:
+	## Check if unit is in daylight using TimeManager for real-time updates.
+	## Returns false if in shelter (no sunlight indoors) or if night time.
+	if _current_unit and _current_unit.is_in_shelter():
+		return false
+	if _time_manager and _time_manager.has_method("is_daytime"):
+		return _time_manager.is_daytime()
+	return true  # Default to daytime if TimeManager unavailable
 
 
 func _create_trend_indicator(bar: ProgressBar) -> ColorRect:
@@ -215,8 +235,8 @@ func _get_morale_trend() -> float:
 	if _current_unit.is_near_personable():
 		trend += 0.5
 
-	# Darkness penalty
-	if not _current_unit.is_in_sunlight():
+	# Darkness penalty (use real-time check)
+	if not _is_in_daylight():
 		trend -= 0.5
 
 	# Suffering penalties
@@ -267,6 +287,8 @@ func _process(_delta: float) -> void:
 	# Update panel position to follow character
 	if visible and _current_unit and _camera:
 		_update_panel_position()
+		# Update action label in real-time (AI action changes frequently)
+		_update_action()
 
 
 func _input(event: InputEvent) -> void:
@@ -363,6 +385,9 @@ func _update_display() -> void:
 	# Update name
 	name_label.text = _current_unit.unit_name
 
+	# Update current action
+	_update_action()
+
 	# Update stats progress bars
 	if _current_unit.stats:
 		var stats: SurvivorStats = _current_unit.stats
@@ -380,6 +405,9 @@ func _update_display() -> void:
 		_update_trend_indicator(_warmth_trend, warmth_bar, _get_warmth_trend())
 		_update_trend_indicator(_morale_trend, morale_bar, _get_morale_trend())
 
+		# Update stat tooltips
+		_update_stat_tooltips(stats)
+
 		# Update skills progress bars
 		hunting_bar.value = stats.hunting_skill
 		construction_bar.value = stats.construction_skill
@@ -394,6 +422,19 @@ func _update_display() -> void:
 	_update_effects()
 
 
+func _update_stat_tooltips(_stats: SurvivorStats) -> void:
+	## Update tooltips for all stat progress bars with gameplay guidance.
+	health_bar.tooltip_text = "HEALTH\nPhysical condition deteriorates from\nstarvation and freezing. Rest and eat\nwell to recover."
+
+	energy_bar.tooltip_text = "ENERGY\nStamina for work and travel. Rest to\nrecover - shelter speeds recovery.\nMaximum energy is limited by health."
+
+	hunger_bar.tooltip_text = "HUNGER\nFood satisfaction. Keep well-fed to\nmaintain strength. Cold weather and\nhard work increase food needs."
+
+	warmth_bar.tooltip_text = "WARMTH\nBody temperature. Seek shelter, stay\nnear fires, and keep well-fed to\nstay warm in the arctic cold."
+
+	morale_bar.tooltip_text = "MORALE\nMental state and will to survive.\nCompanionship, leadership, and\ndaylight help maintain spirits."
+
+
 func _update_special_trait() -> void:
 	## Show special trait only if character has a morale aura.
 	if _current_unit.has_morale_aura():
@@ -403,6 +444,20 @@ func _update_special_trait() -> void:
 		special_trait_label.text = "%s (%dm)" % [aura_name, int(aura_radius)]
 	else:
 		special_trait_container.visible = false
+
+
+func _update_action() -> void:
+	## Update the action label with current AI action.
+	if not _current_unit:
+		action_label.text = ""
+		return
+
+	# Get ManAIComponent from unit
+	var ai_component: Node = _current_unit.get_node_or_null("ManAIComponent")
+	if ai_component and ai_component.has_method("get_current_action"):
+		action_label.text = ai_component.get_current_action()
+	else:
+		action_label.text = "Idle"
 
 
 func _update_effects() -> void:
@@ -441,18 +496,18 @@ func _get_active_effects() -> Array[String]:
 
 	# Check fire warmth
 	if _current_unit.is_near_fire():
-		effects.append("Near Fire (+5 warmth/hr)")
+		effects.append("I'm near a decent fire (+5 warmth/hr)")
 
 	# Check captain aura
 	if _current_unit.is_near_captain():
-		effects.append("Captain's Presence (+1 morale/hr)")
+		effects.append("My captain is nearby (+1 morale/hr)")
 
 	# Check personable/well-liked aura
 	if _current_unit.is_near_personable():
-		effects.append("Well Liked Nearby (+0.5 morale/hr)")
+		effects.append("I'm near a well liked crew member (+0.5 morale/hr)")
 
-	# Check sunlight/darkness
-	if not _current_unit.is_in_sunlight():
-		effects.append("Darkness (-0.5 morale/hr)")
+	# Check sunlight/darkness (use real-time check)
+	if not _is_in_daylight():
+		effects.append("The darkness starts to dwell on me... (-0.5 morale/hr)")
 
 	return effects

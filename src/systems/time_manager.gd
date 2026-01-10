@@ -275,15 +275,18 @@ func _update_sky3d_time_scale() -> void:
 
 func _update_survivor_needs() -> void:
 	## Called each in-game hour to update all survivor needs.
+	## Shelter/fire proximity is now tracked via Area3D on each unit.
 	var survivors := get_tree().get_nodes_in_group("survivors")
 	var temp := get_current_temperature()
+	var is_day := is_daytime()
 
 	for node in survivors:
 		if node.has_method("update_needs"):
-			# TODO: Check if survivor is in shelter or near fire
-			var is_in_shelter := false
-			var is_near_fire := false
-			node.update_needs(1.0, is_in_shelter, is_near_fire, temp)
+			# Sunlight = daytime AND not in shelter (shelter check done inside unit)
+			var in_sunlight := is_day
+			if node.has_method("is_in_shelter") and node.is_in_shelter():
+				in_sunlight = false
+			node.update_needs(1.0, in_sunlight, temp)
 
 
 # --- Time Control ---

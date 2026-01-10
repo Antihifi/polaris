@@ -200,7 +200,58 @@ All tunable via Inspector:
 @export_category("Focus")
 @export var focus_lerp_speed: float = 5.0
 @export var follow_selected: bool = false
+
+@export_category("Bounds")
+@export var max_distance_from_units: float = 300.0  # 0 to disable
+@export var bounds_group: String = "selectable_units"
 ```
+
+## Movement Bounds
+
+The camera can be constrained to stay within a maximum distance from any unit in a specified group (default: `selectable_units`). This limits exploration to the area around the player's colony/expedition parties.
+
+### Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_distance_from_units` | 300.0 | Max horizontal distance from nearest unit (0 = disabled) |
+| `bounds_group` | "selectable_units" | Group name to query for boundary units |
+
+### How It Works
+
+The constraint uses **horizontal (XZ) distance** only, ignoring height differences. When the camera would move beyond the allowed range:
+
+1. Find the nearest unit in `bounds_group`
+2. Calculate horizontal distance to that unit
+3. If beyond `max_distance_from_units`, clamp position to the boundary
+
+This allows the camera to move anywhere within 300m of any unit, naturally expanding as survivors spread out or exploration parties move.
+
+### Performance
+
+**Cost:** O(n) where n = units in `bounds_group` (typically 10-16 survivors)
+
+- Runs every frame during WASD/edge scroll movement only (not while idle)
+- `get_nodes_in_group()` allocates a new array each call
+- For 10-16 units this is negligible (~0.01ms)
+
+**If scaling to 100+ units**, consider caching the units array and updating on spawn/despawn signals instead of querying every frame.
+
+### Constraint Function
+
+```gdscript
+func _constrain_to_units(pos: Vector3) -> Vector3:
+    # Returns constrained position, or original if no constraint needed
+    # Uses XZ distance for horizontal-only constraint
+```
+
+Applied to:
+- WASD/edge scroll movement
+- `focus_on_position()` calls
+
+**Not applied to:**
+- `focus_on()` with a Node3D target (units are always valid targets)
+- MMB orbit rotation (orbits around existing position/target)
 
 ## Common Modifications
 
@@ -209,8 +260,18 @@ All tunable via Inspector:
 var orbit_distance: float = 25.0  # Change this value
 ```
 
-### Add camera bounds
-In `_process()` after movement calculation:
+### Adjust unit-based bounds
+```gdscript
+# In Inspector or code:
+max_distance_from_units = 500.0  # Increase range
+bounds_group = "survivors"       # Different group
+
+# Disable bounds entirely:
+max_distance_from_units = 0.0
+```
+
+### Add fixed world bounds (if needed)
+In `_constrain_to_units()` or after movement:
 ```gdscript
 orbit_center.x = clampf(orbit_center.x, min_x, max_x)
 orbit_center.z = clampf(orbit_center.z, min_z, max_z)

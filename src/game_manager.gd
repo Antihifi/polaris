@@ -39,7 +39,7 @@ var initial_survivor_count: int = 0
 var survivors_alive: int = 0
 
 # Scene references
-var survivor_scene: PackedScene = preload("res://src/characters/survivor.tscn")
+var captain_scene: PackedScene = preload("res://src/characters/captain.tscn")
 
 # Survivor names pool
 const SURVIVOR_NAMES: Array[String] = [
@@ -104,13 +104,13 @@ func _spawn_survivors() -> void:
 	available_names.shuffle()
 
 	for i in range(initial_survivor_count):
-		var survivor := survivor_scene.instantiate() as Survivor
+		var survivor := captain_scene.instantiate() as Survivor
 
 		# Assign name
 		if i < available_names.size():
 			survivor.survivor_name = available_names[i]
 		else:
-			survivor.survivor_name = "Survivor %d" % (i + 1)
+			survivor.survivor_name = "Francis Crozier" % (i + 1)
 
 		# Assign random traits (1-3 traits)
 		var trait_count := randi_range(1, 3)
@@ -151,7 +151,7 @@ func _generate_starting_salvage() -> void:
 
 # --- Win/Lose Conditions ---
 
-func _on_survivor_died(survivor: Survivor) -> void:
+func _on_survivor_died(_survivor: Survivor) -> void:
 	survivors_alive -= 1
 	survivor_count_changed.emit(survivors_alive, initial_survivor_count)
 
@@ -184,7 +184,7 @@ func calculate_score() -> int:
 	score += survivors_alive * 1000
 
 	# Bonus for saving more than half
-	if survivors_alive > initial_survivor_count / 2:
+	if survivors_alive > initial_survivor_count / 2.0:
 		score += 2000
 
 	# Morale bonus

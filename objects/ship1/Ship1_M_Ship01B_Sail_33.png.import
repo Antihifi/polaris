@@ -3,10 +3,9 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://1scmfnomvkfv"
-path.s3tc="res://.godot/imported/Ship1_M_Ship01B_Sail_33.png-0bcf64422c134532bbe532384393d2cc.s3tc.ctex"
+path="res://.godot/imported/Ship1_M_Ship01B_Sail_33.png-0bcf64422c134532bbe532384393d2cc.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
-"vram_texture": true
+"vram_texture": false
 }
 generator_parameters={
 "md5": "151eeede3d6ee93778a4de7a288b00fa"
@@ -15,22 +14,22 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/ship1/Ship1_M_Ship01B_Sail_33.png"
-dest_files=["res://.godot/imported/Ship1_M_Ship01B_Sail_33.png-0bcf64422c134532bbe532384393d2cc.s3tc.ctex"]
+dest_files=["res://.godot/imported/Ship1_M_Ship01B_Sail_33.png-0bcf64422c134532bbe532384393d2cc.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
-roughness/mode=0
-roughness/src_normal=""
+roughness/mode=1
+roughness/src_normal="res://objects/ship1/Ship1_M_Ship01B_Sail_33.png"
 process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2

@@ -2,6 +2,15 @@ class_name SurvivorStats extends Resource
 ## Survival needs and skills for a survivor character.
 ## Values range from 0-100 where higher is better (except for specific cases).
 
+## Death causes for tracking how a character died
+enum DeathCause { NONE, STARVATION, EXHAUSTION, HYPOTHERMIA, VIOLENCE, SCURVY, LEAD_POISONING }
+
+## Current death cause (set when entering dying state)
+var dying_cause: DeathCause = DeathCause.NONE
+
+## Health drain rate when in dying condition (per hour)
+const DYING_HEALTH_DRAIN: float = 5.0
+
 # Survival Needs (0-100, lower = worse condition)
 @export_category("Needs")
 @export_range(0.0, 100.0) var hunger: float = 100.0:
@@ -73,6 +82,12 @@ func is_cold() -> bool:
 
 
 func is_dying() -> bool:
+	## Returns true if any vital stat has reached 0 (actively dying)
+	return hunger <= 0.0 or energy <= 0.0 or warmth <= 0.0
+
+
+func is_critically_injured() -> bool:
+	## Returns true if health is critically low
 	return health <= CRITICAL_THRESHOLD
 
 
@@ -94,6 +109,58 @@ func is_tired() -> bool:
 
 func is_dead() -> bool:
 	return health <= 0.0
+
+
+func get_dying_cause() -> DeathCause:
+	## Returns the cause of dying state based on which stat hit 0 first
+	if hunger <= 0.0:
+		return DeathCause.STARVATION
+	if energy <= 0.0:
+		return DeathCause.EXHAUSTION
+	if warmth <= 0.0:
+		return DeathCause.HYPOTHERMIA
+	return dying_cause  # Could be scurvy/lead/violence set externally
+
+
+func get_hunger_drain_multiplier() -> float:
+	## Returns hunger drain multiplier based on energy and warmth levels.
+	## Low energy = body burning reserves faster.
+	## Cold = body needs more calories to maintain temperature.
+	var mult := 1.0
+
+	# Energy cascade - low energy increases hunger
+	if energy < 25.0:
+		mult *= 2.5
+	elif energy < 50.0:
+		mult *= 1.5
+
+	# Cold cascade - being cold increases hunger
+	if warmth < 25.0:
+		mult *= 2.0
+	elif warmth < 50.0:
+		mult *= 1.25
+
+	return mult
+
+
+func get_critical_state_multiplier() -> float:
+	## Returns multiplier for health/morale drain based on critical stat count.
+	## Multiple critical stats = cascading failure.
+	var critical_count := 0
+	if hunger < 25.0:
+		critical_count += 1
+	if energy < 25.0:
+		critical_count += 1
+	if warmth < 25.0:
+		critical_count += 1
+
+	match critical_count:
+		2:
+			return 2.0
+		3:
+			return 4.0
+		_:
+			return 1.0
 
 
 func get_max_energy() -> float:
@@ -170,14 +237,16 @@ func get_most_critical_need() -> String:
 	return most_critical
 
 
-func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_near_fire: bool, ambient_temperature: float) -> void:
+func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_near_fire: bool,
+		ambient_temperature: float, is_in_sunlight: bool = true) -> void:
 	## Called once per in-game hour to update needs.
+	## Uses cascading multipliers: low energy/warmth increase hunger drain, etc.
 
-	# Hunger always decays
-	var hunger_modifier: float = 1.0
+	# Hunger decay with cascading multiplier
+	var hunger_drain := hunger_decay_rate * get_hunger_drain_multiplier()
 	if is_working:
-		hunger_modifier = 1.5  # Working makes you hungrier
-	hunger -= hunger_decay_rate * hunger_modifier
+		hunger_drain *= 1.5  # Working makes you hungrier
+	hunger -= hunger_drain
 
 	# Warmth affected by environment
 	var warmth_change: float = 0.0
@@ -185,47 +254,65 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_near_fire: boo
 		warmth_change += 5.0
 	if is_in_shelter:
 		warmth_change += 2.0
+	if is_in_sunlight and not is_in_shelter:
+		warmth_change += 1.0  # Sunlight provides minor warmth
 
 	# Temperature effect (ambient_temperature in Celsius, negative in arctic)
 	var cold_effect: float = (-ambient_temperature - 10.0) * 0.5  # Stronger effect below -10C
 	cold_effect *= (1.0 - cold_resistance / 100.0)  # Resistance reduces effect
-	warmth_change -= maxf(cold_effect, 0.0)
 
+	# Nighttime doubles cold effect when below 0C
+	if not is_in_sunlight and ambient_temperature < 0.0:
+		cold_effect *= 2.0
+
+	warmth_change -= maxf(cold_effect, 0.0)
 	warmth += warmth_change
 
 	# Energy management - affected by working, health, and other conditions
 	var energy_change: float = 0.0
 	if is_working:
-		# Base working drain
-		var work_drain := energy_decay_rate
-		# Drain more when in poor condition
-		work_drain *= get_energy_drain_multiplier()
+		# Base working drain with cascading multiplier
+		var work_drain := energy_decay_rate * get_energy_drain_multiplier()
 		energy_change -= work_drain
 	else:
-		# Resting recovery (slower when in poor condition)
-		var recovery := energy_decay_rate * 0.5
+		# Resting recovery
+		var recovery := 3.0  # Base idle recovery
+		if is_in_shelter:
+			recovery = 6.0  # Tent recovery
+			# TODO: Improved shelter gives 8.0
 		if health < 50.0:
 			recovery *= health / 50.0  # Reduced recovery when injured
 		energy_change += recovery
 
+	# Sunlight bonus to energy recovery
+	if is_in_sunlight and not is_working:
+		energy_change += 0.5
+
 	# If energy exceeds max (health dropped), force it down
 	var max_energy := get_max_energy()
 	if energy > max_energy:
-		# Gradually drain excess energy
 		energy_change -= minf(energy - max_energy, 5.0)
 
 	energy += energy_change
 
-	# Health damage from critical needs
-	if is_starving():
-		health -= 2.0
-	if is_freezing():
-		health -= 3.0
-
-	# Morale decay
-	morale -= morale_decay_rate
+	# Morale decay with critical state multiplier
+	var morale_drain := morale_decay_rate * get_critical_state_multiplier()
 	if is_starving() or is_freezing():
-		morale -= 1.0  # Extra morale loss from suffering
+		morale_drain += 1.0  # Extra morale loss from suffering
+	if not is_in_sunlight:
+		morale_drain += 0.5  # Darkness is depressing (especially in winter)
+	morale -= morale_drain
+
+	# Dying condition - stats at 0 cause rapid health loss
+	if is_dying():
+		dying_cause = get_dying_cause()
+		health -= DYING_HEALTH_DRAIN
+	else:
+		# Health damage from critical needs (slower than dying)
+		if is_starving():
+			health -= 2.0
+		if is_freezing():
+			health -= 3.0
 
 
 func get_energy_drain_multiplier() -> float:

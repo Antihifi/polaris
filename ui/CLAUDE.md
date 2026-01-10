@@ -416,6 +416,45 @@ func is_any_panel_open() -> bool
 
 ---
 
+## CustomInventoryItem (inventory_item.gd)
+
+Custom gloot inventory item renderer with inversion shader and descriptive tooltips.
+
+### Gloot Mouse Filter Quirk
+
+**IMPORTANT:** Gloot's `CtrlDraggableInventoryItem` sets `mouse_filter = MOUSE_FILTER_IGNORE` on child inventory item controls (line 39 of `ctrl_draggable_inventory_item.gd`). This prevents the `CustomInventoryItem` from receiving mouse events, which breaks Godot's native tooltip system.
+
+**Workaround:** `_update_tooltip()` propagates the tooltip to the parent control:
+```gdscript
+func _update_tooltip() -> void:
+    # ... build tooltip string ...
+    tooltip_text = tooltip
+    var parent: Control = get_parent() as Control
+    if parent:
+        parent.tooltip_text = tooltip  # Set on draggable wrapper
+```
+
+### Features
+- Inversion shader for black PNG icons (displays as white)
+- Black background with padding for border effect
+- Stack size label (bottom-right)
+- Descriptive tooltips per item category (food, fuel, tool)
+
+### Tooltip Content
+Tooltips are flavorful descriptions, not stat numbers:
+```gdscript
+func _get_food_tooltip(item_name: String) -> String:
+    match item_name:
+        "Hardtack":
+            return "HARDTACK\nA dry, long-lasting biscuit.\nNot tasty, but it keeps."
+        "Rum":
+            return "RUM\nNaval rum ration.\nLifts spirits and warms\nthe body, if briefly."
+        "Human Meat":
+            return "HUMAN MEAT\nThe flesh of a fallen\ncomrade. A desperate act\nwith terrible consequences\nfor the mind."
+```
+
+---
+
 ## SelectionBox
 
 Draws selection rectangle during click-drag selection.

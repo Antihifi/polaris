@@ -41,6 +41,15 @@ signal zoom_changed(zoom_level: float, zoom_ratio: float)
 @export var follow_selected: bool = false   # Auto-follow selected unit
 
 # =========================
+# Movement bounds
+# =========================
+@export_category("Bounds")
+## Maximum distance camera can move from nearest unit. Set to 0 to disable.
+@export var max_distance_from_units: float = 300.0
+## Group name to query for units that define camera bounds.
+@export var bounds_group: String = "selectable_units"
+
+# =========================
 # Runtime state
 # =========================
 var orbit_center: Vector3 = Vector3.ZERO
@@ -98,17 +107,18 @@ func _process(delta: float) -> void:
 	if Input.is_physical_key_pressed(KEY_S) or Input.is_action_pressed("ui_down"):
 		movement.z += 1
 
-	# Edge scrolling
-	var mouse_pos := get_viewport().get_mouse_position()
-	var viewport_size = get_viewport().size
-	if mouse_pos.x < edge_scroll_margin:
-		movement.x -= 1
-	elif mouse_pos.x > viewport_size.x - edge_scroll_margin:
-		movement.x += 1
-	if mouse_pos.y < edge_scroll_margin:
-		movement.z -= 1
-	elif mouse_pos.y > viewport_size.y - edge_scroll_margin:
-		movement.z += 1
+	# Edge scrolling (only if enabled)
+	if edge_scroll_margin > 0.0:
+		var mouse_pos := get_viewport().get_mouse_position()
+		var viewport_size = get_viewport().size
+		if mouse_pos.x < edge_scroll_margin:
+			movement.x -= 1
+		elif mouse_pos.x > viewport_size.x - edge_scroll_margin:
+			movement.x += 1
+		if mouse_pos.y < edge_scroll_margin:
+			movement.z -= 1
+		elif mouse_pos.y > viewport_size.y - edge_scroll_margin:
+			movement.z += 1
 
 	# Shift boost (make sure you added 'ui_shift' in Input Map)
 	var speed_multiplier := 2.0 if Input.is_action_pressed("ui_shift") else 1.0
@@ -116,7 +126,8 @@ func _process(delta: float) -> void:
 	# Move orbit center in camera's yaw frame
 	if movement.length() > 0.0:
 		movement = movement.normalized().rotated(Vector3.UP, _yaw)
-		orbit_center += movement * camera_speed * speed_multiplier * delta
+		var new_center := orbit_center + movement * camera_speed * speed_multiplier * delta
+		orbit_center = _constrain_to_units(new_center)
 		_focus_target = null  # Clear focus target when manually moving
 		_update_camera_position()
 
@@ -171,6 +182,44 @@ func _unhandled_input(event: InputEvent) -> void:
 # =========================
 # Helpers
 # =========================
+func _constrain_to_units(pos: Vector3) -> Vector3:
+	## Constrain position to be within max_distance_from_units of any unit.
+	## Returns the constrained position, or original if no constraint needed.
+	if max_distance_from_units <= 0.0:
+		return pos
+
+	var units := get_tree().get_nodes_in_group(bounds_group)
+	if units.is_empty():
+		return pos  # No units to constrain to
+
+	# Find the nearest unit (using XZ distance for horizontal constraint)
+	var nearest_unit: Node3D = null
+	var nearest_dist_sq: float = INF
+	var pos_xz := Vector2(pos.x, pos.z)
+
+	for unit in units:
+		if unit is Node3D:
+			var unit_xz := Vector2(unit.global_position.x, unit.global_position.z)
+			var dist_sq := pos_xz.distance_squared_to(unit_xz)
+			if dist_sq < nearest_dist_sq:
+				nearest_dist_sq = dist_sq
+				nearest_unit = unit
+
+	if not nearest_unit:
+		return pos
+
+	var nearest_dist := sqrt(nearest_dist_sq)
+	if nearest_dist <= max_distance_from_units:
+		return pos  # Within bounds
+
+	# Constrain: move pos toward nearest unit until within range
+	var unit_pos := nearest_unit.global_position
+	var dir_xz := (pos_xz - Vector2(unit_pos.x, unit_pos.z)).normalized()
+	var constrained_xz := Vector2(unit_pos.x, unit_pos.z) + dir_xz * max_distance_from_units
+
+	return Vector3(constrained_xz.x, pos.y, constrained_xz.y)
+
+
 func _update_camera_position() -> void:
 	# Spherical direction from yaw/pitch
 	var dir := Vector3(
@@ -204,9 +253,9 @@ func focus_on(target: Node3D, instant: bool = false) -> void:
 
 
 func focus_on_position(pos: Vector3, instant: bool = false) -> void:
-	## Focus camera on a world position.
+	## Focus camera on a world position (constrained to unit bounds).
 	_focus_target = null
-	_focus_destination = pos
+	_focus_destination = _constrain_to_units(pos)
 
 	if instant:
 		orbit_center = _focus_destination

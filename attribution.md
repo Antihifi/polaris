@@ -27,3 +27,10 @@ Every time you attribute, you make a designer happy
 
 firemaking icon
 https://www.flaticon.com/authors/leremy
+aaaaaa
+"Polar Bear" (https://skfb.ly/oRMzK) by kenchoo is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+
+"Polar Bear" (https://skfb.ly/o9ATA) by Gummibar gumy bear is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+"Screen Space Frost with Volumetric Snow" shader by Emerson Rowland (https://godotshaders.com/shader/screen-space-frost-with-volumetric-snow/) licensed under MIT License.

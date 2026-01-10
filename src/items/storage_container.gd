@@ -7,7 +7,6 @@ class_name StorageContainer extends Node
 signal inventory_opened(container: StorageContainer)
 signal inventory_closed(container: StorageContainer)
 signal contents_changed
-signal clicked(container: StorageContainer)
 
 enum StorageType {
 	FOOD,      ## Barrels: food and beverages only

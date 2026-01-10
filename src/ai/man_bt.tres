@@ -1,0 +1,173 @@
+[gd_resource type="BehaviorTree" load_steps=61 format=3 uid="uid://darhp8g5ycst7"]
+
+[ext_resource type="Script" uid="uid://bsoixuak5ebwc" path="res://ai/tasks/conditions/bt_check_player_override.gd" id="1_bt3ao"]
+[ext_resource type="Script" uid="uid://m0oby1kghy4n" path="res://ai/tasks/actions/bt_wait_idle.gd" id="2_wrf72"]
+[ext_resource type="Script" uid="uid://dgjmjjpl488se" path="res://ai/tasks/conditions/bt_check_threat.gd" id="3_kvawx"]
+[ext_resource type="Script" uid="uid://clkagxv7n2wy0" path="res://ai/tasks/actions/bt_flee.gd" id="4_vurac"]
+[ext_resource type="Script" uid="uid://bmc5q8whwy8v7" path="res://ai/tasks/conditions/bt_check_need.gd" id="5_k3bf5"]
+[ext_resource type="Script" uid="uid://5wff03csw024" path="res://ai/tasks/decorators/bt_utility_wrapper.gd" id="6_ll7s3"]
+[ext_resource type="Script" uid="uid://cibqotxp1ggc" path="res://ai/tasks/conditions/bt_has_item.gd" id="6_rnrvv"]
+[ext_resource type="Script" uid="uid://d1n50nbmtcv55" path="res://ai/tasks/composites/bt_utility_selector.gd" id="7_nd7bf"]
+[ext_resource type="Script" uid="uid://dalyrytgq5ivs" path="res://ai/tasks/actions/bt_consume_food.gd" id="7_uxj7k"]
+[ext_resource type="Script" uid="uid://ccvkip31to6gw" path="res://ai/tasks/actions/bt_seek_resource.gd" id="8_mvcm8"]
+[ext_resource type="Script" uid="uid://dndyhmmjqgd0s" path="res://ai/tasks/actions/bt_move_to_target.gd" id="9_pxigk"]
+[ext_resource type="Script" uid="uid://dx4ayvpfksfqt" path="res://ai/tasks/actions/bt_take_item.gd" id="10_h2s38"]
+[ext_resource type="Script" uid="uid://ebf5ycw3xg5i" path="res://ai/tasks/conditions/bt_is_near.gd" id="12_p7j0x"]
+[ext_resource type="Script" uid="uid://blt671csw8anm" path="res://ai/tasks/actions/bt_rest.gd" id="13_wvhip"]
+[ext_resource type="Script" uid="uid://8qu36r0t5jpu" path="res://ai/tasks/actions/bt_wander.gd" id="15_3dgln"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_gs1pn"]
+
+[sub_resource type="BTCondition" id="BTCondition_wrf72"]
+script = ExtResource("1_bt3ao")
+
+[sub_resource type="BTAction" id="BTAction_carm3"]
+script = ExtResource("2_wrf72")
+
+[sub_resource type="BTSequence" id="BTSequence_gs1pn"]
+custom_name = "Player_Override"
+children = [SubResource("BTCondition_wrf72"), SubResource("BTAction_carm3")]
+
+[sub_resource type="BTCondition" id="BTCondition_mhywe"]
+script = ExtResource("3_kvawx")
+
+[sub_resource type="BTAction" id="BTAction_sbkld"]
+script = ExtResource("4_vurac")
+
+[sub_resource type="BTSequence" id="BTSequence_wrf72"]
+children = [SubResource("BTCondition_mhywe"), SubResource("BTAction_sbkld")]
+
+[sub_resource type="BTCondition" id="BTCondition_l8op7"]
+script = ExtResource("5_k3bf5")
+threshold = 60.0
+
+[sub_resource type="BTCondition" id="BTCondition_m6woe"]
+script = ExtResource("6_rnrvv")
+
+[sub_resource type="BTAction" id="BTAction_t1p3v"]
+script = ExtResource("7_uxj7k")
+
+[sub_resource type="BTSequence" id="BTSequence_r82rx"]
+children = [SubResource("BTCondition_m6woe"), SubResource("BTAction_t1p3v")]
+
+[sub_resource type="BTAction" id="BTAction_xra7h"]
+script = ExtResource("8_mvcm8")
+
+[sub_resource type="BTAction" id="BTAction_5y454"]
+script = ExtResource("9_pxigk")
+
+[sub_resource type="BTAction" id="BTAction_jnnmp"]
+script = ExtResource("10_h2s38")
+
+[sub_resource type="BTAction" id="BTAction_wc5no"]
+script = ExtResource("7_uxj7k")
+
+[sub_resource type="BTSequence" id="BTSequence_6t3x4"]
+children = [SubResource("BTAction_xra7h"), SubResource("BTAction_5y454"), SubResource("BTAction_jnnmp"), SubResource("BTAction_wc5no")]
+
+[sub_resource type="BTSelector" id="BTSelector_gbhos"]
+children = [SubResource("BTSequence_r82rx"), SubResource("BTSequence_6t3x4")]
+
+[sub_resource type="BTSequence" id="BTSequence_rnrvv"]
+children = [SubResource("BTCondition_l8op7"), SubResource("BTSelector_gbhos")]
+
+[sub_resource type="BTDecorator" id="BTDecorator_uxj7k"]
+children = [SubResource("BTSequence_rnrvv")]
+script = ExtResource("6_ll7s3")
+
+[sub_resource type="BTCondition" id="BTCondition_rlms8"]
+script = ExtResource("5_k3bf5")
+need_name = &"warmth"
+threshold = 60.0
+
+[sub_resource type="BTCondition" id="BTCondition_g2dr7"]
+script = ExtResource("12_p7j0x")
+
+[sub_resource type="BTAction" id="BTAction_q80br"]
+script = ExtResource("8_mvcm8")
+resource_type = "heat_source"
+
+[sub_resource type="BTAction" id="BTAction_c71yt"]
+script = ExtResource("9_pxigk")
+
+[sub_resource type="BTSequence" id="BTSequence_wd5sq"]
+children = [SubResource("BTAction_q80br"), SubResource("BTAction_c71yt")]
+
+[sub_resource type="BTSelector" id="BTSelector_ewk0x"]
+children = [SubResource("BTCondition_g2dr7"), SubResource("BTSequence_wd5sq")]
+
+[sub_resource type="BTSequence" id="BTSequence_cbdhm"]
+children = [SubResource("BTCondition_rlms8"), SubResource("BTSelector_ewk0x")]
+
+[sub_resource type="BTDecorator" id="BTDecorator_smkkf"]
+children = [SubResource("BTSequence_cbdhm")]
+script = ExtResource("6_ll7s3")
+need_name = &"warmth"
+
+[sub_resource type="BTCondition" id="BTCondition_rv8wv"]
+script = ExtResource("5_k3bf5")
+need_name = &"energy"
+
+[sub_resource type="BTCondition" id="BTCondition_n1imp"]
+script = ExtResource("12_p7j0x")
+proximity_type = "shelter"
+
+[sub_resource type="BTAction" id="BTAction_reisd"]
+script = ExtResource("8_mvcm8")
+resource_type = "shelter"
+
+[sub_resource type="BTAction" id="BTAction_nfcom"]
+script = ExtResource("9_pxigk")
+
+[sub_resource type="BTSequence" id="BTSequence_ohmo0"]
+children = [SubResource("BTAction_reisd"), SubResource("BTAction_nfcom")]
+
+[sub_resource type="BTSelector" id="BTSelector_hc61e"]
+children = [SubResource("BTCondition_n1imp"), SubResource("BTSequence_ohmo0")]
+
+[sub_resource type="BTAction" id="BTAction_7m4kv"]
+script = ExtResource("13_wvhip")
+
+[sub_resource type="BTSequence" id="BTSequence_dwmp3"]
+children = [SubResource("BTCondition_rv8wv"), SubResource("BTSelector_hc61e"), SubResource("BTAction_7m4kv")]
+
+[sub_resource type="BTDecorator" id="BTDecorator_hmfp1"]
+children = [SubResource("BTSequence_dwmp3")]
+script = ExtResource("6_ll7s3")
+
+[sub_resource type="BTCondition" id="BTCondition_83n3b"]
+script = ExtResource("5_k3bf5")
+need_name = &"morale"
+threshold = 40.0
+
+[sub_resource type="BTAction" id="BTAction_e1swf"]
+script = ExtResource("8_mvcm8")
+resource_type = "heat_source"
+
+[sub_resource type="BTAction" id="BTAction_w8r74"]
+script = ExtResource("9_pxigk")
+
+[sub_resource type="BTSequence" id="BTSequence_1lmrr"]
+children = [SubResource("BTAction_e1swf"), SubResource("BTAction_w8r74")]
+
+[sub_resource type="BTSequence" id="BTSequence_mgulf"]
+children = [SubResource("BTCondition_83n3b"), SubResource("BTSequence_1lmrr")]
+
+[sub_resource type="BTDecorator" id="BTDecorator_axtl0"]
+children = [SubResource("BTSequence_mgulf")]
+script = ExtResource("6_ll7s3")
+need_name = &"morale"
+
+[sub_resource type="BTComposite" id="BTComposite_mvcm8"]
+children = [SubResource("BTDecorator_uxj7k"), SubResource("BTDecorator_smkkf"), SubResource("BTDecorator_hmfp1"), SubResource("BTDecorator_axtl0")]
+script = ExtResource("7_nd7bf")
+
+[sub_resource type="BTAction" id="BTAction_wi3gf"]
+script = ExtResource("15_3dgln")
+
+[sub_resource type="BTSelector" id="BTSelector_bt3ao"]
+children = [SubResource("BTSequence_gs1pn"), SubResource("BTSequence_wrf72"), SubResource("BTComposite_mvcm8"), SubResource("BTAction_wi3gf")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_gs1pn")
+root_task = SubResource("BTSelector_bt3ao")

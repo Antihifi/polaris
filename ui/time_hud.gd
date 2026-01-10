@@ -8,11 +8,16 @@ extends Control
 @onready var speed_label: Label = $Panel/MarginContainer/VBoxContainer/SpeedLabel
 
 # Speed control buttons
+@onready var pause_button: Button = $"Panel/MarginContainer/VBoxContainer/HBoxContainer/Pause"
 @onready var speed_1x_button: Button = $"Panel/MarginContainer/VBoxContainer/HBoxContainer/1X"
 @onready var speed_2x_button: Button = $"Panel/MarginContainer/VBoxContainer/HBoxContainer/2X"
 @onready var speed_4x_button: Button = $"Panel/MarginContainer/VBoxContainer/HBoxContainer/4X"
 
+# Screen scroll toggle
+@onready var scroll_toggle: CheckButton = $"Panel/MarginContainer/VBoxContainer/CheckButton"
+
 var _time_manager: Node = null
+var _camera: Node = null
 
 
 func _ready() -> void:
@@ -29,9 +34,17 @@ func _ready() -> void:
 		_time_manager.time_scale_changed.connect(_on_time_scale_changed)
 
 	# Connect speed buttons
+	pause_button.pressed.connect(_on_pause_pressed)
 	speed_1x_button.pressed.connect(_on_speed_1x_pressed)
 	speed_2x_button.pressed.connect(_on_speed_2x_pressed)
 	speed_4x_button.pressed.connect(_on_speed_4x_pressed)
+
+	# Find camera and connect scroll toggle
+	_camera = get_viewport().get_camera_3d()
+	if _camera and scroll_toggle:
+		# Initialize toggle to current camera state
+		scroll_toggle.button_pressed = _camera.edge_scroll_margin > 0.0
+		scroll_toggle.toggled.connect(_on_scroll_toggled)
 
 	# Initial update
 	_update_display()
@@ -109,12 +122,14 @@ func _update_speed_buttons() -> void:
 	if not _time_manager:
 		return
 
-	var scale: float = _time_manager.time_scale
+	var current_scale: float = _time_manager.time_scale
 
 	# Set button_pressed without triggering signals (buttons are in a ButtonGroup)
-	if scale < 1.5:
+	if _time_manager.is_paused:
+		pause_button.button_pressed = true
+	elif current_scale < 1.5:
 		speed_1x_button.button_pressed = true
-	elif scale < 3.0:
+	elif current_scale < 3.0:
 		speed_2x_button.button_pressed = true
 	else:
 		speed_4x_button.button_pressed = true
@@ -133,3 +148,20 @@ func _on_speed_2x_pressed() -> void:
 func _on_speed_4x_pressed() -> void:
 	if _time_manager and _time_manager.has_method("set_time_scale"):
 		_time_manager.set_time_scale(4.0)
+
+
+func _on_pause_pressed() -> void:
+	if _time_manager and _time_manager.has_method("pause"):
+		_time_manager.pause()
+
+
+func _on_scroll_toggled(enabled: bool) -> void:
+	## Enable/disable edge scrolling on the camera.
+	if _camera and "edge_scroll_margin" in _camera:
+		# Store original margin when disabling, restore when enabling
+		if enabled:
+			_camera.edge_scroll_margin = 20.0  # Default value from rts_camera.gd
+		else:
+			_camera.edge_scroll_margin = 0.0
+
+

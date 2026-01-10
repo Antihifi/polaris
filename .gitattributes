@@ -3,3 +3,7 @@
 *.tscn filter=lfs diff=lfs merge=lfs -text
 *_NormalGL.png filter=lfs diff=lfs merge=lfs -text
 *_normal_roughness.png filter=lfs diff=lfs merge=lfs -text
+*.wasm filter=lfs diff=lfs merge=lfs -text
+*.so filter=lfs diff=lfs merge=lfs -text
+*.dll filter=lfs diff=lfs merge=lfs -text
+*.dylib filter=lfs diff=lfs merge=lfs -text
