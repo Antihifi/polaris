@@ -2,6 +2,7 @@
 class_name BTRest extends BTAction
 ## Rests to recover energy over time.
 ## Uses "idle" animation while resting.
+## Faces random direction when starting to rest (prevents all-facing-north issue).
 
 @export var energy_target: float = 80.0
 @export var energy_per_second: float = 5.0
@@ -26,6 +27,9 @@ func _tick(delta: float) -> Status:
 
 	# Start resting animation if not started
 	if not _resting:
+		# Face random direction to prevent all-facing-north issue in shelter
+		_face_random_direction(unit)
+
 		if unit.has_node("AnimationPlayer"):
 			var anim_player: AnimationPlayer = unit.get_node("AnimationPlayer")
 			if anim_player.has_animation("idle"):
@@ -41,6 +45,12 @@ func _tick(delta: float) -> Status:
 	stats.energy += energy_per_second * delta
 
 	return RUNNING
+
+
+func _face_random_direction(unit: Node) -> void:
+	## Face a random direction to prevent all units facing north.
+	if unit is Node3D:
+		unit.global_rotation.y = randf() * TAU
 
 
 func _exit() -> void:

@@ -59,6 +59,10 @@ var _morale_trend: ColorRect
 ## Screen space offset to nudge panel position
 @export var screen_offset: Vector2 = Vector2(0, -20)
 
+# Double-click tracking for name panel close
+var _last_name_click_time: int = 0
+const DOUBLE_CLICK_THRESHOLD_MS: int = 400
+
 
 func _ready() -> void:
 	# Get TimeManager reference for real-time daylight checks
@@ -103,6 +107,9 @@ func _ready() -> void:
 	# Connect toggle buttons
 	skills_button.toggled.connect(_on_skills_toggled)
 	effects_button.toggled.connect(_on_effects_toggled)
+
+	# Connect name panel double-click to close
+	name_panel.gui_input.connect(_on_name_panel_input)
 
 	# Collect effect labels from container (Label, Label2, Label3, etc.)
 	for child in effects_container.get_children():
@@ -283,6 +290,18 @@ func _on_effects_toggled(pressed: bool) -> void:
 	effects_panel.visible = pressed
 
 
+func _on_name_panel_input(event: InputEvent) -> void:
+	## Handle double-click on name panel to close.
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			var current_time := Time.get_ticks_msec()
+			var time_diff := current_time - _last_name_click_time
+			if time_diff <= DOUBLE_CLICK_THRESHOLD_MS:
+				hide_panel()
+			_last_name_click_time = current_time
+
+
 func _process(_delta: float) -> void:
 	# Update panel position to follow character
 	if visible and _current_unit and _camera:
@@ -304,12 +323,15 @@ func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
 	if not unit or not unit.stats:
 		return
 
-	# Disconnect from previous unit
-	if _current_unit and _current_unit.stats_changed.is_connected(_on_stats_changed):
-		_current_unit.stats_changed.disconnect(_on_stats_changed)
+	# Disconnect from previous unit (defensive: check is_instance_valid)
+	if _current_unit and is_instance_valid(_current_unit):
+		if _current_unit.stats_changed.is_connected(_on_stats_changed):
+			_current_unit.stats_changed.disconnect(_on_stats_changed)
 
 	_current_unit = unit
-	_current_unit.stats_changed.connect(_on_stats_changed)
+	# Only connect if not already connected (prevents duplicate connections)
+	if not _current_unit.stats_changed.is_connected(_on_stats_changed):
+		_current_unit.stats_changed.connect(_on_stats_changed)
 
 	# Get camera reference
 	if camera:
@@ -330,8 +352,9 @@ func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
 
 func hide_panel() -> void:
 	## Hide the stats panel.
-	if _current_unit and _current_unit.stats_changed.is_connected(_on_stats_changed):
-		_current_unit.stats_changed.disconnect(_on_stats_changed)
+	if _current_unit and is_instance_valid(_current_unit):
+		if _current_unit.stats_changed.is_connected(_on_stats_changed):
+			_current_unit.stats_changed.disconnect(_on_stats_changed)
 	_current_unit = null
 	visible = false
 	closed.emit()

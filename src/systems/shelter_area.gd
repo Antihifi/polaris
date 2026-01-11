@@ -26,9 +26,9 @@ func _ready() -> void:
 	collision_mask = 2
 	monitoring = true
 	monitorable = false
-	# Add parent to shelters group for AI resource seeking
-	if get_parent():
-		get_parent().add_to_group("shelters")
+	# Add SELF to shelters group for AI resource seeking
+	# (not parent, so AI navigates to the actual shelter area center)
+	add_to_group("shelters")
 	print("[ShelterArea] Ready at %s, type=%s, monitoring=%s" % [
 		global_position, ShelterType.keys()[shelter_type], monitoring
 	])

@@ -506,3 +506,70 @@ Uses `PROCESS_MODE_ALWAYS` to run while tree is paused.
 | `Ctrl+A` | SelectionManager | Select all units |
 | `Ctrl+1-9` | SelectionManager | Assign control group |
 | `1-9` | SelectionManager | Recall control group |
+
+---
+
+## Known Issues & Fixes
+
+### UI Click Handling Failures (RECURRING ISSUE)
+
+**Symptom:** After playing for several minutes, UI buttons (Skills, Effects, close button) stop responding to clicks. The cursor appears to interact but nothing happens.
+
+**Root Causes Identified:**
+
+1. **Signal Connection Leaks** - Repeated `show_for_unit()` calls without disconnecting previous signals cause duplicate connections to accumulate. Eventually, the signal handler gets overwhelmed.
+
+2. **gloot Mouse Filter Blocking** - gloot's `CtrlDraggableInventoryItem` (line 39) sets `mouse_filter = MOUSE_FILTER_IGNORE` on child controls. This blocks mouse events from reaching buttons overlaid on inventory grids.
+
+3. **Z-Index Issues** - Close buttons drawn at same z-level as grid elements get hidden or blocked by other controls.
+
+4. **Missing Instance Validity Checks** - When units die or are removed, connected signals can reference invalid objects, causing silent failures.
+
+**Fixes Applied (January 2026):**
+
+In `character_stats.gd`:
+```gdscript
+func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
+    # Defensive: check validity before disconnecting
+    if _current_unit and is_instance_valid(_current_unit):
+        if _current_unit.stats_changed.is_connected(_on_stats_changed):
+            _current_unit.stats_changed.disconnect(_on_stats_changed)
+
+    _current_unit = unit
+    # Prevent duplicate connections
+    if not _current_unit.stats_changed.is_connected(_on_stats_changed):
+        _current_unit.stats_changed.connect(_on_stats_changed)
+```
+
+In `inventory_panel.gd`:
+```gdscript
+# In _ready(), after finding/creating close button:
+if _close_button:
+    _close_button.mouse_filter = Control.MOUSE_FILTER_STOP
+    _close_button.z_index = 10  # Draw above grid elements
+```
+
+**Debugging Tips:**
+- Add `print()` in button handlers to verify clicks are reaching the handler
+- Check if `is_connected()` returns true before connecting
+- Always use `is_instance_valid()` before accessing potentially-freed nodes
+- Watch for "object freed" errors in console during extended play
+
+**Workaround:** ESC key always works to close panels regardless of click handling issues.
+
+---
+
+### Inventory Close Button Not Responding
+
+**Symptom:** The X button on container/barrel inventories doesn't respond to clicks, but ESC works.
+
+**Root Cause:** gloot's `CtrlInventoryGrid` and drag-drop system set aggressive `mouse_filter` values that block clicks from reaching the close button.
+
+**Fix Applied:**
+```gdscript
+# Ensure close button has explicit click handling and z-order
+_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
+_close_button.z_index = 10
+```
+
+**Note:** This is a gloot addon quirk. When using gloot inventory grids, always explicitly set `mouse_filter` and `z_index` on any overlay controls.

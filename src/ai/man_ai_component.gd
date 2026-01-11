@@ -132,20 +132,38 @@ func get_current_action() -> String:
 	if not bb:
 		return "Thinking..."
 
+	# Check player override first
+	var player_override: bool = bb.get_var(&"player_override", false)
+	if player_override:
+		if _unit.is_moving:
+			return "Following orders"
+		return "Awaiting orders"
+
 	# Check if moving to a target
 	if _unit.is_moving:
 		var target_node: Node = bb.get_var(&"target_node", null)
 		if target_node and is_instance_valid(target_node):
-			return "Walking to %s" % _get_friendly_target_name(target_node)
-		return "Walking"
+			var target_name := _get_friendly_target_name(target_node)
+			# Be specific about what they're seeking
+			if target_node.is_in_group("shelters"):
+				return "Seeking shelter"
+			elif target_node.is_in_group("heat_sources"):
+				return "Seeking warmth"
+			elif target_node.is_in_group("containers"):
+				return "Getting supplies"
+			return "Walking to %s" % target_name
+		return "Wandering"
 
-	# Check player override
-	var player_override: bool = bb.get_var(&"player_override", false)
-	if player_override:
-		return "Following orders"
+	# Check if in shelter or near fire
+	if _unit.is_in_shelter():
+		if _unit.stats and _unit.stats.energy < 50.0:
+			return "Resting in shelter"
+		return "In shelter"
+	if _unit.is_near_fire():
+		return "Warming by fire"
 
 	# Default to idle/thinking
-	return "Thinking..."
+	return "Idle"
 
 
 func _get_friendly_target_name(target: Node) -> String:

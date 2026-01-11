@@ -3,7 +3,7 @@ class_name WarmthArea extends Area3D
 ## Attach as child of campfire, fire pit, or other heat sources.
 ## Uses physics engine for spatial detection - zero polling overhead.
 
-@export var warmth_radius: float = 5.0
+@export var warmth_radius: float = 10.0  # Doubled from 5.0 to reduce crowding
 @export var warmth_bonus: float = 5.0  # Per hour when near fire
 
 var _collision_shape: CollisionShape3D

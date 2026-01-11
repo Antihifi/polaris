@@ -17,7 +17,7 @@ signal zoom_changed(zoom_level: float, zoom_ratio: float)
 # Edge scrolling settings
 # =========================
 @export_category("Edge scrolling")
-@export var edge_scroll_margin: float = 20.0
+@export var edge_scroll_margin: float = 0.0  # Disabled by default for dev convenience
 @export var edge_scroll_speed: float = 15.0  # reserved if you want separate edge weighting later
 
 # =========================

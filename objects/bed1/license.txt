@@ -1,0 +1,11 @@
+Model Information:
+* title:	Woven Bed
+* source:	https://sketchfab.com/3d-models/woven-bed-44b7b6e2b6cd41c192d61b569ab7acf1
+* author:	Bregorn (https://sketchfab.com/Bregorn)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Woven Bed" (https://sketchfab.com/3d-models/woven-bed-44b7b6e2b6cd41c192d61b569ab7acf1) by Bregorn (https://sketchfab.com/Bregorn) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

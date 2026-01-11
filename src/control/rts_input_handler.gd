@@ -220,12 +220,10 @@ func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 	if unit is ClickableUnit:
 		selected_unit = unit
 
-	# Set camera focus
-	if camera and camera.has_method("set_focus_target"):
-		camera.set_focus_target(unit)
-
-	# Emit double-click signal
+	# Only set camera focus on double-click (single click is too disruptive during dev)
 	if is_double_click:
+		if camera and camera.has_method("set_focus_target"):
+			camera.set_focus_target(unit)
 		unit_double_clicked.emit(unit)
 
 

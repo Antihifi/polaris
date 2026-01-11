@@ -280,6 +280,88 @@ Procedurally generated arctic terrain using Terrain3D. Features:
 - Frozen coastline
 - Snow drifts
 
+### Procedural Island Generation
+
+#### Historical Context
+The game is set on a fictionalized King William Island, September 1846. The ship became trapped in an inlet on the northern part of the island near Victory Point. The crew mistakenly sailed in thinking it led to open water. A subsequent quick deep freeze caught them off guard, freezing the ship in place. There is no hope of cutting their way out. They settle in for winter, but ice shifts and crushes the boat irreparably. The ship remains usable as makeshift shelter (not enough for the whole crew), and half their supplies are lost.
+
+#### Island Shape & Dimensions
+- **Shape**: Teardrop, narrow end north, wide end south
+- **Size**: ~12km (N-S) × ~9km (E-W), approximately 100 km²
+- **Starting Position**: Ship trapped in procedurally generated inlet on north coast (random east or west side)
+
+#### Boundaries (No Artificial Walls)
+
+| Direction | Boundary Type | Conditions |
+|-----------|---------------|------------|
+| North | Endless arctic ice | -60°C, permanent blizzard, total darkness, zero resources, no Inuit, certain death |
+| East | Endless arctic ice | Same as North |
+| West | Endless arctic ice | Same as North |
+| South | Ocean water | Impassable (visual only) |
+
+The ice zones are fully traversable - no invisible walls or force fields. Players can walk north to their doom if they choose. This maintains realism while naturally constraining gameplay.
+
+#### Terrain Features
+- **Cliffs & Ice Cliffs**: Rocky and ice faces, creates natural barriers and chokepoints
+- **Beaches**: Low elevation coastal areas, primarily on south shore
+- **Inlets & Minor Fjords**: Water intrusions into coastline, sheltered areas
+- **Hills & Slopes**: Rolling terrain throughout the island
+- **Flat Plains**: Common, especially in central and southern regions - best for travel
+- **Mountains**: Lower peaks under 400m, concentrated in central areas
+
+#### Regional Characteristics
+
+| Region | Characteristics | Travel Difficulty |
+|--------|-----------------|-------------------|
+| Northern (ship start) | Narrow, rugged, inlet features, higher elevation | Difficult |
+| Central | Mixed terrain, mountains, hills, some flat areas | Moderate |
+| Southern | Wide, gentle downhill slope, beaches | Easy (favorable for sled travel) |
+
+#### Points of Interest
+
+| POI | Count | Placement | Purpose |
+|-----|-------|-----------|---------|
+| Ship Wreck | 1 | Generated inlet, north coast | Starting location, partial shelter, salvage |
+| HBC Whaling Station | 1 | South coast, ~8-10km from ship | Rescue destination, guaranteed salvation |
+| Inuit Village | 1-2 | 2-4km from ship, accessible terrain | Trading, information, survival aid |
+
+**Travel Distances**: At ~1km per week (accounting for blizzards, animal attacks, hunting stops, medical care, etc.), reaching the HBC station takes approximately 8 weeks of dedicated travel. This journey is the core challenge of the game.
+
+#### Terrain Textures
+
+| Texture | Location | Notes |
+|---------|----------|-------|
+| Snow | Default, high elevation | Primary surface covering most of island |
+| Rock | Steep slopes (>35°), cliff faces | Exposed rock, difficult terrain |
+| Ice | Sea level edges, frozen water | Slippery, cold, transition to ice zones |
+| Gravel | Low elevation, transitions | Beaches, paths, easier travel |
+| Beach Sand | Southern beaches | Limited areas near water |
+
+#### Seed System
+- Each island is generated from a numeric seed
+- Seed is visible on new game screen and in pause menu
+- Players can enter specific seeds to replay islands
+- Seeds can be shared between players (e.g., "Try seed A3F7BC12!")
+- Same seed always generates identical terrain, POI positions, and features
+
+#### Procedural Elements
+- Island coastline shape (within teardrop constraints)
+- Mountain and hill placement
+- Inlet location and shape (east or west of north coast)
+- POI exact positions (within distance rules)
+- Texture variation patterns
+- Fjord and cliff locations
+
+#### Generation Process
+At new game start:
+1. Generate island shape mask (teardrop)
+2. Create heightmap with multi-octave noise
+3. Carve inlet for ship spawn
+4. Paint textures based on height/slope
+5. Bake navigation mesh (30-60 seconds)
+6. Place POIs with distance validation
+7. Verify all POIs reachable via pathfinding
+
 ### Time & Seasons
 | Season | Duration | Day Length | Temperature | Notes |
 |--------|----------|------------|-------------|-------|

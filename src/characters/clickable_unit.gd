@@ -28,6 +28,8 @@ signal died(unit: ClickableUnit, cause: SurvivorStats.DeathCause)
 @export_category("Animation")
 ## Base animation speed at movement_speed=1. Adjust until walk animation looks right at speed 1.
 @export_range(0.01, 2.0, 0.01) var base_animation_speed: float = 0.15
+## Speed for idle animation (lower = slower breathing, more natural)
+@export_range(0.1, 2.0, 0.05) var idle_animation_speed: float = 0.5
 
 @export_category("Audio")
 ## Base footstep playback speed at movement_speed=1. Adjust until footsteps match animation at speed 1.
@@ -130,10 +132,16 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_debug_frame_count += 1
 
+	# Dead units don't move (belt-and-suspenders with set_physics_process(false))
+	if stats and stats.is_dead():
+		velocity = Vector3.ZERO
+		return
+
 	if not is_moving:
 		return
 
 	if navigation_agent.is_navigation_finished():
+		print("[ClickableUnit] Navigation finished - stopping")
 		is_moving = false
 		velocity = Vector3.ZERO
 		_play_animation("idle")
@@ -143,6 +151,13 @@ func _physics_process(delta: float) -> void:
 
 	var next_position := navigation_agent.get_next_path_position()
 	var current_pos := global_position
+
+	# Debug: Log movement state periodically
+	if _debug_frame_count % 60 == 0:  # Every ~1 second at 60fps
+		var path := navigation_agent.get_current_navigation_path()
+		print("[ClickableUnit] Moving: pos=%s, next=%s, path_size=%d, vel=%.2f" % [
+			current_pos, next_position, path.size(), velocity.length()
+		])
 
 	# Calculate direction to next waypoint (full 3D - NavigationAgent provides correct Y from NavMesh)
 	var direction := next_position - current_pos
@@ -159,8 +174,13 @@ func _physics_process(delta: float) -> void:
 	rotation.y = lerp_angle(rotation.y, target_rotation, rotation_speed * delta)
 
 	# Calculate DESIRED velocity (what we want to move at)
+	# Speed is reduced when energy drops below 25%
 	var time_scale := _get_time_scale()
-	var desired_velocity := direction * movement_speed * time_scale
+	var energy_mult := get_energy_speed_multiplier()
+	var desired_velocity := direction * movement_speed * time_scale * energy_mult
+
+	# Update animation/sound speed to match
+	_update_speed_scale()
 
 	# Set velocity on NavigationAgent - it computes safe velocity avoiding obstacles
 	# and emits velocity_computed signal which triggers _on_velocity_computed()
@@ -171,6 +191,10 @@ func _physics_process(delta: float) -> void:
 
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
+	# Guard against movement after death (prevents sliding corpses)
+	if stats and stats.is_dead():
+		velocity = Vector3.ZERO
+		return
 	velocity = safe_velocity
 	move_and_slide()
 
@@ -191,6 +215,33 @@ func move_to(target_position: Vector3, is_player_command: bool = false) -> void:
 		player_command_active = true
 
 	navigation_agent.target_position = target_position
+
+	# Debug: Check if path is valid
+	var is_reachable := navigation_agent.is_target_reachable()
+	var path_length := navigation_agent.get_current_navigation_path().size()
+	var nav_map := navigation_agent.get_navigation_map()
+	print("[ClickableUnit] move_to(%s) - reachable: %s, path_points: %d, map_valid: %s" % [
+		target_position, is_reachable, path_length, nav_map.is_valid()
+	])
+
+	if not is_reachable:
+		print("[ClickableUnit] WARNING: Target is NOT reachable!")
+		# Debug: Check if we're on the NavMesh
+		var current_pos := global_position
+		var closest_on_nav := NavigationServer3D.map_get_closest_point(nav_map, current_pos)
+		var dist_to_nav := current_pos.distance_to(closest_on_nav)
+		print("[ClickableUnit] Current pos: %s, closest NavMesh point: %s, dist: %.2f" % [current_pos, closest_on_nav, dist_to_nav])
+
+		# If we're far from NavMesh, snap to it
+		if dist_to_nav > 2.0:
+			print("[ClickableUnit] Unit is OFF NavMesh! Snapping to nearest point...")
+			global_position = closest_on_nav
+			global_position.y += 0.1  # Tiny offset
+			# Re-set target after moving
+			navigation_agent.target_position = target_position
+			is_reachable = navigation_agent.is_target_reachable()
+			print("[ClickableUnit] After snap - reachable: %s" % is_reachable)
+
 	is_moving = true
 	_play_animation("walking")
 	_start_footsteps()
@@ -237,9 +288,15 @@ func _find_animation_player(node: Node) -> AnimationPlayer:
 func _play_animation(anim_name: String) -> void:
 	## Play an animation if the AnimationPlayer exists and has the animation.
 	## Applies animation_offset to desync animations between multiple units.
+	## Sets appropriate speed based on animation type.
 	if not animation_player:
 		return
 	if animation_player.has_animation(anim_name):
+		# Set appropriate speed based on animation type
+		if anim_name == "idle":
+			animation_player.speed_scale = idle_animation_speed
+		# Note: walking speed is managed by _update_speed_scale()
+
 		animation_player.play(anim_name)
 		# Apply offset to desync animations between units
 		if animation_offset > 0.0:
@@ -283,21 +340,38 @@ func _on_time_scale_changed(_scale: float) -> void:
 	_update_speed_scale()
 
 
+func get_energy_speed_multiplier() -> float:
+	## Returns speed multiplier based on energy level.
+	## Full speed until 25% energy, then drops to 50% speed at 0%.
+	if not stats:
+		return 1.0
+
+	if stats.energy >= 25.0:
+		return 1.0  # Full speed above 25%
+
+	# Linear interpolation from 50% speed at 0 energy to 100% at 25 energy
+	# At 0% energy: 0.5 multiplier
+	# At 25% energy: 1.0 multiplier
+	return 0.5 + (stats.energy / 25.0) * 0.5
+
+
 func _update_speed_scale() -> void:
 	## Sync animation and footstep playback speed to movement speed and time scale.
 	## At movement_speed=1 and time_scale=1, animation plays at base_animation_speed
 	## and footsteps play at base_footstep_speed.
+	## Speed is reduced when energy drops below 25%.
 	var time_scale := _get_time_scale()
+	var energy_mult := get_energy_speed_multiplier()
 
-	# Animation: scale by both movement speed and time scale
+	# Animation: scale by movement speed, time scale, and energy
 	if animation_player:
-		var anim_speed := base_animation_speed * movement_speed * time_scale
+		var anim_speed := base_animation_speed * movement_speed * time_scale * energy_mult
 		animation_player.speed_scale = maxf(anim_speed, 0.001)  # Prevent 0
 
-	# Footsteps: scale pitch by both movement speed and time scale
+	# Footsteps: scale pitch by movement speed, time scale, and energy
 	# pitch_scale must be > 0 or Godot throws an error
 	if is_instance_valid(_footstep_player):
-		var pitch := base_footstep_speed * movement_speed * time_scale
+		var pitch := base_footstep_speed * movement_speed * time_scale * energy_mult
 		_footstep_player.pitch_scale = maxf(pitch, 0.001)  # Prevent <= 0 error
 
 
@@ -363,22 +437,59 @@ func _on_death() -> void:
 	var cause := stats.get_dying_cause() if stats else SurvivorStats.DeathCause.NONE
 	print("[ClickableUnit] %s has died! Cause: %s" % [unit_name, SurvivorStats.DeathCause.keys()[cause]])
 
-	_play_animation("dying")
 	_stop_footsteps()
 	is_moving = false
+	velocity = Vector3.ZERO
+
+	# Play dying animation and freeze at end
+	if animation_player and animation_player.has_animation("dying"):
+		animation_player.play("dying")
+		# Connect to freeze at end of animation (use one-shot)
+		if not animation_player.animation_finished.is_connected(_on_death_animation_finished):
+			animation_player.animation_finished.connect(_on_death_animation_finished, CONNECT_ONE_SHOT)
+	else:
+		# No dying animation - just hide immediately
+		_finalize_death()
 
 	# Emit death signal
 	died.emit(self, cause)
 
 	# Remove from survivors group, add to corpses
 	remove_from_group("survivors")
+	remove_from_group("selectable_units")
 	add_to_group("corpses")
 
-	# Spawn corpse container with lootable human meat
-	_spawn_corpse_container()
-
-	# Disable further input/processing
+	# Disable selection and further input/processing
 	set_physics_process(false)
+	set_process(false)
+	is_selected = false
+	_show_selection_indicator(false)
+
+	# Disable AI behavior tree
+	var ai_component := get_node_or_null("ManAIComponent")
+	if ai_component and ai_component.has_method("pause_ai"):
+		ai_component.pause_ai()
+
+
+func _on_death_animation_finished(_anim_name: String) -> void:
+	## Called when dying animation finishes - freeze at last frame.
+	if animation_player:
+		# Stop playback but keep the final pose by pausing at the end
+		animation_player.pause()
+	_finalize_death()
+
+
+func _finalize_death() -> void:
+	## Final death cleanup - add human meat, disable collision.
+	# Add human meat to unit's inventory for looting (no separate corpse spawned)
+	_add_human_meat_to_inventory()
+
+	# Disable collision so it doesn't block navigation
+	var collision_shape := get_node_or_null("CollisionShape3D")
+	if collision_shape:
+		collision_shape.disabled = true
+
+	# Unit remains visible in death pose and can be looted via inventory
 
 
 func get_display_info() -> Dictionary:
@@ -641,34 +752,27 @@ func _execute_mental_break(break_type: String) -> void:
 
 # --- Death & Corpse System ---
 
-func _spawn_corpse_container() -> void:
-	## Replace dead character with lootable corpse containing human meat.
-	var corpse_scene := load("res://objects/corpse_container.tscn")
-	if not corpse_scene:
-		print("[ClickableUnit] ERROR: Could not load corpse_container.tscn")
+func _add_human_meat_to_inventory() -> void:
+	## Add human meat to dead unit's inventory for looting by other survivors.
+	## Unit stays in tree as corpse - no separate container spawned.
+	if not inventory:
+		push_error("[ClickableUnit] No inventory to add human meat to!")
 		return
 
-	var corpse: Node3D = corpse_scene.instantiate()
-	corpse.global_position = global_position
-	corpse.global_rotation = global_rotation
+	# Add 4-6 human meat items (1x1 each)
+	var meat_count: int = randi_range(4, 6)
+	var protoset: JSON = load("res://data/items_protoset.json")
+	if not protoset:
+		push_error("[ClickableUnit] Could not load items_protoset.json")
+		return
 
-	# Get the StorageContainer and populate with human meat
-	var storage: Node = corpse.get_node_or_null("StorageContainer")
-	if storage and storage.has_method("get") and "inventory" in storage:
-		if "display_name" in storage:
-			storage.display_name = unit_name + "'s Remains"
+	for i in meat_count:
+		var meat := InventoryItem.new()
+		meat.protoset = protoset
+		meat.prototype_id = "human_meat"
+		inventory.add_item(meat)
 
-		var inv: Inventory = storage.inventory
-		if inv:
-			# Random 2-6 human meat items (1x1 each)
-			var meat_count: int = randi_range(2, 6)
-			var protoset: JSON = load("res://data/items_protoset.json")
-			for i in meat_count:
-				var meat := InventoryItem.new()
-				meat.protoset = protoset
-				meat.prototype_id = "human_meat"
-				inv.add_item(meat)
-			print("[ClickableUnit] Spawned corpse with %d human meat" % meat_count)
+	# Add to containers group so AI food-seeking can find this corpse
+	add_to_group("containers")
 
-	get_parent().add_child(corpse)
-	print("[ClickableUnit] Corpse container spawned for ", unit_name)
+	print("[ClickableUnit] %s's corpse now has %d human meat (lootable)" % [unit_name, meat_count])

@@ -553,8 +553,114 @@ func _tick(delta: float) -> int:
 |---------|--------------|-----|
 | Unit does nothing | Blackboard `unit` or `stats` not set | Check `_ready()` setup |
 | Task always fails | Missing blackboard variable | Add `print()` to check values |
-| Unit stuck moving | `BTMoveToTarget` not returning SUCCESS | Check `arrival_distance` |
+| Unit stuck moving | `BTMoveToTarget` not returning SUCCESS | Check `arrival_distance` or timeout |
 | Wrong need addressed | Utility scores miscalculated | Debug `get_utility_score()` |
+
+---
+
+## Known Issues & Fixes
+
+### Units Getting Stuck When Seeking Resources (FIXED)
+
+**Symptom:** Units seeking fire/shelter/food would get stuck indefinitely if their path was blocked by other units, obstacles, or NavigationObstacle3D boundaries.
+
+**Root Cause:** `bt_move_to_target.gd` had NO stuck detection - it returned RUNNING forever if the unit couldn't reach its destination.
+
+**Fix Applied (January 2026):**
+
+Added 8-second timeout with stuck detection in `bt_move_to_target.gd`:
+```gdscript
+var _move_timeout: float = 0.0
+const MAX_MOVE_TIME: float = 8.0
+
+func _enter() -> void:
+    _moving = false
+    _move_timeout = 0.0
+
+func _tick(delta: float) -> Status:
+    # ... existing checks ...
+
+    # Stuck detection
+    _move_timeout += delta
+    if _move_timeout >= MAX_MOVE_TIME:
+        _moving = false
+        _move_timeout = 0.0
+        unit.stop()
+        print("[BTMoveToTarget] Timeout after %.1fs, stopping at dist=%.1fm" % [MAX_MOVE_TIME, distance])
+        return SUCCESS  # Allow behavior to continue
+```
+
+**Design Decision:** Returns SUCCESS on timeout (not FAILURE) so the parent sequence continues. This allows units to warm/rest at their current position instead of abandoning the behavior entirely.
+
+**Related Tasks with Timeouts:**
+- `bt_wander.gd` - 5 second max wander time
+- `bt_warm_by_fire.gd` - Built-in timeout for warming
+- `bt_move_to_target.gd` - 8 second stuck detection
+
+---
+
+### Units Over-Favoring Shelter at Mild Temperatures (FIXED)
+
+**Symptom:** At 0°C weather, units would constantly seek shelter instead of gathering by the fire. They spent more time walking to shelter than actually surviving.
+
+**Root Cause:** Energy and warmth utility wrappers had equal scoring weights. Units didn't understand that:
+1. Low warmth is MORE urgent (cascades to energy burn, hunger, morale)
+2. They'll naturally sleep ~8 hours/day anyway, so low energy isn't critical
+3. Fire is the primary survival resource at mild temperatures
+
+**Fix Applied (January 2026):**
+
+1. **Adjusted thresholds in `man_bt.tres`:**
+   - Warmth threshold: 60% → 50% (only trigger when warmth is actually concerning)
+   - Energy threshold: 60% → 40% (don't seek shelter until quite tired)
+
+2. **Adjusted score multipliers:**
+   - Warmth: `score_multiplier = 1.5` (higher priority when warmth IS low)
+   - Energy: `score_multiplier = 0.8` (lower priority - units "know" they'll sleep later)
+
+3. **Added extreme weather boost to `bt_utility_wrapper.gd`:**
+   ```gdscript
+   @export var extreme_weather_boost: float = 0.0
+
+   func _update_score() -> void:
+       # ... base scoring ...
+       if extreme_weather_boost > 0.0 and _is_extreme_weather():
+           score += extreme_weather_boost
+
+   func _is_extreme_weather() -> bool:
+       # Returns true if temp < -20°C
+       var temp: float = time_manager.current_temperature
+       return temp < -20.0
+   ```
+
+4. **Energy wrapper gets `extreme_weather_boost = 1.0`** - shelter becomes priority in blizzards/extreme cold.
+
+**Design Philosophy:**
+- **Warmth < 50%** = URGENT → seek fire immediately
+- **Energy < 40%** = NOT urgent if fire available → sit by fire, sleep later
+- **Shelter** = Only for: sleeping (night), extreme cold (<-20°C), weather events
+- **Fire** = Primary gathering spot for warmth, morale, socializing
+
+---
+
+### Units All Facing North When Resting (FIXED)
+
+**Symptom:** When units rest in shelter, they all face the same direction (north), looking unnatural and robotic.
+
+**Root Cause:** `bt_rest.gd` didn't set a facing direction when starting rest.
+
+**Fix Applied:**
+```gdscript
+# In bt_rest.gd
+func _tick(delta: float) -> Status:
+    if not _resting:
+        _face_random_direction(unit)
+        # ... start rest animation ...
+
+func _face_random_direction(unit: Node) -> void:
+    if unit is Node3D:
+        unit.global_rotation.y = randf() * TAU
+```
 
 ---
 

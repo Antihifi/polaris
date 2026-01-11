@@ -9,38 +9,58 @@ LimboAI-based behavior tree system for autonomous survivor AI. Men operate fully
 ## Known Bugs (Priority)
 
 ### BUG: Units Crowding Fire / Animation Breaking
-**Status:** OPEN | **Severity:** HIGH
+**Status:** FIXED | **Severity:** HIGH
 
 **Description:** When ~10+ men spawn, they all path toward the fire simultaneously. They collide, stack on top of each other, and their animations break - resulting in "ice skating" across the fire.
 
 **Root Cause:** Multiple issues compound:
 1. BTUtilitySelector picks warmth branch for ALL cold units simultaneously
 2. All units path to the SAME fire position (center of WarmthArea)
-3. NavigationAgent avoidance doesn't prevent stacking when many units converge
-4. No "occupancy" check for fire - units don't spread out around it
+3. NavigationAgent avoidance wasn't properly configured
+4. Starting warmth too low (55-60%) caused fire rush at spawn
 
-**Potential Fixes:**
-- Add random offset to fire target position (spread units around campfire)
-- Implement "slots" around fire that units claim
-- Add BTCondition to check if fire is "crowded" (>N units within radius)
-- Stagger AI activation so not all units decide simultaneously
+**Fixes Applied:**
+- ✅ BTSeekResource now adds random offset (±5m) for heat_source and shelter targets
+- ✅ WarmthArea radius doubled from 5m to 10m (larger area to spread out)
+- ✅ BTMoveToTarget arrival_distance increased from 1.5m to 3.5m
+- ✅ NavigationAgent3D fully configured:
+  - `use_3d_avoidance = true` (was using 2D by default!)
+  - `avoidance_layers = 1`, `avoidance_mask = 1`
+  - `radius = 0.8`, `height = 1.8`
+  - `time_horizon_agents = 2.0`, `time_horizon_obstacles = 1.5`
+  - `max_neighbors = 10`, `neighbor_distance = 10.0`
+- ✅ CharacterSpawner starting warmth increased to 60-75% (prevents fire stampede)
+
+**Remaining Issues:**
+- Slot-based fire seating not implemented (would be nice to have)
 
 ### BUG: Units Getting Stuck on Crates/Barrels
-**Status:** OPEN | **Severity:** HIGH
+**Status:** FIXED | **Severity:** HIGH
 
 **Description:** Units frequently get stuck walking into crates and barrels, unable to navigate around them despite NavigationAgent3D.
 
-**Root Cause:** Likely one of:
-1. Navigation mesh not properly baked around obstacle collision shapes
-2. Obstacle collision shapes don't match visual mesh
-3. NavigationAgent avoidance radius too small
-4. Units trying to path TO the container center (inside the collision)
+**Root Cause:** NavigationObstacle3D on crates was missing `avoidance_enabled = true` and explicit `avoidance_layers`.
 
-**Potential Fixes:**
-- Re-bake navigation mesh with proper obstacle margins
-- Adjust container collision shapes to match visual bounds
-- Increase NavigationAgent3D `radius` and `neighbor_distance`
-- When seeking containers, target a position NEAR the container, not its center
+**Fixes Applied:**
+- ✅ NavigationObstacle3D present on storage_crate_small and storage_barrel
+- ✅ storage_crate_small: Added `avoidance_enabled = true`, `avoidance_layers = 1`
+- ✅ storage_barrel: Added explicit `avoidance_layers = 1`
+- ✅ BTMoveToTarget arrival_distance increased to 3.5m (stops further from center)
+- ✅ NavigationAgent3D avoidance radius set to 0.8m
+
+### BUG: Animation Chaos (Sleeping/Sitting)
+**Status:** FIXED | **Severity:** MEDIUM
+
+**Description:** Sleeping and sitting animations triggered randomly regardless of context, and ended too quickly (5 seconds) causing jarring behavior.
+
+**Root Cause:** BTWander didn't check context for animations and used fixed short timers.
+
+**Fixes Applied:**
+- ✅ **Sleeping**: Only triggers when unit is IN SHELTER and energy < 50%
+- ✅ **Sleeping**: Unit stays asleep until energy reaches 85-90% (not a fixed timer)
+- ✅ **Sitting**: Only triggers when near a CONTAINER (crate) within 4m
+- ✅ **Sitting**: Unit stays sitting for minimum 1 game hour OR until energy reaches 75%
+- ✅ Wave animation only plays if morale > 80% (and only 0.5% chance per tick)
 
 ---
 
@@ -110,9 +130,19 @@ Used by `bt_seek_resource.gd` to find resources:
 |--------|-----------|----------|-------|
 | Taking from container | `opening_a_lid` | ~2s | Kneeling, opening |
 | Eating/consuming | `taking_item` | ~1s | Hand to mouth |
-| Resting | `idle` | Loop | Placeholder |
+| Standing idle | `idle` | Loop | Default idle |
+| Sitting down | `sitting_down_from_standing` | ~1.5s | Transition to sitting |
+| Sitting idle | `sitting_depressed` | Loop | Depressing survival situation |
+| Sitting wave | `sitting_raising_hand` | ~2s | Morale > 80%, rare |
+| Sleeping | `sleeping_idle` | Loop | Standard rest |
+| Sleeping restless | `sleeping_disturbed` | Loop | Low hunger/warmth/morale |
 | Walking | `walking` | Loop | Standard move |
 | Fleeing | `walking` | Loop | Uses speed multiplier |
+
+**Missing Transitions (TODO):**
+- `standing_to_sleeping` - for lying down from standing
+- `sleeping_to_standing` - for waking up
+- `sitting_to_standing` - for getting up from sitting
 
 ## Player Override Mechanism
 

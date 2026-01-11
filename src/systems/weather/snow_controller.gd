@@ -26,9 +26,104 @@ const BLIZZARD_FOG_SHADER: Shader = preload("res://src/systems/weather/blizzard_
 ## Height above camera to spawn particles
 @export var spawn_height_offset: float = 25.0
 
-## Camera far plane distances for visibility reduction
+## Camera far plane at clear weather
 @export var normal_far_distance: float = 4000.0
-@export var blizzard_far_distance: float = 150.0
+
+# =============================================================================
+# BASELINE FOG (Always-on ambient atmosphere)
+# =============================================================================
+@export_category("Baseline Fog")
+
+## Enable baseline atmospheric fog that's always present
+@export var baseline_fog_enabled: bool = true
+
+## Baseline volumetric fog density (~1/3 of light snow for subtle atmosphere)
+@export_range(0.0, 0.1, 0.001) var baseline_fog_density: float = 0.025
+
+## Baseline fog emission color (affects visibility from all angles)
+@export var baseline_fog_emission: Color = Color(0.15, 0.15, 0.18)
+
+# =============================================================================
+# LIGHT SNOW SETTINGS
+# =============================================================================
+@export_category("Light Snow")
+
+## Snow particle density (0-1)
+@export_range(0.0, 1.0, 0.01) var light_particle_ratio: float = 0.4
+
+## Wind speed during light snow
+@export_range(0.0, 30.0, 0.5) var light_wind_speed: float = 8.0
+
+## Particle wind multiplier
+@export_range(0.0, 5.0, 0.1) var light_particle_wind_mult: float = 0.8
+
+## Sun energy during light snow
+@export_range(0.0, 1.0, 0.01) var light_sun_energy: float = 0.7
+
+## Ambient light energy during light snow
+@export_range(0.0, 1.0, 0.01) var light_ambient_energy: float = 0.85
+
+## Volumetric fog density during light snow
+@export_range(0.0, 0.2, 0.001) var light_volumetric_fog_density: float = 0.04
+
+## Volumetric fog emission color during light snow
+@export var light_fog_emission: Color = Color(0.2, 0.2, 0.22)
+
+## Animated fog shader density during light snow
+@export_range(0.0, 5.0, 0.1) var light_fog_shader_density: float = 1.2
+
+## Animated fog shader emission during light snow
+@export var light_fog_shader_emission: Color = Color(0.25, 0.25, 0.28)
+
+## Camera visibility ratio (1.0 = normal, 0.1 = 10% of normal)
+@export_range(0.01, 1.0, 0.01) var light_camera_far_ratio: float = 0.4
+
+## Cloud coverage during light snow
+@export_range(0.0, 1.0, 0.01) var light_cumulus_coverage: float = 0.75
+
+## Atmosphere darkness during light snow
+@export_range(0.0, 1.0, 0.01) var light_atm_darkness: float = 0.65
+
+# =============================================================================
+# HEAVY BLIZZARD SETTINGS
+# =============================================================================
+@export_category("Heavy Blizzard")
+
+## Snow particle density (0-1)
+@export_range(0.0, 1.0, 0.01) var heavy_particle_ratio: float = 1.0
+
+## Wind speed during blizzard
+@export_range(0.0, 50.0, 0.5) var heavy_wind_speed: float = 25.0
+
+## Particle wind multiplier
+@export_range(0.0, 5.0, 0.1) var heavy_particle_wind_mult: float = 2.0
+
+## Sun energy during blizzard
+@export_range(0.0, 1.0, 0.01) var heavy_sun_energy: float = 0.25
+
+## Ambient light energy during blizzard
+@export_range(0.0, 1.0, 0.01) var heavy_ambient_energy: float = 0.4
+
+## Volumetric fog density during blizzard
+@export_range(0.0, 0.3, 0.001) var heavy_volumetric_fog_density: float = 0.08
+
+## Volumetric fog emission color during blizzard
+@export var heavy_fog_emission: Color = Color(0.25, 0.25, 0.27)
+
+## Animated fog shader density during blizzard
+@export_range(0.0, 10.0, 0.1) var heavy_fog_shader_density: float = 2.5
+
+## Animated fog shader emission during blizzard
+@export var heavy_fog_shader_emission: Color = Color(0.35, 0.35, 0.38)
+
+## Camera visibility ratio (0.0375 = ~150m visibility)
+@export_range(0.01, 1.0, 0.001) var heavy_camera_far_ratio: float = 0.0375
+
+## Cloud coverage during blizzard
+@export_range(0.0, 1.0, 0.01) var heavy_cumulus_coverage: float = 1.0
+
+## Atmosphere darkness during blizzard
+@export_range(0.0, 1.0, 0.01) var heavy_atm_darkness: float = 0.85
 
 ## Current snow intensity
 var current_intensity: SnowIntensity = SnowIntensity.NONE
@@ -79,80 +174,76 @@ var _original_atm_darkness: float = 0.5
 var _original_atm_thickness: float = 0.7
 var _original_atm_sun_intensity: float = 18.0
 
-## Snow intensity configurations
-## Uses camera far plane reduction + animated fog shader for true visibility reduction
-## Reduced global volumetric fog to avoid highlighting distant objects
-var _intensity_configs: Dictionary = {
-	SnowIntensity.NONE: {
-		"particle_amount_ratio": 0.0,
-		"sky3d_wind_speed": 0.0,
-		"particle_wind_mult": 0.0,
-		"sun_energy": 1.0,
-		"ambient_energy": 1.0,
-		# Minimal global volumetric fog - just for atmosphere
-		"volumetric_fog_enabled": false,
-		"volumetric_fog_density": 0.0,
-		"volumetric_fog_emission": Color(0, 0, 0),
-		# Animated fog volume (shader-based)
-		"fog_shader_density": 0.0,
-		"fog_shader_emission": Vector3(0, 0, 0),
-		# Camera far distance (no reduction)
-		"camera_far_ratio": 1.0,
-		# SkyDome overcast (use originals)
-		"cumulus_coverage": -1.0,  # -1 = use original
-		"cumulus_intensity": -1.0,
-		"cirrus_coverage": -1.0,
-		"atm_darkness": -1.0,
-		"atm_thickness": -1.0,
-		"atm_sun_intensity": -1.0,
-	},
-	SnowIntensity.LIGHT: {
-		"particle_amount_ratio": 0.4,
-		"sky3d_wind_speed": 8.0,
-		"particle_wind_mult": 0.8,
-		"sun_energy": 0.7,
-		"ambient_energy": 0.85,
-		# Global volumetric fog - provides base haze
-		"volumetric_fog_enabled": true,
-		"volumetric_fog_density": 0.04,
-		"volumetric_fog_emission": Color(0.2, 0.2, 0.22),
-		# Animated fog volume - visible drifting bands on top of volumetric
-		"fog_shader_density": 1.2,
-		"fog_shader_emission": Vector3(0.25, 0.25, 0.28),
-		# Moderate visibility reduction
-		"camera_far_ratio": 0.4,  # 40% of normal = ~1600m
-		# SkyDome overcast - partial cloud cover
-		"cumulus_coverage": 0.75,
-		"cumulus_intensity": 0.45,
-		"cirrus_coverage": 0.7,
-		"atm_darkness": 0.65,
-		"atm_thickness": 1.2,
-		"atm_sun_intensity": 10.0,
-	},
-	SnowIntensity.HEAVY: {
-		"particle_amount_ratio": 1.0,
-		"sky3d_wind_speed": 25.0,
-		"particle_wind_mult": 2.0,
-		"sun_energy": 0.25,
-		"ambient_energy": 0.4,
-		# Strong global volumetric fog - thick base layer
-		"volumetric_fog_enabled": true,
-		"volumetric_fog_density": 0.08,
-		"volumetric_fog_emission": Color(0.25, 0.25, 0.27),
-		# Dense animated fog volume - drifting bands on top
-		"fog_shader_density": 2.5,
-		"fog_shader_emission": Vector3(0.35, 0.35, 0.38),
-		# Severe visibility reduction - can't see past ~150m
-		"camera_far_ratio": 0.0375,  # 3.75% of normal = ~150m
-		# SkyDome overcast - full blizzard sky
-		"cumulus_coverage": 1.0,
-		"cumulus_intensity": 0.25,
-		"cirrus_coverage": 0.9,
-		"atm_darkness": 0.85,
-		"atm_thickness": 2.0,
-		"atm_sun_intensity": 4.0,
-	}
-}
+
+## Build intensity config from exported variables
+func _get_intensity_config(intensity: SnowIntensity) -> Dictionary:
+	match intensity:
+		SnowIntensity.NONE:
+			return {
+				"particle_amount_ratio": 0.0,
+				"sky3d_wind_speed": 0.0,
+				"particle_wind_mult": 0.0,
+				"sun_energy": 1.0,
+				"ambient_energy": 1.0,
+				# Baseline fog (always-on atmospheric effect)
+				"volumetric_fog_enabled": baseline_fog_enabled,
+				"volumetric_fog_density": baseline_fog_density,
+				"volumetric_fog_emission": baseline_fog_emission,
+				# No animated fog during clear weather
+				"fog_shader_density": 0.0,
+				"fog_shader_emission": Vector3.ZERO,
+				# Full camera distance
+				"camera_far_ratio": 1.0,
+				# SkyDome uses originals (-1 = use original)
+				"cumulus_coverage": -1.0,
+				"cumulus_intensity": -1.0,
+				"cirrus_coverage": -1.0,
+				"atm_darkness": -1.0,
+				"atm_thickness": -1.0,
+				"atm_sun_intensity": -1.0,
+			}
+		SnowIntensity.LIGHT:
+			return {
+				"particle_amount_ratio": light_particle_ratio,
+				"sky3d_wind_speed": light_wind_speed,
+				"particle_wind_mult": light_particle_wind_mult,
+				"sun_energy": light_sun_energy,
+				"ambient_energy": light_ambient_energy,
+				"volumetric_fog_enabled": true,
+				"volumetric_fog_density": light_volumetric_fog_density,
+				"volumetric_fog_emission": light_fog_emission,
+				"fog_shader_density": light_fog_shader_density,
+				"fog_shader_emission": Vector3(light_fog_shader_emission.r, light_fog_shader_emission.g, light_fog_shader_emission.b),
+				"camera_far_ratio": light_camera_far_ratio,
+				"cumulus_coverage": light_cumulus_coverage,
+				"cumulus_intensity": 0.45,
+				"cirrus_coverage": 0.7,
+				"atm_darkness": light_atm_darkness,
+				"atm_thickness": 1.2,
+				"atm_sun_intensity": 10.0,
+			}
+		SnowIntensity.HEAVY:
+			return {
+				"particle_amount_ratio": heavy_particle_ratio,
+				"sky3d_wind_speed": heavy_wind_speed,
+				"particle_wind_mult": heavy_particle_wind_mult,
+				"sun_energy": heavy_sun_energy,
+				"ambient_energy": heavy_ambient_energy,
+				"volumetric_fog_enabled": true,
+				"volumetric_fog_density": heavy_volumetric_fog_density,
+				"volumetric_fog_emission": heavy_fog_emission,
+				"fog_shader_density": heavy_fog_shader_density,
+				"fog_shader_emission": Vector3(heavy_fog_shader_emission.r, heavy_fog_shader_emission.g, heavy_fog_shader_emission.b),
+				"camera_far_ratio": heavy_camera_far_ratio,
+				"cumulus_coverage": heavy_cumulus_coverage,
+				"cumulus_intensity": 0.25,
+				"cirrus_coverage": 0.9,
+				"atm_darkness": heavy_atm_darkness,
+				"atm_thickness": 2.0,
+				"atm_sun_intensity": 4.0,
+			}
+		_:
+			return _get_intensity_config(SnowIntensity.NONE)
 
 
 func _ready() -> void:
@@ -208,6 +299,23 @@ func _store_original_values() -> void:
 		_original_camera_far = _camera.far
 		normal_far_distance = _original_camera_far
 		print("[SnowController] Stored camera far: ", _original_camera_far)
+
+	# Apply baseline fog immediately (always-on atmospheric effect)
+	_apply_baseline_fog()
+
+
+func _apply_baseline_fog() -> void:
+	## Apply baseline atmospheric fog on startup.
+	if not baseline_fog_enabled:
+		return
+
+	if _environment:
+		_environment.volumetric_fog_enabled = true
+		_environment.volumetric_fog_density = baseline_fog_density
+		_environment.volumetric_fog_emission = baseline_fog_emission
+		_environment.volumetric_fog_albedo = Color(0.9, 0.9, 0.95)
+		_environment.volumetric_fog_emission_energy = 1.0
+		print("[SnowController] Applied baseline fog - density: ", baseline_fog_density, ", emission: ", baseline_fog_emission)
 
 
 func _process(delta: float) -> void:
@@ -417,7 +525,7 @@ func _update_wind() -> void:
 
 	# Update snow particle gravity to match wind
 	if _particle_material:
-		var config: Dictionary = _intensity_configs[_target_intensity if _transition_progress < 1.0 else current_intensity]
+		var config: Dictionary = _get_intensity_config(_target_intensity if _transition_progress < 1.0 else current_intensity)
 		var mult: float = config["particle_wind_mult"]
 
 		var wind_x: float = sin(wind_dir) * wind_speed * mult
@@ -431,11 +539,12 @@ func _update_wind() -> void:
 
 
 func _apply_transition() -> void:
-	var from_config: Dictionary = _intensity_configs[current_intensity]
-	var to_config: Dictionary = _intensity_configs[_target_intensity]
+	var from_config: Dictionary = _get_intensity_config(current_intensity)
+	var to_config: Dictionary = _get_intensity_config(_target_intensity)
 	var t: float = _transition_progress
 
 	# Determine from/to values, using originals when transitioning from/to NONE
+	# Note: For fog, we now use config values directly (NONE has baseline fog)
 	var is_from_none := current_intensity == SnowIntensity.NONE
 	var is_to_none := _target_intensity == SnowIntensity.NONE
 
@@ -465,38 +574,39 @@ func _apply_transition() -> void:
 			var to_ambient: float = _original_ambient_energy if is_to_none else to_config["ambient_energy"]
 			sky3d.ambient_energy = lerpf(from_ambient, to_ambient, t)
 
-	# Volumetric fog (Godot native - this actually works for blizzards)
+	# Volumetric fog (Godot native - transitions to baseline fog, not zero)
 	if _environment:
-		var from_fog_density: float = _original_volumetric_fog_density if is_from_none else from_config["volumetric_fog_density"]
-		var to_fog_density: float = _original_volumetric_fog_density if is_to_none else to_config["volumetric_fog_density"]
+		# Use config values directly - NONE config now has baseline fog values
+		var from_fog_density: float = from_config["volumetric_fog_density"]
+		var to_fog_density: float = to_config["volumetric_fog_density"]
 		var target_fog_density: float = lerpf(from_fog_density, to_fog_density, t)
 
-		var from_fog_emission: Color = _original_volumetric_fog_emission if is_from_none else from_config["volumetric_fog_emission"]
-		var to_fog_emission: Color = _original_volumetric_fog_emission if is_to_none else to_config["volumetric_fog_emission"]
+		var from_fog_emission: Color = from_config["volumetric_fog_emission"]
+		var to_fog_emission: Color = to_config["volumetric_fog_emission"]
 		var target_fog_emission: Color = from_fog_emission.lerp(to_fog_emission, t)
 
-		# Enable/disable based on target
-		var should_enable: bool = to_config["volumetric_fog_enabled"] if not is_to_none else _original_volumetric_fog_enabled
+		# Enable/disable based on target config
+		var should_enable: bool = to_config["volumetric_fog_enabled"]
 		_environment.volumetric_fog_enabled = should_enable or target_fog_density > 0.001
 		_environment.volumetric_fog_density = target_fog_density
-		_environment.volumetric_fog_emission = target_fog_emission  # Key for visibility from all angles
-		_environment.volumetric_fog_albedo = Color(0.9, 0.9, 0.95)  # White-ish for snow
-		_environment.volumetric_fog_emission_energy = 1.0  # Full emission strength
+		_environment.volumetric_fog_emission = target_fog_emission
+		_environment.volumetric_fog_albedo = Color(0.9, 0.9, 0.95)
+		_environment.volumetric_fog_emission_energy = 1.0
 
-	# Animated fog shader (localized effect around camera)
+	# Animated fog shader (localized effect around camera - use config values)
 	if _fog_shader_material:
-		var from_density: float = 0.0 if is_from_none else from_config["fog_shader_density"]
-		var to_density: float = 0.0 if is_to_none else to_config["fog_shader_density"]
+		var from_density: float = from_config["fog_shader_density"]
+		var to_density: float = to_config["fog_shader_density"]
 		_fog_shader_material.set_shader_parameter("density", lerpf(from_density, to_density, t))
 
-		var from_emission: Vector3 = Vector3.ZERO if is_from_none else from_config["fog_shader_emission"]
-		var to_emission: Vector3 = Vector3.ZERO if is_to_none else to_config["fog_shader_emission"]
+		var from_emission: Vector3 = from_config["fog_shader_emission"]
+		var to_emission: Vector3 = to_config["fog_shader_emission"]
 		_fog_shader_material.set_shader_parameter("emission", from_emission.lerp(to_emission, t))
 
-	# Camera far plane reduction (this is what actually hides the mountains)
+	# Camera far plane reduction (use config values)
 	if _camera:
-		var from_far_ratio: float = 1.0 if is_from_none else from_config["camera_far_ratio"]
-		var to_far_ratio: float = 1.0 if is_to_none else to_config["camera_far_ratio"]
+		var from_far_ratio: float = from_config["camera_far_ratio"]
+		var to_far_ratio: float = to_config["camera_far_ratio"]
 		var target_ratio: float = lerpf(from_far_ratio, to_far_ratio, t)
 		_camera.far = normal_far_distance * target_ratio
 
@@ -565,13 +675,13 @@ func _apply_transition() -> void:
 
 
 func _apply_intensity_config(intensity: SnowIntensity) -> void:
-	var config: Dictionary = _intensity_configs[intensity]
+	var config: Dictionary = _get_intensity_config(intensity)
 	var is_none := intensity == SnowIntensity.NONE
 
 	if is_instance_valid(_snow_particles):
 		_snow_particles.amount_ratio = config["particle_amount_ratio"]
 
-	# Sky3D properties (just lighting and wind)
+	# Sky3D properties (lighting and wind restore to originals for NONE)
 	if sky3d:
 		if "wind_speed" in sky3d:
 			sky3d.wind_speed = _original_wind_speed if is_none else config["sky3d_wind_speed"]
@@ -580,24 +690,23 @@ func _apply_intensity_config(intensity: SnowIntensity) -> void:
 		if "ambient_energy" in sky3d:
 			sky3d.ambient_energy = _original_ambient_energy if is_none else config["ambient_energy"]
 
-	# Volumetric fog
+	# Volumetric fog (use config values - NONE has baseline fog)
 	if _environment:
-		_environment.volumetric_fog_enabled = _original_volumetric_fog_enabled if is_none else config["volumetric_fog_enabled"]
-		_environment.volumetric_fog_density = _original_volumetric_fog_density if is_none else config["volumetric_fog_density"]
-		_environment.volumetric_fog_emission = _original_volumetric_fog_emission if is_none else config["volumetric_fog_emission"]
-		if not is_none:
+		_environment.volumetric_fog_enabled = config["volumetric_fog_enabled"]
+		_environment.volumetric_fog_density = config["volumetric_fog_density"]
+		_environment.volumetric_fog_emission = config["volumetric_fog_emission"]
+		if config["volumetric_fog_enabled"]:
 			_environment.volumetric_fog_albedo = Color(0.9, 0.9, 0.95)
 			_environment.volumetric_fog_emission_energy = 1.0
 
-	# Animated fog shader
+	# Animated fog shader (use config values)
 	if _fog_shader_material:
-		_fog_shader_material.set_shader_parameter("density", 0.0 if is_none else config["fog_shader_density"])
-		_fog_shader_material.set_shader_parameter("emission", Vector3.ZERO if is_none else config["fog_shader_emission"])
+		_fog_shader_material.set_shader_parameter("density", config["fog_shader_density"])
+		_fog_shader_material.set_shader_parameter("emission", config["fog_shader_emission"])
 
-	# Camera far plane
+	# Camera far plane (use config values)
 	if _camera:
-		var far_ratio: float = 1.0 if is_none else config["camera_far_ratio"]
-		_camera.far = normal_far_distance * far_ratio
+		_camera.far = normal_far_distance * config["camera_far_ratio"]
 
 	# SkyDome overcast effect
 	if _sky_dome:

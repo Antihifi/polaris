@@ -98,7 +98,8 @@ func _setup_click_area() -> void:
 	collision.position = Vector3(0, box.size.y * 0.5, 0)  # Center at bottom
 
 	click_area.add_child(collision)
-	parent.add_child(click_area)
+	# Use call_deferred to avoid "busy setting up children" error during _ready()
+	parent.call_deferred("add_child", click_area)
 
 
 func can_accept_item(item: InventoryItem) -> bool:

@@ -37,6 +37,11 @@ func _ready() -> void:
 		# Programmatic fallback
 		_build_ui()
 
+	# Ensure close button is always clickable (above grid, with correct mouse filter)
+	if _close_button:
+		_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
+		_close_button.z_index = 10  # Draw above grid elements
+
 	hide()
 
 
@@ -117,6 +122,7 @@ func hide_panel() -> void:
 
 
 func _on_close_pressed() -> void:
+	print("[InventoryPanel] Close button pressed")
 	hide_panel()
 
 

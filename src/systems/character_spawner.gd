@@ -57,9 +57,15 @@ func _ready() -> void:
 func spawn_survivors(count: int, center: Vector3 = Vector3.INF) -> Array[Node]:
 	## Spawn multiple units around a center point.
 	## Returns array of spawned unit nodes.
+	## If center is INF, uses spawn_center or GameManager ship position.
 
 	if center == Vector3.INF:
-		center = spawn_center
+		# Try to get ship position from GameManager first
+		var ship_pos := GameManager.get_ship_position()
+		if ship_pos != Vector3.ZERO:
+			center = ship_pos
+		else:
+			center = spawn_center
 
 	var spawned: Array[Node] = []
 	var positions := _generate_spawn_positions(count, center)
@@ -136,12 +142,13 @@ func _randomize_stats(unit: Node) -> void:
 
 	var stats: SurvivorStats = unit.stats
 
-	# Start core stats low (55-60%) to force immediate need-seeking behavior for testing
-	stats.hunger = _rng.randf_range(55.0, 60.0)
-	stats.warmth = _rng.randf_range(55.0, 60.0)
-	stats.health = _rng.randf_range(55.0, 60.0)
-	stats.morale = _rng.randf_range(55.0, 60.0)
-	stats.energy = _rng.randf_range(55.0, 60.0)
+	# Start warmth higher (60-75%) to prevent fire rush at spawn
+	# Other stats lower (45-60%) to drive need-seeking behavior
+	stats.hunger = _rng.randf_range(45.0, 60.0)
+	stats.warmth = _rng.randf_range(60.0, 75.0)  # Higher warmth prevents fire stampede
+	stats.health = _rng.randf_range(55.0, 70.0)
+	stats.morale = _rng.randf_range(50.0, 65.0)
+	stats.energy = _rng.randf_range(50.0, 70.0)
 
 	# Vary skills significantly
 	stats.hunting_skill = _vary_value(25.0, 0.5)

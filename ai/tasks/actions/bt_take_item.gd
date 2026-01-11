@@ -33,6 +33,12 @@ func _tick(_delta: float) -> Status:
 		print("[BTTakeItem] FAIL: container is freed/invalid")
 		return FAILURE
 
+	# Check if container still has items of the desired category BEFORE starting
+	# This prevents getting stuck if container was emptied while walking to it
+	if not _animation_started and not _container_has_item(container):
+		print("[BTTakeItem] FAIL: container has no %s items" % item_category)
+		return FAILURE
+
 	# Start animation if not started
 	if not _animation_started:
 		if unit.has_node("AnimationPlayer"):
@@ -84,6 +90,18 @@ func _transfer_item(container: Node, unit: Node) -> bool:
 			else:
 				print("[BTTakeItem] FAIL: couldn't remove item from container")
 
+	return false
+
+
+func _container_has_item(container: Node) -> bool:
+	## Check if container has at least one item matching item_category.
+	var container_inv: Inventory = _get_inventory(container, "container")
+	if not container_inv:
+		return false
+	for item in container_inv.get_items():
+		var cat: String = item.get_property("category", "misc")
+		if cat == item_category:
+			return true
 	return false
 
 

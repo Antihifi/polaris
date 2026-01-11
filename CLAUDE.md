@@ -71,6 +71,14 @@ polaris/
 │   │   └── weather/              # Weather effects
 │   │       ├── snow_controller.gd    # Snow intensity management
 │   │       └── snow_particles.tscn   # GPU particle system
+│   ├── terrain/                  # Procedural terrain generation
+│   │   ├── terrain_generator.gd  # Main orchestrator, generation pipeline
+│   │   ├── island_shape.gd       # Teardrop island mask generation
+│   │   ├── heightmap_generator.gd# Multi-octave noise heightmaps
+│   │   ├── texture_painter.gd    # Height/slope-based texture assignment
+│   │   ├── poi_placer.gd         # POI placement with pathfinding validation
+│   │   ├── seed_manager.gd       # Seed handling and persistence
+│   │   └── CLAUDE.md             # Comprehensive implementation guide
 │   ├── ui/                       # User interface
 │   │   ├── game_hud.gd           # Main HUD manager
 │   │   ├── time_hud.gd           # Clock, date, temperature display
@@ -122,7 +130,7 @@ Configured in `project.godot`:
 |-------|---------|-------------------|
 | **LimboAI** | Behavior trees + state machines for AI | `BTPlayer` on each survivor unit (see [AI System](src/ai/CLAUDE.md)) |
 | **Sky3D** | Day/night cycle, sun/moon position, atmosphere | `TimeManager` syncs time, sets arctic latitude |
-| **Terrain3D** | Large terrain with LOD, painting, navigation | `RTSInputHandler` queries height for click-to-move |
+| **Terrain3D** | Large terrain with LOD, procedural generation | `TerrainGenerator` uses API for heightmap import, texture painting; `RTSInputHandler` queries height |
 | **indie_blueprint_rpg** | Health component, loot tables, crafting | `Survivor` uses `IndieBlueprintHealth` |
 
 ## System Integration Map
@@ -362,6 +370,7 @@ Each major system has its own CLAUDE.md with detailed documentation:
 - [Character System](src/characters/CLAUDE.md) - Survivors, stats, traits
 - [Control System](src/control/CLAUDE.md) - Input handling, selection
 - [Game Systems](src/systems/CLAUDE.md) - Time, weather, Sky3D integration
+- [Terrain Generation](src/terrain/CLAUDE.md) - **Procedural island generation, Terrain3D API, NavMesh baking**
 - [UI System](src/ui/CLAUDE.md) - HUD, stats panels, time display
 
 ## Scene Structure

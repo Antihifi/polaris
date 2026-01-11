@@ -6,8 +6,12 @@ class_name BTUtilityWrapper extends BTDecorator
 @export var need_name: StringName = &"hunger"
 @export var base_score: float = 1.0
 @export var score_multiplier: float = 1.0
+## Extra score added when extreme weather is active (temp < -20°C)
+## Set to 1.0 for shelter to prioritize it in blizzards
+@export var extreme_weather_boost: float = 0.0
 
 var _cached_score: float = 0.0
+var _cached_time_manager: Node = null
 
 
 func _generate_name() -> String:
@@ -41,7 +45,28 @@ func _update_score() -> void:
 	var urgency: float = 1.0 - (need_value / 100.0)
 
 	# Apply multiplier and base score
-	_cached_score = (base_score + urgency) * score_multiplier
+	var score: float = (base_score + urgency) * score_multiplier
+
+	# Add extreme weather boost if enabled and conditions met
+	if extreme_weather_boost > 0.0 and _is_extreme_weather():
+		score += extreme_weather_boost
+
+	_cached_score = score
+
+
+func _is_extreme_weather() -> bool:
+	## Returns true if temperature < -20°C (extreme cold requiring shelter)
+	if not _cached_time_manager:
+		_cached_time_manager = Engine.get_singleton("TimeManager") if Engine.has_singleton("TimeManager") else null
+		if not _cached_time_manager:
+			_cached_time_manager = agent.get_tree().root.get_node_or_null("TimeManager")
+
+	if not _cached_time_manager:
+		return false
+
+	var temp: float = _cached_time_manager.current_temperature if "current_temperature" in _cached_time_manager else 0.0
+	return temp < -20.0
+	# TODO: Add blizzard check when weather system is implemented
 
 
 func get_utility_score() -> float:
