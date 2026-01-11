@@ -10,10 +10,19 @@ signal generation_completed(pois: Dictionary)
 signal generation_failed(reason: String)
 
 ## Terrain resolution (pixels)
-const TERRAIN_RESOLUTION: int = 1024
+## 4096x4096 for highest detail - Terrain3D supports this (docs confirm 4k+ imports)
+## This gives us 2.5m per vertex for a 10km terrain - excellent detail for arctic survival
+const TERRAIN_RESOLUTION: int = 4096
 
-## Meters per pixel in heightmap
-const METERS_PER_PIXEL: float = 10.0
+## Target world size in meters (10km x 10km)
+const WORLD_SIZE_METERS: float = 10240.0
+
+## Vertex spacing: world_size / resolution = 10240 / 4096 = 2.5 meters per vertex
+## This is set on Terrain3D.vertex_spacing before import
+const VERTEX_SPACING: float = WORLD_SIZE_METERS / float(TERRAIN_RESOLUTION)  # 2.5
+
+## Derived: meters per pixel (same as vertex_spacing for our setup)
+const METERS_PER_PIXEL: float = VERTEX_SPACING  # 2.5m per pixel
 
 ## NavMesh baking timeout (seconds)
 const NAVMESH_TIMEOUT: float = 180.0
@@ -236,154 +245,120 @@ func _carve_inlet() -> void:
 
 
 ## Stage 4: Import heightmap to Terrain3D
-## CRITICAL: import_images() does NOT create regions - it only imports INTO existing regions.
-## We must use add_region_blankp() to create regions at runtime, then set_height() to apply data.
+## Uses official import_images() approach from Terrain3D demo (CodeGenerated.gd)
+##
+## CRITICAL SETTINGS (based on official demo and documentation):
+## 1. vertex_spacing = 2.5 - set BEFORE import, controls world scale (4096 * 2.5 = 10,240m)
+## 2. region_size = SIZE_2048 - maximum available, needed for 4096x4096 image (4 regions)
+## 3. offset = -half_image_size in PIXEL coordinates (not world coords!)
+## 4. scale = height multiplier (1.0 since our heights are already in meters)
 func _import_to_terrain() -> bool:
-	print("[TerrainGenerator] Creating terrain regions and importing heights...")
+	print("[TerrainGenerator] ========================================")
+	print("[TerrainGenerator] Importing terrain using import_images()...")
+	print("[TerrainGenerator] Resolution: %d, Vertex spacing: %.2f, World size: %.0fm" % [
+		TERRAIN_RESOLUTION, VERTEX_SPACING, WORLD_SIZE_METERS
+	])
 
-	if not _terrain or not "data" in _terrain:
+	if not _terrain:
 		push_error("[TerrainGenerator] No Terrain3D!")
 		return false
 
-	var terrain_data = _terrain.data
-	if not terrain_data:
-		push_error("[TerrainGenerator] No terrain data!")
-		return false
-
 	# Debug: Print heightmap stats before import
-	var stats := HeightmapGenerator.get_height_stats(_heightmap)
+	var hm_stats := HeightmapGenerator.get_height_stats(_heightmap)
 	print("[TerrainGenerator] Heightmap stats - Min: %.2f, Max: %.2f, Avg: %.2f" % [
-		stats.min, stats.max, stats.average
+		hm_stats.min, hm_stats.max, hm_stats.average
+	])
+	print("[TerrainGenerator] Heightmap size: %dx%d, format: %d" % [
+		_heightmap.get_width(), _heightmap.get_height(), _heightmap.get_format()
 	])
 
-	# Clear data_directory to start fresh (no disk-loaded regions)
-	if "data_directory" in _terrain:
-		var old_dir: String = _terrain.data_directory
-		if not old_dir.is_empty():
-			print("[TerrainGenerator] Clearing data_directory (was: %s)" % old_dir)
-			_terrain.data_directory = ""
+	# STEP 1: Set vertex_spacing BEFORE import
+	# This controls world scale: 4096 pixels * 2.5 spacing = 10,240m terrain
+	# Documentation: "vertex_spacing determines the distance between vertices"
+	_terrain.vertex_spacing = VERTEX_SPACING
+	print("[TerrainGenerator] Set vertex_spacing to %.2f" % VERTEX_SPACING)
 
-	# Re-fetch terrain_data after clearing (may have been recreated)
-	terrain_data = _terrain.data
-	if not terrain_data:
-		push_error("[TerrainGenerator] Terrain data null after clearing!")
-		return false
+	# STEP 2: Set region_size BEFORE import
+	# SIZE_2048 is the maximum available (2048x2048 vertices per region)
+	# For 4096x4096 image, we need 2x2 = 4 regions with SIZE_2048
+	_terrain.region_size = Terrain3D.SIZE_2048
+	print("[TerrainGenerator] Set region_size to SIZE_2048")
 
-	# Remove any existing regions
-	if terrain_data.has_method("get_regions_active"):
-		var regions = terrain_data.get_regions_active()
-		print("[TerrainGenerator] Clearing %d existing regions..." % regions.size())
-		for region in regions:
-			if terrain_data.has_method("remove_region"):
-				terrain_data.remove_region(region, false)
+	# STEP 3: Calculate offset to center terrain at world origin
+	# The offset is in PIXEL coordinates (image space), NOT world coordinates!
+	# Official demo uses Vector3(-1024, 0, -1024) for 2048x2048 image
+	# We use Vector3(-2048, 0, -2048) for 4096x4096 image
+	var img_size: int = _heightmap.get_width()
+	var half_img: float = float(img_size) / 2.0  # 2048 for 4096x4096
+	var offset := Vector3(-half_img, 0, -half_img)
+	print("[TerrainGenerator] Import offset (pixel coords): %s" % offset)
 
-	# Set vertex spacing BEFORE creating regions
-	# This is CRITICAL - affects region size in world units
-	if "vertex_spacing" in _terrain:
-		_terrain.vertex_spacing = METERS_PER_PIXEL  # 10.0
-		print("[TerrainGenerator] Set vertex_spacing to %.1f" % METERS_PER_PIXEL)
-	else:
-		push_warning("[TerrainGenerator] Could not set vertex_spacing!")
+	# STEP 4: Height scale
+	# Our heightmap stores actual meters in .r channel (0-150m range)
+	# import_images multiplies pixel values by this scale
+	# Since heights are already in meters, scale = 1.0
+	var height_scale := 1.0
 
-	# Re-fetch terrain_data after changing vertex_spacing
-	terrain_data = _terrain.data
-	if not terrain_data:
-		push_error("[TerrainGenerator] Terrain data null after setting vertex_spacing!")
-		return false
+	# Debug: Show what world coordinates the terrain will cover
+	var world_min := Vector3(-half_img * VERTEX_SPACING, 0, -half_img * VERTEX_SPACING)
+	var world_max := Vector3(half_img * VERTEX_SPACING, 0, half_img * VERTEX_SPACING)
+	print("[TerrainGenerator] Expected world coverage: min=%s, max=%s (%.0fm x %.0fm)" % [
+		world_min, world_max, world_max.x - world_min.x, world_max.z - world_min.z
+	])
 
-	# Calculate terrain bounds
-	var terrain_size := float(TERRAIN_RESOLUTION) * METERS_PER_PIXEL  # 1024 * 10 = 10240m
-	var half_size := terrain_size / 2.0  # 5120m
+	# Import the heightmap - this creates regions automatically!
+	# Array format: [height_image, control_image, color_image]
+	var images: Array[Image] = []
+	images.resize(3)
+	images[0] = _heightmap  # Height map (FORMAT_RF with heights in meters)
+	images[1] = null        # Control map (textures) - will paint in next stage
+	images[2] = null        # Color map - not used
 
-	# Get region size (default is 1024 vertices, so 1024 * vertex_spacing meters)
-	var region_size_vertices: int = 1024
-	if _terrain.has_method("get_region_size"):
-		region_size_vertices = _terrain.get_region_size()
-	var region_size_meters: float = float(region_size_vertices) * METERS_PER_PIXEL
+	# import_images(images, global_position, height_offset, height_scale)
+	# - global_position: offset in PIXEL coordinates (image space)
+	# - height_offset: added to all height values (0.0 for us)
+	# - height_scale: multiplied with height values (1.0 since already in meters)
+	print("[TerrainGenerator] Calling import_images()...")
+	_terrain.data.import_images(images, offset, 0.0, height_scale)
+	print("[TerrainGenerator] import_images() completed")
 
-	print("[TerrainGenerator] Region size: %d vertices = %.0fm" % [region_size_vertices, region_size_meters])
-	print("[TerrainGenerator] Terrain size: %.0fm x %.0fm (half: %.0fm)" % [terrain_size, terrain_size, half_size])
-
-	# Create blank regions to cover the entire terrain
-	# We need regions from -half_size to +half_size on both X and Z
-	var regions_created := 0
-	var step := region_size_meters
-	var z := -half_size
-	while z < half_size:
-		var x := -half_size
-		while x < half_size:
-			var world_pos := Vector3(x + step / 2.0, 0, z + step / 2.0)  # Center of region
-			if terrain_data.has_method("add_region_blankp"):
-				terrain_data.add_region_blankp(world_pos, false)
-				regions_created += 1
-			else:
-				push_error("[TerrainGenerator] add_region_blankp() method not found!")
-				return false
-			x += step
-		z += step
-
-	print("[TerrainGenerator] Created %d blank regions" % regions_created)
+	# Wait a frame for Terrain3D to process the import
+	await get_tree().process_frame
 
 	# Verify regions were created
-	var region_count: int = 0
-	if terrain_data.has_method("get_region_count"):
-		region_count = terrain_data.get_region_count()
-	print("[TerrainGenerator] Region count after creation: %d" % region_count)
+	var region_count: int = _terrain.data.get_region_count()
+	print("[TerrainGenerator] Region count after import: %d" % region_count)
+
 	if region_count == 0:
-		push_error("[TerrainGenerator] Failed to create regions!")
+		push_error("[TerrainGenerator] import_images() created no regions!")
+		push_error("[TerrainGenerator] This may happen if heightmap format is wrong.")
+		push_error("[TerrainGenerator] Expected FORMAT_RF (32-bit float), got: %d" % _heightmap.get_format())
 		return false
 
-	# Now set height values from our procedural heightmap
-	print("[TerrainGenerator] Applying heightmap data to %d x %d pixels..." % [_heightmap.get_width(), _heightmap.get_height()])
-	var width := _heightmap.get_width()
-	var height := _heightmap.get_height()
-	var half_width := float(width) / 2.0
-	var half_height := float(height) / 2.0
+	# Recalculate height range
+	_terrain.data.calc_height_range(true)
+	print("[TerrainGenerator] Height range recalculated")
 
-	for py in range(height):
-		for px in range(width):
-			var h: float = _heightmap.get_pixel(px, py).r
-			var world_x := (float(px) - half_width) * METERS_PER_PIXEL
-			var world_z := (float(py) - half_height) * METERS_PER_PIXEL
-			terrain_data.set_height(Vector3(world_x, 0, world_z), h)
+	# Verify height queries work
+	var test_h: float = _terrain.data.get_height(Vector3.ZERO)
+	print("[TerrainGenerator] Height at origin after import: %.2f" % test_h)
 
-		# Progress update every 64 rows
-		if py % 64 == 0:
-			await get_tree().process_frame
-			generation_progress.emit("Applying heights...", 0.35 + 0.15 * (float(py) / float(height)))
+	# Test positions across the 10km terrain to verify coverage
+	# With 4096 resolution and 2.5m spacing, terrain spans -5120 to +5120
+	var test_positions := [
+		Vector3(0, 0, 0),           # Center
+		Vector3(2000, 0, 2000),     # NE quadrant
+		Vector3(-2000, 0, -2000),   # SW quadrant
+		Vector3(4000, 0, 0),        # Far east (near edge)
+		Vector3(0, 0, -4000),       # Far north (near edge)
+	]
+	print("[TerrainGenerator] Testing height queries across terrain:")
+	for pos in test_positions:
+		var h: float = _terrain.data.get_height(pos)
+		var status := "OK" if not is_nan(h) else "NaN!"
+		print("[TerrainGenerator]   Height at %s: %.2f [%s]" % [pos, h, status])
 
-	print("[TerrainGenerator] Heightmap data applied")
-
-	# Finalize terrain - order matters!
-	# 1. Force terrain to recalculate height range first
-	if terrain_data.has_method("calc_height_range"):
-		terrain_data.calc_height_range(true)
-		print("[TerrainGenerator] Height range recalculated")
-
-	# 2. Update all terrain maps (height, control, color)
-	if terrain_data.has_method("update_maps"):
-		terrain_data.update_maps()
-		print("[TerrainGenerator] Terrain maps updated")
-
-	# 3. Wait for terrain to process the updates
-	await get_tree().process_frame
-	await get_tree().process_frame
-
-	# 4. Force terrain to rebuild its visual mesh
-	if _terrain.has_method("update_aabbs"):
-		_terrain.update_aabbs()
-		print("[TerrainGenerator] Terrain AABBs updated")
-
-	# 5. Update collider for physics (important for raycasting)
-	if _terrain.has_method("update_collider"):
-		_terrain.update_collider()
-		print("[TerrainGenerator] Collider updated")
-
-	# 6. Wait more frames for terrain mesh to fully rebuild
-	await get_tree().process_frame
-	await get_tree().process_frame
-	await get_tree().process_frame
-
+	print("[TerrainGenerator] ========================================")
 	print("[TerrainGenerator] Terrain import complete!")
 	return true
 
@@ -396,13 +371,14 @@ func _verify_terrain_import() -> void:
 
 	var terrain_data = _terrain.data
 
-	# Test multiple positions to verify terrain data is actually applied
+	# Test multiple positions across 10km terrain to verify coverage
+	# With 4096 resolution and 2.5m spacing, terrain spans -5120 to +5120
 	var test_positions: Array[Vector3] = [
 		Vector3(0, 0, 0),            # Center
-		Vector3(1000, 0, 1000),      # NE quadrant
-		Vector3(-1000, 0, -1000),    # SW quadrant
-		Vector3(2000, 0, 0),         # East
-		Vector3(0, 0, -2000),        # North
+		Vector3(2000, 0, 2000),      # NE quadrant
+		Vector3(-2000, 0, -2000),    # SW quadrant
+		Vector3(4000, 0, 0),         # Far east
+		Vector3(0, 0, -4000),        # Far north
 	]
 
 	print("[TerrainGenerator] === HEIGHT VERIFICATION ===")
@@ -517,21 +493,21 @@ func _bake_navigation_mesh() -> void:
 		Vector3(half_size * 2 + 1000, 500, half_size * 2 + 1000)
 	)
 
-	# Agent settings
-	nav_mesh.agent_radius = 0.5
-	nav_mesh.agent_height = 1.8
-	nav_mesh.agent_max_climb = 0.5
+	# Agent settings - match cell units
+	nav_mesh.agent_radius = 4.0  # Must be >= cell_size for proper voxelization
+	nav_mesh.agent_height = 4.0  # Must be >= cell_height
+	nav_mesh.agent_max_climb = 2.0
 	nav_mesh.agent_max_slope = 45.0
 
 	# Cell settings - balance between detail and performance
-	# Smaller cells = more accurate NavMesh but slower bake
-	# For 10km terrain with 40m grid resolution from heightmap fallback
-	nav_mesh.cell_size = 2.0  # Reduced from 4.0 for better accuracy
-	nav_mesh.cell_height = 0.5  # Reduced from 1.0
+	# With 80m grid (step=8), we need cells that fit the triangle size
+	# cell_size=4.0 means 20 cells per 80m triangle edge = reasonable
+	nav_mesh.cell_size = 4.0
+	nav_mesh.cell_height = 2.0
 
-	# Region settings to help with large terrain
-	nav_mesh.region_min_size = 8.0  # Minimum region area
-	nav_mesh.region_merge_size = 20.0  # Merge small regions
+	# Region settings - smaller to preserve detail
+	nav_mesh.region_min_size = 4.0
+	nav_mesh.region_merge_size = 16.0
 
 	# Apply to region
 	_nav_region.navigation_mesh = nav_mesh
@@ -558,15 +534,20 @@ func _bake_navigation_mesh() -> void:
 		print("[TerrainGenerator] Terrain AABB: %s" % terrain_aabb)
 
 	if _terrain.has_method("generate_nav_mesh_source_geometry"):
-		var faces: PackedVector3Array = _terrain.generate_nav_mesh_source_geometry(aabb)
-		print("[TerrainGenerator] generate_nav_mesh_source_geometry returned %d vertices (%d faces)" % [faces.size(), faces.size() / 3])
+		# CRITICAL: Second parameter is require_nav (default=true)
+		# true = only generates geometry for terrain marked navigable in editor (paint tool)
+		# false = generates geometry for ENTIRE terrain regardless of paint
+		# Our procedurally generated terrain has NO navigable paint, so we MUST use false!
+		# See: https://terrain3d.readthedocs.io/en/stable/api/class_terrain3d.html
+		var faces: PackedVector3Array = _terrain.generate_nav_mesh_source_geometry(aabb, false)
+		print("[TerrainGenerator] generate_nav_mesh_source_geometry(aabb, false) returned %d vertices (%d faces)" % [faces.size(), faces.size() / 3])
 		if not faces.is_empty():
 			source_geometry.add_faces(faces, Transform3D.IDENTITY)
 			print("[TerrainGenerator] Added %d terrain faces to source geometry" % (faces.size() / 3))
 		else:
-			push_warning("[TerrainGenerator] No terrain faces generated! NavMesh may be empty.")
-			push_warning("[TerrainGenerator] This usually means terrain mesh hasn't been built yet.")
-			push_warning("[TerrainGenerator] Terrain regions exist but mesh generation may require more processing time.")
+			push_warning("[TerrainGenerator] No terrain faces generated even with require_nav=false!")
+			push_warning("[TerrainGenerator] This may mean terrain mesh hasn't been built yet.")
+			push_warning("[TerrainGenerator] Check that import_images() succeeded and created regions.")
 
 			# Try alternative: manually generate faces from height data
 			print("[TerrainGenerator] Attempting fallback: generate faces from height data...")
@@ -579,7 +560,13 @@ func _bake_navigation_mesh() -> void:
 		return
 
 	# Bake the navmesh using NavigationServer3D
+	# With cell_size=8 and ~10km terrain, expect ~1.6M voxels which should be manageable
+	var terrain_width := half_size * 2.0
+	var estimated_cells := int((terrain_width / nav_mesh.cell_size) * (terrain_width / nav_mesh.cell_size))
 	print("[TerrainGenerator] Baking NavMesh from source geometry...")
+	print("[TerrainGenerator] Terrain: %.0fm, cell_size: %.1f, estimated cells: ~%d" % [
+		terrain_width, nav_mesh.cell_size, estimated_cells
+	])
 	NavigationServer3D.bake_from_source_geometry_data(nav_mesh, source_geometry)
 
 	# Verify NavMesh has polygons
@@ -684,9 +671,11 @@ func _generate_navmesh_faces_from_heightmap() -> PackedVector3Array:
 	var half_width := float(width) / 2.0
 	var half_height := float(height) / 2.0
 
-	# Use a moderate resolution for NavMesh (every 2nd pixel = ~20m resolution)
-	# This balances NavMesh quality with bake performance
-	var step := 2
+	# Use a coarser resolution for NavMesh to avoid "suspiciously big" error
+	# With 4096 resolution: step=8 gives 512 grid points = ~20m resolution
+	# This produces ~500k faces (512 * 512 * 2) which Godot can handle
+	# Increase step if NavMesh baking is too slow
+	var step := 8
 	var nav_res_x := width / step
 	var nav_res_z := height / step
 
@@ -741,15 +730,15 @@ func _generate_navmesh_faces_from_heightmap() -> PackedVector3Array:
 			var v01 := Vector3(wx0, h01, wz1)
 			var v11 := Vector3(wx1, h11, wz1)
 
-			# Triangle 1: v00, v01, v10 (counter-clockwise winding for upward-facing)
+			# Triangle 1: v00, v10, v01 (clockwise winding when viewed from above = normal UP)
 			temp_faces.append(v00)
-			temp_faces.append(v01)
 			temp_faces.append(v10)
+			temp_faces.append(v01)
 
-			# Triangle 2: v10, v01, v11 (counter-clockwise winding)
+			# Triangle 2: v10, v11, v01 (clockwise winding when viewed from above)
 			temp_faces.append(v10)
-			temp_faces.append(v01)
 			temp_faces.append(v11)
+			temp_faces.append(v01)
 
 	# Convert to PackedVector3Array
 	faces.resize(temp_faces.size())

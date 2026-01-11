@@ -40,8 +40,8 @@ static func generate_mask(width_px: int, height_px: int, shape_rng: RandomNumber
 	coast_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	coast_noise.fractal_octaves = 2  # Fewer octaves for less jagged edges
 
-	# Calculate meters per pixel (terrain is ~10km for 1024px)
-	var terrain_size_meters: float = 10000.0  # 10km terrain
+	# Calculate meters per pixel dynamically from terrain size and resolution
+	var terrain_size_meters: float = TerrainGenerator.WORLD_SIZE_METERS  # 10240m
 	var meters_per_pixel: float = terrain_size_meters / float(width_px)
 
 	# Ice border in pixels

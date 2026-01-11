@@ -23,7 +23,9 @@ const LACUNARITY: float = 2.0
 const SOUTH_BIAS_STRENGTH: float = 0.25  # Reduced for more usable terrain
 
 ## Inlet carving parameters
-const INLET_RADIUS_PIXELS: int = 80  # ~800m diameter inlet
+## Note: With 4096 resolution and 2.5m/pixel, 80px = 200m radius = 400m diameter inlet
+## This is increased from 80 to give more room for ship maneuvering
+const INLET_RADIUS_PIXELS: int = 120  # ~300m radius = 600m diameter inlet at 2.5m/pixel
 const INLET_TARGET_HEIGHT: float = 5.0  # Slightly above sea level for ship
 
 
@@ -145,8 +147,9 @@ static func carve_inlet(
 			heightmap.set_pixel(px, py, Color(new_height, 0.0, 0.0, 1.0))
 
 	# Calculate world position
-	# Terrain is centered at origin, ~10m per pixel for 1024px covering ~10km
-	var meters_per_pixel := 10.0
+	# Use TerrainGenerator's METERS_PER_PIXEL constant for correct scaling
+	# With 4096 resolution and 2.5m spacing, terrain spans -5120 to +5120
+	var meters_per_pixel: float = TerrainGenerator.METERS_PER_PIXEL
 	var world_x := (float(inlet_pixel.x) - float(width) / 2.0) * meters_per_pixel
 	var world_z := (float(inlet_pixel.y) - float(height) / 2.0) * meters_per_pixel
 	var world_y := INLET_TARGET_HEIGHT

@@ -272,6 +272,7 @@ func _update_sky3d_time_scale() -> void:
 		sky3d.resume()
 		print("[TimeManager] Sky3D speed set to ", new_minutes_per_day, " minutes/day (", time_scale, "x)")
 
+#TODO: FIX NEAR FIRE CHECK TO SEND TO TIME MANAGER?
 
 func _update_survivor_needs() -> void:
 	## Called each in-game hour to update all survivor needs.
@@ -286,7 +287,7 @@ func _update_survivor_needs() -> void:
 			var in_sunlight := is_day
 			if node.has_method("is_in_shelter") and node.is_in_shelter():
 				in_sunlight = false
-			node.update_needs(1.0, in_sunlight, temp)
+			node.update_needs(1.0, in_sunlight, false, temp)
 
 
 # --- Time Control ---

@@ -24,8 +24,10 @@ const INUIT_MIN_MASK: float = 0.4
 ## Placement attempts before giving up
 const MAX_PLACEMENT_ATTEMPTS: int = 150
 
-## Terrain scale
-const METERS_PER_PIXEL: float = 10.0
+
+## Get meters per pixel from TerrainGenerator (dynamic to support different resolutions)
+static func _get_meters_per_pixel() -> float:
+	return TerrainGenerator.METERS_PER_PIXEL
 
 
 ## Place all POIs on the terrain
@@ -281,13 +283,14 @@ static func _calculate_slope(heightmap: Image, x: int, y: int) -> float:
 	var dy := (h_down - h_up) / 2.0
 	var gradient := sqrt(dx * dx + dy * dy)
 
-	return rad_to_deg(atan(gradient / METERS_PER_PIXEL))
+	return rad_to_deg(atan(gradient / _get_meters_per_pixel()))
 
 
 ## Convert pixel coordinates to world position
 static func _pixel_to_world(x: int, y: int, height_m: float, width: int, height: int) -> Vector3:
-	var world_x := (float(x) - float(width) / 2.0) * METERS_PER_PIXEL
-	var world_z := (float(y) - float(height) / 2.0) * METERS_PER_PIXEL
+	var mpp := _get_meters_per_pixel()
+	var world_x := (float(x) - float(width) / 2.0) * mpp
+	var world_z := (float(y) - float(height) / 2.0) * mpp
 	return Vector3(world_x, height_m, world_z)
 
 

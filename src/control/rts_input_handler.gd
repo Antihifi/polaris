@@ -161,10 +161,10 @@ func _raycast_for_container(screen_position: Vector2) -> StorageContainer:
 	var container_result := space_state.intersect_ray(container_query)
 
 	if not container_result.is_empty():
-		var area_hit: Object = container_result.collider
-		if area_hit is Area3D:
+		var hit: Object = container_result.collider
+		if hit is Area3D:
 			# Area3D is child of container root, which has StorageContainer as child
-			var container_root: Node = area_hit.get_parent()
+			var container_root: Node = hit.get_parent()
 			if container_root:
 				return container_root.get_node_or_null("StorageContainer") as StorageContainer
 
@@ -175,12 +175,12 @@ func _raycast_for_container(screen_position: Vector2) -> StorageContainer:
 	if result.is_empty():
 		return null
 
-	var body_hit: Object = result.collider
-	if not body_hit or not body_hit is Node:
+	var hit: Object = result.collider
+	if not hit or not hit is Node:
 		return null
 
 	# Walk up parent chain to find container root (up to 5 levels)
-	var current: Node = body_hit as Node
+	var current: Node = hit as Node
 	for i in range(5):
 		if not current:
 			break
@@ -220,10 +220,12 @@ func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 	if unit is ClickableUnit:
 		selected_unit = unit
 
-	# Only set camera focus on double-click (single click is too disruptive during dev)
+	# Set camera focus
+	if camera and camera.has_method("set_focus_target"):
+		camera.set_focus_target(unit)
+
+	# Emit double-click signal
 	if is_double_click:
-		if camera and camera.has_method("set_focus_target"):
-			camera.set_focus_target(unit)
 		unit_double_clicked.emit(unit)
 
 
@@ -240,41 +242,38 @@ func _handle_right_click(screen_position: Vector2) -> void:
 
 	print("[RTSInput] Moving %d units to: %s" % [selected_units.size(), target_position])
 
-	# Move all selected units in formation (mark as player command for AI override)
+	# Move all selected units in formation
 	if selected_units.size() > 1:
 		_move_units_in_formation(selected_units, target_position)
 	elif selected_units.size() == 1:
-		selected_units[0].move_to(target_position, true)  # Player command
+		selected_units[0].move_to(target_position)
 	elif selected_unit:
 		# Legacy single selection
-		selected_unit.move_to(target_position, true)  # Player command
+		selected_unit.move_to(target_position)
 
 	_show_move_indicator(target_position)
 
 
 func _move_units_in_formation(units: Array, target: Vector3) -> void:
 	## Move multiple units to target in a circular formation.
-	## All moves are marked as player commands for AI override.
 	var count := units.size()
 
 	if count == 1:
-		units[0].move_to(target, true)  # Player command
+		units[0].move_to(target)
 		return
 
 	if count == 2:
 		# Two units: side by side
-		units[0].move_to(target + Vector3(-FORMATION_SPACING * 0.5, 0, 0), true)
-		units[1].move_to(target + Vector3(FORMATION_SPACING * 0.5, 0, 0), true)
+		units[0].move_to(target + Vector3(-FORMATION_SPACING * 0.5, 0, 0))
+		units[1].move_to(target + Vector3(FORMATION_SPACING * 0.5, 0, 0))
 		return
 
 	# Multiple units: circular formation around target
 	# Calculate rings needed
 	var inner_count := mini(8, count)
-	@warning_ignore("unused_variable")
-	var _angle_step := TAU / inner_count
+	var angle_step := TAU / inner_count
 
 	for i in range(count):
-		@warning_ignore("integer_division")
 		var ring := i / 8  # Which ring (0 = inner, 1 = outer, etc.)
 		var pos_in_ring := i % 8
 		var ring_radius := FORMATION_SPACING * (ring + 1)
@@ -288,7 +287,7 @@ func _move_units_in_formation(units: Array, target: Vector3) -> void:
 		var dest := target + offset
 		dest.y = _get_terrain_height(dest)
 
-		units[i].move_to(dest, true)  # Player command
+		units[i].move_to(dest)
 
 
 func _get_terrain_height(position: Vector3) -> float:
@@ -480,7 +479,7 @@ func _select_all_units() -> void:
 	print("[RTSInput] Selected all %d units" % selected_units.size())
 
 
-func _show_move_indicator(_position: Vector3) -> void:
+func _show_move_indicator(position: Vector3) -> void:
 	## Visual feedback for move command (optional).
 	# TODO: Add a visual indicator (particle, decal, etc.)
 	pass

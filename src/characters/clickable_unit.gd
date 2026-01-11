@@ -8,13 +8,9 @@ signal deselected
 signal reached_destination
 signal stats_changed  # Emitted when stats are updated
 signal inventory_changed  # Emitted when unit inventory contents change
-signal mental_break(unit: ClickableUnit, break_type: String)
-signal died(unit: ClickableUnit, cause: SurvivorStats.DeathCause)
 
 @export_category("Identity")
 @export var unit_name: String = "Survivor"
-## If true, this unit is THE Captain and gets a large (100m) morale aura automatically
-@export var is_captain: bool = false
 
 @export_category("Movement")
 ## Movement speed in units/second. Also controls animation and footstep sound speed.
@@ -28,8 +24,6 @@ signal died(unit: ClickableUnit, cause: SurvivorStats.DeathCause)
 @export_category("Animation")
 ## Base animation speed at movement_speed=1. Adjust until walk animation looks right at speed 1.
 @export_range(0.01, 2.0, 0.01) var base_animation_speed: float = 0.15
-## Speed for idle animation (lower = slower breathing, more natural)
-@export_range(0.1, 2.0, 0.05) var idle_animation_speed: float = 0.5
 
 @export_category("Audio")
 ## Base footstep playback speed at movement_speed=1. Adjust until footsteps match animation at speed 1.
@@ -57,25 +51,10 @@ var _last_energy_signal: float = 100.0  # Track last energy value for signal emi
 ## Animation offset (0-1) to desync animations between units
 var animation_offset: float = 0.0
 
-## Mental state tracking
-enum MentalState { STABLE, STRESSED, BROKEN }
-var mental_state: MentalState = MentalState.STABLE
-
-## Buff tracking (Area3D-based, can have multiple sources)
-var _captain_aura_count: int = 0
-var _personable_aura_count: int = 0
-var _fire_sources: Array = []  # Array of WarmthArea references
-var _current_shelter: Node = null  # ShelterArea reference
-var _is_in_sunlight: bool = true  # Updated by TimeManager each hour
-
 ## Unit inventory (3x3 grid)
 var inventory: Inventory = null
 var _inventory_protoset: JSON = null
 const INVENTORY_GRID_SIZE := Vector2i(3, 3)
-
-## Player command override for AI-controlled units
-## When true, AI behavior pauses until manual movement completes
-var player_command_active: bool = false
 
 
 func _ready() -> void:
@@ -122,26 +101,21 @@ func _ready() -> void:
 	# Setup inventory
 	_setup_inventory()
 
-	# If this is the Captain, add the Captain's Morale Aura (100m radius)
-	if is_captain:
-		_setup_captain_aura()
-
 	print("[ClickableUnit] Ready complete, added to selectable_units and survivors groups")
 
 
 func _physics_process(delta: float) -> void:
 	_debug_frame_count += 1
 
-	# Dead units don't move (belt-and-suspenders with set_physics_process(false))
-	if stats and stats.is_dead():
-		velocity = Vector3.ZERO
-		return
+	# Debug every 120 frames to confirm _physics_process is running
+	if _debug_frame_count % 120 == 1:
+		print("[ClickableUnit] _physics_process running, frame: ", _debug_frame_count, " is_moving: ", is_moving)
 
 	if not is_moving:
 		return
 
 	if navigation_agent.is_navigation_finished():
-		print("[ClickableUnit] Navigation finished - stopping")
+		print("[ClickableUnit] Navigation finished at: ", global_position)
 		is_moving = false
 		velocity = Vector3.ZERO
 		_play_animation("idle")
@@ -152,12 +126,9 @@ func _physics_process(delta: float) -> void:
 	var next_position := navigation_agent.get_next_path_position()
 	var current_pos := global_position
 
-	# Debug: Log movement state periodically
-	if _debug_frame_count % 60 == 0:  # Every ~1 second at 60fps
-		var path := navigation_agent.get_current_navigation_path()
-		print("[ClickableUnit] Moving: pos=%s, next=%s, path_size=%d, vel=%.2f" % [
-			current_pos, next_position, path.size(), velocity.length()
-		])
+	# Debug every 60 frames (~1 second)
+	if _debug_frame_count % 60 == 0:
+		print("[ClickableUnit] Frame ", _debug_frame_count, " | pos: ", current_pos, " -> next: ", next_position)
 
 	# Calculate direction to next waypoint (full 3D - NavigationAgent provides correct Y from NavMesh)
 	var direction := next_position - current_pos
@@ -173,28 +144,20 @@ func _physics_process(delta: float) -> void:
 	var target_rotation := atan2(direction.x, direction.z)
 	rotation.y = lerp_angle(rotation.y, target_rotation, rotation_speed * delta)
 
-	# Calculate DESIRED velocity (what we want to move at)
-	# Speed is reduced when energy drops below 25%
+	# Calculate and apply velocity using proper physics (scaled by time)
 	var time_scale := _get_time_scale()
-	var energy_mult := get_energy_speed_multiplier()
-	var desired_velocity := direction * movement_speed * time_scale * energy_mult
-
-	# Update animation/sound speed to match
-	_update_speed_scale()
-
-	# Set velocity on NavigationAgent - it computes safe velocity avoiding obstacles
-	# and emits velocity_computed signal which triggers _on_velocity_computed()
-	navigation_agent.velocity = desired_velocity
+	velocity = direction * movement_speed * time_scale
+	move_and_slide()
 
 	# Drain energy while walking (scales with time and condition)
 	_drain_walking_energy(delta, time_scale)
 
+	# Debug: show actual movement
+	if _debug_frame_count % 60 == 0:
+		print("[ClickableUnit] velocity: ", velocity, " | new pos: ", global_position)
+
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
-	# Guard against movement after death (prevents sliding corpses)
-	if stats and stats.is_dead():
-		velocity = Vector3.ZERO
-		return
 	velocity = safe_velocity
 	move_and_slide()
 
@@ -206,46 +169,18 @@ func _on_navigation_finished() -> void:
 	reached_destination.emit()
 
 
-func move_to(target_position: Vector3, is_player_command: bool = false) -> void:
+func move_to(target_position: Vector3) -> void:
 	## Navigate to target position.
-	## If is_player_command is true, this is a manual player order that overrides AI.
-
-	# Set player override flag for AI-controlled units
-	if is_player_command:
-		player_command_active = true
-
+	print("[ClickableUnit] move_to called with target: ", target_position)
+	print("[ClickableUnit] Current position: ", global_position)
 	navigation_agent.target_position = target_position
-
-	# Debug: Check if path is valid
-	var is_reachable := navigation_agent.is_target_reachable()
-	var path_length := navigation_agent.get_current_navigation_path().size()
-	var nav_map := navigation_agent.get_navigation_map()
-	print("[ClickableUnit] move_to(%s) - reachable: %s, path_points: %d, map_valid: %s" % [
-		target_position, is_reachable, path_length, nav_map.is_valid()
-	])
-
-	if not is_reachable:
-		print("[ClickableUnit] WARNING: Target is NOT reachable!")
-		# Debug: Check if we're on the NavMesh
-		var current_pos := global_position
-		var closest_on_nav := NavigationServer3D.map_get_closest_point(nav_map, current_pos)
-		var dist_to_nav := current_pos.distance_to(closest_on_nav)
-		print("[ClickableUnit] Current pos: %s, closest NavMesh point: %s, dist: %.2f" % [current_pos, closest_on_nav, dist_to_nav])
-
-		# If we're far from NavMesh, snap to it
-		if dist_to_nav > 2.0:
-			print("[ClickableUnit] Unit is OFF NavMesh! Snapping to nearest point...")
-			global_position = closest_on_nav
-			global_position.y += 0.1  # Tiny offset
-			# Re-set target after moving
-			navigation_agent.target_position = target_position
-			is_reachable = navigation_agent.is_target_reachable()
-			print("[ClickableUnit] After snap - reachable: %s" % is_reachable)
-
 	is_moving = true
 	_play_animation("walking")
 	_start_footsteps()
 	_update_speed_scale()
+	print("[ClickableUnit] Navigation target set, is_moving = ", is_moving)
+	print("[ClickableUnit] Nav agent is_target_reachable: ", navigation_agent.is_target_reachable())
+	print("[ClickableUnit] Nav agent is_navigation_finished: ", navigation_agent.is_navigation_finished())
 
 
 func stop() -> void:
@@ -267,11 +202,11 @@ func deselect() -> void:
 	_show_selection_indicator(false)
 
 
-func _show_selection_indicator(visible: bool) -> void:
+func _show_selection_indicator(show: bool) -> void:
 	# Look for a SelectionIndicator child node
 	var indicator := get_node_or_null("SelectionIndicator")
 	if indicator:
-		indicator.visible = visible
+		indicator.visible = show
 
 
 func _find_animation_player(node: Node) -> AnimationPlayer:
@@ -288,15 +223,9 @@ func _find_animation_player(node: Node) -> AnimationPlayer:
 func _play_animation(anim_name: String) -> void:
 	## Play an animation if the AnimationPlayer exists and has the animation.
 	## Applies animation_offset to desync animations between multiple units.
-	## Sets appropriate speed based on animation type.
 	if not animation_player:
 		return
 	if animation_player.has_animation(anim_name):
-		# Set appropriate speed based on animation type
-		if anim_name == "idle":
-			animation_player.speed_scale = idle_animation_speed
-		# Note: walking speed is managed by _update_speed_scale()
-
 		animation_player.play(anim_name)
 		# Apply offset to desync animations between units
 		if animation_offset > 0.0:
@@ -330,8 +259,8 @@ func _on_footstep_finished() -> void:
 func _get_time_scale() -> float:
 	## Get current time scale from TimeManager (1.0 if not available or paused).
 	if _time_manager and "time_scale" in _time_manager:
-		var time_scale_value: float = _time_manager.time_scale
-		return time_scale_value if time_scale_value > 0.0 else 0.0
+		var scale: float = _time_manager.time_scale
+		return scale if scale > 0.0 else 0.0
 	return 1.0
 
 
@@ -340,39 +269,19 @@ func _on_time_scale_changed(_scale: float) -> void:
 	_update_speed_scale()
 
 
-func get_energy_speed_multiplier() -> float:
-	## Returns speed multiplier based on energy level.
-	## Full speed until 25% energy, then drops to 50% speed at 0%.
-	if not stats:
-		return 1.0
-
-	if stats.energy >= 25.0:
-		return 1.0  # Full speed above 25%
-
-	# Linear interpolation from 50% speed at 0 energy to 100% at 25 energy
-	# At 0% energy: 0.5 multiplier
-	# At 25% energy: 1.0 multiplier
-	return 0.5 + (stats.energy / 25.0) * 0.5
-
-
 func _update_speed_scale() -> void:
 	## Sync animation and footstep playback speed to movement speed and time scale.
 	## At movement_speed=1 and time_scale=1, animation plays at base_animation_speed
 	## and footsteps play at base_footstep_speed.
-	## Speed is reduced when energy drops below 25%.
 	var time_scale := _get_time_scale()
-	var energy_mult := get_energy_speed_multiplier()
 
-	# Animation: scale by movement speed, time scale, and energy
+	# Animation: scale by both movement speed and time scale
 	if animation_player:
-		var anim_speed := base_animation_speed * movement_speed * time_scale * energy_mult
-		animation_player.speed_scale = maxf(anim_speed, 0.001)  # Prevent 0
+		animation_player.speed_scale = base_animation_speed * movement_speed * time_scale
 
-	# Footsteps: scale pitch by movement speed, time scale, and energy
-	# pitch_scale must be > 0 or Godot throws an error
+	# Footsteps: scale pitch by both movement speed and time scale
 	if is_instance_valid(_footstep_player):
-		var pitch := base_footstep_speed * movement_speed * time_scale * energy_mult
-		_footstep_player.pitch_scale = maxf(pitch, 0.001)  # Prevent <= 0 error
+		_footstep_player.pitch_scale = base_footstep_speed * movement_speed * time_scale
 
 
 # --- Survival Needs ---
@@ -402,30 +311,14 @@ func _drain_walking_energy(delta: float, time_scale: float) -> void:
 		stats_changed.emit()
 
 
-func update_needs(_delta_hours: float, sunlight_state: bool, ambient_temp: float) -> void:
+func update_needs(delta_hours: float, is_in_shelter: bool, is_near_fire: bool, ambient_temp: float) -> void:
 	## Called by TimeManager each in-game hour to update survival needs.
-	## Uses Area3D-based buff tracking for shelter/fire proximity.
 	if not stats:
 		return
 
-	# Track sunlight state for UI display
-	_is_in_sunlight = sunlight_state
-
 	var is_working := is_moving  # For now, moving counts as working
-
-	# Apply hourly decay with buff-based shelter/fire state
-	stats.apply_hourly_decay(is_working, is_in_shelter(), is_near_fire(), ambient_temp, sunlight_state)
-
-	# Apply morale buffs from proximity (captain, personable, fire social)
-	stats.morale += get_morale_buff_rate()
-
-	# Apply warmth buffs from fire/shelter
-	stats.warmth += get_warmth_buff_rate()
-
+	stats.apply_hourly_decay(is_working, is_in_shelter, is_near_fire, ambient_temp)
 	stats_changed.emit()
-
-	# Check for mental break (morale hits 0)
-	_check_mental_state()
 
 	# Check for death
 	if stats.is_dead():
@@ -434,62 +327,12 @@ func update_needs(_delta_hours: float, sunlight_state: bool, ambient_temp: float
 
 func _on_death() -> void:
 	## Handle unit death from needs.
-	var cause := stats.get_dying_cause() if stats else SurvivorStats.DeathCause.NONE
-	print("[ClickableUnit] %s has died! Cause: %s" % [unit_name, SurvivorStats.DeathCause.keys()[cause]])
-
+	print("[ClickableUnit] ", unit_name, " has died!")
+	_play_animation("dying")
 	_stop_footsteps()
 	is_moving = false
-	velocity = Vector3.ZERO
-
-	# Play dying animation and freeze at end
-	if animation_player and animation_player.has_animation("dying"):
-		animation_player.play("dying")
-		# Connect to freeze at end of animation (use one-shot)
-		if not animation_player.animation_finished.is_connected(_on_death_animation_finished):
-			animation_player.animation_finished.connect(_on_death_animation_finished, CONNECT_ONE_SHOT)
-	else:
-		# No dying animation - just hide immediately
-		_finalize_death()
-
-	# Emit death signal
-	died.emit(self, cause)
-
-	# Remove from survivors group, add to corpses
-	remove_from_group("survivors")
-	remove_from_group("selectable_units")
-	add_to_group("corpses")
-
-	# Disable selection and further input/processing
+	# Disable further input/processing
 	set_physics_process(false)
-	set_process(false)
-	is_selected = false
-	_show_selection_indicator(false)
-
-	# Disable AI behavior tree
-	var ai_component := get_node_or_null("ManAIComponent")
-	if ai_component and ai_component.has_method("pause_ai"):
-		ai_component.pause_ai()
-
-
-func _on_death_animation_finished(_anim_name: String) -> void:
-	## Called when dying animation finishes - freeze at last frame.
-	if animation_player:
-		# Stop playback but keep the final pose by pausing at the end
-		animation_player.pause()
-	_finalize_death()
-
-
-func _finalize_death() -> void:
-	## Final death cleanup - add human meat, disable collision.
-	# Add human meat to unit's inventory for looting (no separate corpse spawned)
-	_add_human_meat_to_inventory()
-
-	# Disable collision so it doesn't block navigation
-	var collision_shape := get_node_or_null("CollisionShape3D")
-	if collision_shape:
-		collision_shape.disabled = true
-
-	# Unit remains visible in death pose and can be looted via inventory
 
 
 func get_display_info() -> Dictionary:
@@ -505,22 +348,6 @@ func get_display_info() -> Dictionary:
 		"morale": stats.morale,
 		"is_moving": is_moving
 	}
-
-
-# --- Captain Aura ---
-
-func _setup_captain_aura() -> void:
-	## Create Captain's Morale Aura (100m radius) for THE Captain.
-	var MoraleAuraScript: GDScript = preload("res://src/systems/morale_aura.gd")
-
-	var aura: Area3D = Area3D.new()
-	aura.set_script(MoraleAuraScript)
-	aura.name = "MoraleAura"
-	aura.aura_type = 0  # CAPTAIN enum value
-	aura.radius = 100.0  # Captain has 100m morale aura
-	add_child(aura)
-
-	print("[ClickableUnit] Captain's Morale Aura created (100m radius)")
 
 
 # --- Inventory ---
@@ -584,195 +411,50 @@ func eat_food_item(item: InventoryItem) -> void:
 	stats_changed.emit()
 	print("[ClickableUnit] %s ate %s (+%.0f hunger)" % [unit_name, item.get_property("name", "food"), nutrition])
 
-
-# --- Buff Tracking (Area3D Event-Driven) ---
-
-func is_near_captain() -> bool:
-	return _captain_aura_count > 0
-
-
-func is_near_personable() -> bool:
-	return _personable_aura_count > 0
-
-
-func is_near_fire() -> bool:
-	return not _fire_sources.is_empty()
-
+# --- Environmental/Aura Detection Stubs ---
+# TODO: Properly implement these when shelter/fire/aura systems are rebuilt
 
 func is_in_shelter() -> bool:
-	return _current_shelter != null
-
-
-func is_in_sunlight() -> bool:
-	return _is_in_sunlight
+	## Returns true if unit is inside a shelter structure.
+	return false
 
 
 func get_shelter_type() -> int:
-	## Returns shelter type enum value, or -1 if not in shelter.
-	if _current_shelter and _current_shelter.has_method("get_shelter_type"):
-		return _current_shelter.get_shelter_type()
-	return -1
+	## Returns shelter type: 0=TENT, 1=IMPROVED_SHELTER, 2=CAVE
+	return 0
 
 
-func enter_captain_aura() -> void:
-	_captain_aura_count += 1
+func is_near_fire() -> bool:
+	## Returns true if unit is near a heat source (campfire, etc).
+	return false
 
 
-func exit_captain_aura() -> void:
-	_captain_aura_count = maxi(0, _captain_aura_count - 1)
+func is_in_sunlight() -> bool:
+	## Returns true if unit is exposed to sunlight (not in shelter, daytime).
+	# Could check TimeManager.is_daytime() here when implemented
+	return true
 
 
-func enter_personable_aura() -> void:
-	_personable_aura_count += 1
+func is_near_captain() -> bool:
+	## Returns true if unit is within range of a captain's morale aura.
+	return false
 
 
-func exit_personable_aura() -> void:
-	_personable_aura_count = maxi(0, _personable_aura_count - 1)
-
-
-func enter_fire_warmth(fire: Node) -> void:
-	if fire not in _fire_sources:
-		_fire_sources.append(fire)
-
-
-func exit_fire_warmth(fire: Node) -> void:
-	_fire_sources.erase(fire)
-
-
-func enter_shelter(shelter: Node) -> void:
-	_current_shelter = shelter
-
-
-func exit_shelter() -> void:
-	_current_shelter = null
-
-
-func witness_hunting_kill(bonus: float) -> void:
-	## Called when this unit witnesses a hunting kill.
-	if stats:
-		stats.morale += bonus
-		stats_changed.emit()
-
-
-func get_morale_buff_rate() -> float:
-	## Returns hourly morale buff from proximity buffs.
-	var buff := 0.0
-	if is_near_captain():
-		buff += 1.0
-	if is_near_personable():
-		buff += 0.5
-	# Fire social bonus (if near fire with others - simplified for now)
-	if is_near_fire():
-		buff += 0.25
-	return buff
-
-
-func get_warmth_buff_rate() -> float:
-	## Returns hourly warmth buff from fire proximity.
-	var buff := 0.0
-	for fire in _fire_sources:
-		if fire.has_method("get_warmth_bonus"):
-			buff += fire.get_warmth_bonus()
-	if _current_shelter and _current_shelter.has_method("get_warmth_bonus"):
-		buff += _current_shelter.get_warmth_bonus()
-	return buff
-
-
-func get_cold_reduction() -> float:
-	## Returns cold damage multiplier from shelter (1.0 = no reduction).
-	if _current_shelter and _current_shelter.has_method("get_cold_reduction"):
-		return _current_shelter.get_cold_reduction()
-	return 1.0
+func is_near_personable() -> bool:
+	## Returns true if unit is within range of a personable crew member's aura.
+	return false
 
 
 func has_morale_aura() -> bool:
-	## Returns true if this unit has a MoraleAura child (is Captain or Well Liked).
-	return get_node_or_null("MoraleAura") != null
-
-
-func get_morale_aura() -> Node:
-	## Returns the MoraleAura node if this unit has one, null otherwise.
-	return get_node_or_null("MoraleAura")
+	## Returns true if this unit provides a morale aura to nearby units.
+	return false
 
 
 func get_morale_aura_name() -> String:
-	## Returns display name of this unit's morale aura, or empty string if none.
-	var aura := get_node_or_null("MoraleAura")
-	if aura and aura.has_method("get_display_name"):
-		return aura.get_display_name()
+	## Returns the name of this unit's morale aura (e.g., "Captain", "Well-Liked").
 	return ""
 
 
 func get_morale_aura_radius() -> float:
-	## Returns radius of this unit's morale aura, or 0 if none.
-	var aura := get_node_or_null("MoraleAura")
-	if aura and aura.has_method("get_aura_radius"):
-		return aura.get_aura_radius()
+	## Returns the radius of this unit's morale aura in meters.
 	return 0.0
-
-
-# --- Mental Break System ---
-
-func _check_mental_state() -> void:
-	## Check for mental break when morale hits 0.
-	if not stats:
-		return
-
-	if stats.morale <= 0.0 and mental_state != MentalState.BROKEN:
-		mental_state = MentalState.BROKEN
-		var break_type := _determine_break_type()
-		mental_break.emit(self, break_type)
-		_execute_mental_break(break_type)
-
-
-func _determine_break_type() -> String:
-	## Determine which mental break behavior based on hunger level.
-	if stats.hunger <= 0.0:
-		return "wendigo"  # Cannibalism
-	elif stats.hunger <= 25.0:
-		return "binge"  # Consume all available food
-	else:
-		return "berserk"  # Attack others
-
-
-func _execute_mental_break(break_type: String) -> void:
-	## Execute mental break behavior (AI-controlled).
-	print("[ClickableUnit] %s has had a mental break: %s" % [unit_name, break_type])
-	match break_type:
-		"wendigo":
-			# TODO: Find nearest survivor, attack and consume
-			pass
-		"binge":
-			# TODO: Find food stockpile, consume everything
-			pass
-		"berserk":
-			# TODO: Attack nearest survivor
-			pass
-
-
-# --- Death & Corpse System ---
-
-func _add_human_meat_to_inventory() -> void:
-	## Add human meat to dead unit's inventory for looting by other survivors.
-	## Unit stays in tree as corpse - no separate container spawned.
-	if not inventory:
-		push_error("[ClickableUnit] No inventory to add human meat to!")
-		return
-
-	# Add 4-6 human meat items (1x1 each)
-	var meat_count: int = randi_range(4, 6)
-	var protoset: JSON = load("res://data/items_protoset.json")
-	if not protoset:
-		push_error("[ClickableUnit] Could not load items_protoset.json")
-		return
-
-	for i in meat_count:
-		var meat := InventoryItem.new()
-		meat.protoset = protoset
-		meat.prototype_id = "human_meat"
-		inventory.add_item(meat)
-
-	# Add to containers group so AI food-seeking can find this corpse
-	add_to_group("containers")
-
-	print("[ClickableUnit] %s's corpse now has %d human meat (lootable)" % [unit_name, meat_count])

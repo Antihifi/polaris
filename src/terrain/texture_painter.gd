@@ -18,8 +18,10 @@ const SNOW_MIN_HEIGHT: float = 30.0
 const CLIFF_MIN_SLOPE: float = 38.0
 const STEEP_MIN_SLOPE: float = 25.0
 
-## Terrain scale (meters per pixel in heightmap)
-const METERS_PER_PIXEL: float = 10.0
+
+## Get meters per pixel from TerrainGenerator (dynamic to support different resolutions)
+static func _get_meters_per_pixel() -> float:
+	return TerrainGenerator.METERS_PER_PIXEL
 
 
 ## Paint textures on the entire terrain
@@ -137,15 +139,16 @@ static func _calculate_slope(heightmap: Image, x: int, y: int) -> float:
 
 	# Convert to angle (considering meters per pixel)
 	# tan(slope) = rise / run
-	var slope_rad := atan(gradient / METERS_PER_PIXEL)
+	var slope_rad := atan(gradient / _get_meters_per_pixel())
 	return rad_to_deg(slope_rad)
 
 
 ## Convert pixel coordinates to world position
 static func _pixel_to_world(x: int, y: int, height_m: float, width: int, height: int) -> Vector3:
 	# Terrain centered at origin
-	var world_x := (float(x) - float(width) / 2.0) * METERS_PER_PIXEL
-	var world_z := (float(y) - float(height) / 2.0) * METERS_PER_PIXEL
+	var mpp := _get_meters_per_pixel()
+	var world_x := (float(x) - float(width) / 2.0) * mpp
+	var world_z := (float(y) - float(height) / 2.0) * mpp
 	return Vector3(world_x, height_m, world_z)
 
 

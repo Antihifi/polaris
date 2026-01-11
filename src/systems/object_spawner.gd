@@ -88,7 +88,7 @@ func _spawn_container(scene: PackedScene, position: Vector3, is_barrel: bool) ->
 func _populate_container(storage: StorageContainer, is_barrel: bool) -> void:
 	## Add random items to a container.
 	var item_pool: Array[String] = BARREL_ITEMS if is_barrel else CRATE_ITEMS
-	var item_count := _rng.randi_range(2, 5)
+	var item_count := _rng.randi_range(6, 15)  # Tripled from 2-5
 
 	print("[ObjectSpawner] Populating %s with %d items" % [storage.display_name, item_count])
 

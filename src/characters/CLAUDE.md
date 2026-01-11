@@ -300,7 +300,7 @@ func _update_survivor_needs() -> void:
 Captain (CharacterBody3D with clickable_unit.gd)
 ├── NavigationAgent3D
 ├── CollisionShape3D
-├── CaptainAnimations (imported from FBX)
+├── UnitModel (imported from FBX)
 │   └── AnimationPlayer
 └── AudioStreamPlayer3D (created at runtime for footsteps)
 ```

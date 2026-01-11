@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL: NO COMMITS WITHOUT USER TESTING
+
+**NEVER commit or push to git until the user has explicitly tested the changes and given permission.**
+
+- All bug fixes MUST be tested by the user before committing
+- All features MUST be tested by the user before committing
+- Wait for explicit "commit" or "push" instruction from the user
+- Never assume changes work - the user will verify in-game
+
+---
+
 ## ⚠️ DEBUGGING: CHECK LOGS FIRST
 
 **ALWAYS check the Godot logs before asking the user about runtime errors.** The logs contain print statements, errors, and debug output that are essential for diagnosing issues.
@@ -98,11 +109,6 @@ polaris/
 └── main.tscn                     # Main game scene
 ```
 
-### Partially Implemented
-
-These directories have initial work or design documentation:
-- `src/ai/` - LimboAI behavior trees for Officers/Men (see [AI System](src/ai/CLAUDE.md) for implementation guide)
-
 ### Not Yet Implemented
 
 These directories exist but are empty/placeholder:
@@ -128,7 +134,7 @@ Configured in `project.godot`:
 
 | Addon | Purpose | Integration Point |
 |-------|---------|-------------------|
-| **LimboAI** | Behavior trees + state machines for AI | `BTPlayer` on each survivor unit (see [AI System](src/ai/CLAUDE.md)) |
+| **LimboAI** | Behavior trees + state machines (installed, not yet used) | Available for future AI implementation |
 | **Sky3D** | Day/night cycle, sun/moon position, atmosphere | `TimeManager` syncs time, sets arctic latitude |
 | **Terrain3D** | Large terrain with LOD, procedural generation | `TerrainGenerator` uses API for heightmap import, texture painting; `RTSInputHandler` queries height |
 | **indie_blueprint_rpg** | Health component, loot tables, crafting | `Survivor` uses `IndieBlueprintHealth` |
@@ -207,9 +213,9 @@ Each major directory (`src/camera/`, `src/characters/`, `src/control/`, `src/sys
 
 ### Composition & Script Size
 
-- **Behavior as components**: AI behaviors, controllers, etc. are child nodes with focused scripts
+- **Behavior as components**: Controllers, managers, etc. are child nodes with focused scripts
 - Child scripts reference parent via `get_parent()` pattern
-- Example: `NeedsController` is a child of `ClickableUnit`, not part of the unit script
+- Example: `MoraleAura` is a child of unit providing buff aura functionality
 - If a script exceeds ~150 lines, split it into focused child components
 
 ### Static Typing (Required)
@@ -365,7 +371,6 @@ Don't pre-optimize, but **do document**. If profiling shows issues:
 
 Each major system has its own CLAUDE.md with detailed documentation:
 
-- [AI System](src/ai/CLAUDE.md) - **LimboAI behavior trees for Officers/Men, utility-based needs scoring**
 - [Camera System](src/camera/CLAUDE.md) - RTS camera with orbit, zoom, focus
 - [Character System](src/characters/CLAUDE.md) - Survivors, stats, traits
 - [Control System](src/control/CLAUDE.md) - Input handling, selection
