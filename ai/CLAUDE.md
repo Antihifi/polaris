@@ -2,6 +2,54 @@
 
 ---
 
+## ✅ MAJOR BUG FIXED (2026-01-12) - NavigationAgent Drift
+
+### The Problem (SOLVED)
+Units arrived at resources (heat sources, food), then **IMMEDIATELY floated/slid away in random directions** instead of staying in place for their 20-45 second waits. This bug persisted for DAYS across multiple debugging sessions.
+
+### Root Cause
+**The NavigationAgent3D was STILL ACTIVE** even after `stop()` was called. The `stop()` function only set:
+- `is_moving = false`
+- `velocity = Vector3.ZERO`
+
+But the NavigationAgent3D internally continued computing paths and velocities because:
+1. `target_position` was still set to the old destination
+2. Avoidance system was still running via `velocity_computed` signal
+
+### The Fix (Applied 2026-01-12)
+In `clickable_unit.gd`, the `stop()` function now properly stops the NavigationAgent:
+
+```gdscript
+func stop() -> void:
+    print("[Unit:%s] stop() at %s" % [unit_name, global_position])
+    is_moving = false
+    velocity = Vector3.ZERO
+    # CRITICAL: Must also stop NavigationAgent to prevent drift!
+    # Setting target to current position stops path computation.
+    # Setting velocity to zero stops avoidance computation.
+    navigation_agent.target_position = global_position
+    navigation_agent.set_velocity(Vector3.ZERO)
+    _play_animation("idle")
+    _stop_footsteps()
+```
+
+### Why This Was Hard To Find
+| Red Herring | Why It Seemed Like The Problem |
+|-------------|-------------------------------|
+| Animation playback | Units appeared "frozen" - but was actually separate issue (wrong .res file) |
+| Physics/move_and_slide | Added `is_animation_locked` guard - didn't help |
+| BTDebugWait timing | Logs showed waits progressing correctly - BT was fine |
+| Y-height/floating | Visual symptom made it look like physics issue |
+
+### Key Lesson
+**When stopping a NavigationAgent3D-based unit, you MUST:**
+1. Set `target_position = global_position` (clears path)
+2. Call `set_velocity(Vector3.ZERO)` (stops avoidance)
+
+Just setting `is_moving = false` is NOT enough!
+
+---
+
 ## CRITICAL WARNINGS FOR FUTURE CLAUDE CODE AGENTS
 
 **READ THIS ENTIRE SECTION BEFORE WRITING ANY CODE.**

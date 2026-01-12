@@ -162,6 +162,9 @@ func _physics_process(delta: float) -> void:
 
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
+	# Skip movement during locked animations (sitting, sleeping, etc.)
+	if is_animation_locked:
+		return
 	velocity = safe_velocity
 	move_and_slide()
 
@@ -262,6 +265,11 @@ func stop() -> void:
 	print("[Unit:%s] stop() at %s" % [unit_name, global_position])
 	is_moving = false
 	velocity = Vector3.ZERO
+	# CRITICAL: Must also stop NavigationAgent to prevent drift!
+	# Setting target to current position stops path computation.
+	# Setting velocity to zero stops avoidance computation.
+	navigation_agent.target_position = global_position
+	navigation_agent.set_velocity(Vector3.ZERO)
 	_play_animation("idle")
 	_stop_footsteps()
 

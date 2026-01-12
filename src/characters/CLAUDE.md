@@ -385,3 +385,36 @@ func _on_velocity_computed(safe_velocity: Vector3) -> void:
 ```
 
 **Key insight:** Navigation avoidance only affects XZ movement. Gravity is applied separately in `_physics_process()` and must be preserved.
+
+### ⚠️ NavigationAgent Drift When Stopped (Fixed 2026-01-12) - MAJOR BUG
+
+**Problem:** Units arrived at resources (heat sources, food), then IMMEDIATELY floated/slid away in random directions instead of staying for their 20-45 second waits. This bug persisted for DAYS.
+
+**Root Cause:** The `stop()` function only set `is_moving = false` and `velocity = Vector3.ZERO`, but the NavigationAgent3D was STILL ACTIVE:
+```gdscript
+# BAD - NavigationAgent keeps computing!
+func stop() -> void:
+    is_moving = false
+    velocity = Vector3.ZERO
+    _play_animation("idle")
+```
+
+The NavigationAgent3D internally continued:
+1. Computing paths (target_position still set)
+2. Emitting `velocity_computed` signals (avoidance still running)
+3. Moving the unit via callback even though `is_moving` was false
+
+**Solution:** Properly stop the NavigationAgent:
+```gdscript
+# GOOD - NavigationAgent fully stopped
+func stop() -> void:
+    is_moving = false
+    velocity = Vector3.ZERO
+    # CRITICAL: Must also stop NavigationAgent to prevent drift!
+    navigation_agent.target_position = global_position  # Clears path
+    navigation_agent.set_velocity(Vector3.ZERO)         # Stops avoidance
+    _play_animation("idle")
+    _stop_footsteps()
+```
+
+**Key insight:** NavigationAgent3D continues working independently until explicitly stopped. Just setting `is_moving = false` on the CharacterBody3D is NOT enough!

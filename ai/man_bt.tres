@@ -1,10 +1,11 @@
-[gd_resource type="BehaviorTree" load_steps=78 format=3 uid="uid://b12icb31evg1h"]
+[gd_resource type="BehaviorTree" load_steps=86 format=3 uid="uid://b12icb31evg1h"]
 
 [ext_resource type="Script" uid="uid://sqio3xelte7" path="res://ai/tasks/bt_check_need_critical.gd" id="1_n2iu8"]
 [ext_resource type="Script" uid="uid://bh616mm1sxk16" path="res://ai/tasks/bt_generate_wander_target.gd" id="1_wander"]
 [ext_resource type="Script" uid="uid://5cieec4vq4ck" path="res://ai/tasks/bt_move_to_blackboard.gd" id="2_move"]
 [ext_resource type="Script" uid="uid://w162bukdvt4w" path="res://ai/tasks/bt_find_nearest_resource.gd" id="3_resource"]
 [ext_resource type="Script" uid="uid://m4jkxs0hlfat" path="res://ai/tasks/bt_find_bed.gd" id="4_bed"]
+[ext_resource type="Script" uid="uid://bh1neaedkfwvc" path="res://ai/tasks/bt_debug_wait.gd" id="5_8wn8u"]
 [ext_resource type="Script" uid="uid://bo5vn3dbnes1y" path="res://ai/tasks/bt_find_food_container.gd" id="5_food"]
 [ext_resource type="Script" uid="uid://bykl1y5nfrf7x" path="res://ai/tasks/bt_find_seat.gd" id="6_3jy6i"]
 [ext_resource type="Script" uid="uid://b8uhoin5thywl" path="res://ai/tasks/bt_align_with_marker.gd" id="7_ihniq"]
@@ -78,9 +79,10 @@ animation_player = SubResource("BBNode_m228g")
 animation_name = &"sleeping_idle"
 blend = 1.5
 
-[sub_resource type="BTRandomWait" id="BTRandomWait_ohlgy"]
+[sub_resource type="BTAction" id="BTAction_sbexb"]
+script = ExtResource("5_8wn8u")
 min_duration = 30.0
-max_duration = 50.0
+max_duration = 60.0
 
 [sub_resource type="BTAction" id="BTAction_8jgo4"]
 script = ExtResource("9_brwnp")
@@ -96,7 +98,7 @@ animation_name = &"stand_up_from_laying_down"
 
 [sub_resource type="BTSequence" id="BTSequence_ql6da"]
 custom_name = "SeekShelter"
-children = [SubResource("BTCondition_brwnp"), SubResource("BTFindBed_1"), SubResource("BTMoveToBlackboard_shelter"), SubResource("BTAction_e4b4v"), SubResource("BTPlayAnimation_k7wm5"), SubResource("BTPlayAnimation_l2yjk"), SubResource("BTRandomWait_ohlgy"), SubResource("BTAction_8jgo4"), SubResource("BTPlayAnimation_j1a7u")]
+children = [SubResource("BTCondition_brwnp"), SubResource("BTFindBed_1"), SubResource("BTMoveToBlackboard_shelter"), SubResource("BTAction_e4b4v"), SubResource("BTPlayAnimation_k7wm5"), SubResource("BTPlayAnimation_l2yjk"), SubResource("BTAction_sbexb"), SubResource("BTAction_8jgo4"), SubResource("BTPlayAnimation_j1a7u")]
 
 [sub_resource type="BTCondition" id="BTCondition_8wn8u"]
 script = ExtResource("1_n2iu8")
@@ -109,12 +111,21 @@ resource_group = "heat_sources"
 [sub_resource type="BTAction" id="BTMoveToBlackboard_warmth"]
 script = ExtResource("2_move")
 
-[sub_resource type="BTWait" id="BTWait_warmth"]
-duration = 5.0
+[sub_resource type="BTAction" id="BTAction_m228g"]
+script = ExtResource("9_brwnp")
+
+[sub_resource type="BTAction" id="BTAction_k7wm5"]
+script = ExtResource("5_8wn8u")
+min_duration = 30.0
+max_duration = 45.0
+
+[sub_resource type="BTAction" id="BTAction_l2yjk"]
+script = ExtResource("9_brwnp")
+lock = false
 
 [sub_resource type="BTSequence" id="BTSequence_3jy6i"]
 custom_name = "SeekWarmth"
-children = [SubResource("BTCondition_8wn8u"), SubResource("BTFindNearestResource_heat"), SubResource("BTMoveToBlackboard_warmth"), SubResource("BTWait_warmth")]
+children = [SubResource("BTCondition_8wn8u"), SubResource("BTFindNearestResource_heat"), SubResource("BTMoveToBlackboard_warmth"), SubResource("BTAction_m228g"), SubResource("BTAction_k7wm5"), SubResource("BTAction_l2yjk")]
 
 [sub_resource type="BTCondition" id="BTCondition_hs587"]
 script = ExtResource("1_n2iu8")
@@ -128,12 +139,21 @@ script = ExtResource("5_food")
 script = ExtResource("2_move")
 arrival_distance = 2.0
 
-[sub_resource type="BTWait" id="BTWait_food"]
-duration = 3.0
+[sub_resource type="BTAction" id="BTAction_ohlgy"]
+script = ExtResource("9_brwnp")
+
+[sub_resource type="BTAction" id="BTAction_ullfr"]
+script = ExtResource("5_8wn8u")
+min_duration = 20.0
+max_duration = 30.0
+
+[sub_resource type="BTAction" id="BTAction_0m3en"]
+script = ExtResource("9_brwnp")
+lock = false
 
 [sub_resource type="BTSequence" id="BTSequence_rdl7w"]
 custom_name = "SeekFood"
-children = [SubResource("BTCondition_hs587"), SubResource("BTFindFoodContainer_1"), SubResource("BTMoveToBlackboard_food"), SubResource("BTWait_food")]
+children = [SubResource("BTCondition_hs587"), SubResource("BTFindFoodContainer_1"), SubResource("BTMoveToBlackboard_food"), SubResource("BTAction_ohlgy"), SubResource("BTAction_ullfr"), SubResource("BTAction_0m3en")]
 
 [sub_resource type="BTAction" id="BTAction_rdl7w"]
 script = ExtResource("1_wander")
@@ -236,6 +256,9 @@ resource_name = "UnitModel/AnimationPlayer"
 animation_player = SubResource("BBNode_e4b4v")
 animation_name = &"crouching_idle"
 
+[sub_resource type="BTAction" id="BTAction_j1a7u"]
+script = ExtResource("9_brwnp")
+
 [sub_resource type="BTRandomWait" id="BTRandomWait_aul44"]
 min_duration = 15.0
 max_duration = 45.0
@@ -248,13 +271,13 @@ resource_name = "UnitModel/AnimationPlayer"
 animation_player = SubResource("BBNode_n2iu8")
 animation_name = &"crouch_to_stand"
 
-[sub_resource type="BTRandomWait" id="BTRandomWait_hs587"]
-min_duration = 15.0
-max_duration = 45.0
+[sub_resource type="BTAction" id="BTAction_43q60"]
+script = ExtResource("9_brwnp")
+lock = false
 
 [sub_resource type="BTSequence" id="BTSequence_k7wm5"]
 custom_name = "CrouchByFire"
-children = [SubResource("BTPlayAnimation_n2iu8"), SubResource("BTPlayAnimation_sbexb"), SubResource("BTRandomWait_aul44"), SubResource("BTPlayAnimation_brwnp"), SubResource("BTRandomWait_hs587")]
+children = [SubResource("BTPlayAnimation_n2iu8"), SubResource("BTPlayAnimation_sbexb"), SubResource("BTAction_j1a7u"), SubResource("BTRandomWait_aul44"), SubResource("BTPlayAnimation_brwnp"), SubResource("BTAction_43q60")]
 
 [sub_resource type="BBNode" id="BBNode_ullfr"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -264,13 +287,20 @@ resource_name = "UnitModel/AnimationPlayer"
 animation_player = SubResource("BBNode_ullfr")
 animation_name = &"idle"
 
+[sub_resource type="BTAction" id="BTAction_o5lmo"]
+script = ExtResource("9_brwnp")
+
 [sub_resource type="BTRandomWait" id="BTRandomWait_l2yjk"]
 min_duration = 15.0
 max_duration = 45.0
 
+[sub_resource type="BTAction" id="BTAction_ct5nu"]
+script = ExtResource("9_brwnp")
+lock = false
+
 [sub_resource type="BTSequence" id="BTSequence_ohlgy"]
 custom_name = "StandByFire"
-children = [SubResource("BTPlayAnimation_m228g"), SubResource("BTRandomWait_l2yjk")]
+children = [SubResource("BTPlayAnimation_m228g"), SubResource("BTAction_o5lmo"), SubResource("BTRandomWait_l2yjk"), SubResource("BTAction_ct5nu")]
 
 [sub_resource type="BTRandomSelector" id="BTRandomSelector_y63l3"]
 custom_name = "CrouchOrStand"
