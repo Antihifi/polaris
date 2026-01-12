@@ -1490,6 +1490,194 @@ The `get_height()` query returns data that may not match the visual mesh, causin
 
 ---
 
+## ✅ RUNTIME NAVIGATION - SOLVED (2026-01-12)
+
+### MAJOR MILESTONE: Procedural Terrain Navigation WORKS!
+
+**Status: FIXED** - Navigation on procedurally generated Terrain3D now works correctly.
+
+The captain can navigate on procedurally generated terrain with:
+- Dynamic NavMesh baking via RuntimeNavBaker
+- Proper region enabled state during bake
+- Post-processing from editor baker applied
+- NavMesh matching terrain mesh and texture perfectly
+
+### The Critical Fix: DISCOVERY #2
+
+**Root Cause**: The `NavigationRegion3D` was **DISABLED** when the baked NavMesh was assigned.
+
+**Solution**: Enable `RuntimeNavBaker` BEFORE calling `force_bake_at()`, not after.
+
+```gdscript
+# In procedural_game_controller.gd, line 122:
+runtime_nav_baker.enabled = true  # Enable BEFORE bake
+runtime_nav_baker.force_bake_at(spawn_pos)
+await runtime_nav_baker.bake_finished
+```
+
+### Previous Status (for reference): PATH RETURNED 0 POINTS
+
+Navigation on procedurally generated terrain was returning empty paths even when:
+- NavMesh had 200+ polygons
+- Captain was close to NavMesh (< 1m)
+- Maps matched (agent and baker used same RID)
+- Map was active
+
+### What Works
+- **Flat terrain test** (`scenes/test_flat_terrain.tscn`): Navigation WORKS on simple flat terrain
+- **main.tscn with pre-baked NavMesh**: Navigation works perfectly
+
+### What Fails
+- **Procedural terrain**: `map_get_path()` returns 0 points consistently
+
+### Test Results Comparison
+
+| Test | NavMesh Polygons | Path Points | Height Gap | Result |
+|------|-----------------|-------------|------------|--------|
+| Flat terrain | 2 | 2 | 0.5m | ✅ WORKS |
+| main.tscn (pre-baked) | 41,612 | >0 | ~0m | ✅ WORKS |
+| Procedural terrain | 200-940 | **0** | 0.3-0.9m | ❌ FAILS |
+
+### Key Observations
+
+1. **Bake timing is suspiciously fast**: `"Bake took 0.000s"` for 63K faces seems impossible
+
+2. **Height mismatch persists**: NavMesh minimum Y is consistently 0.3-0.9m above captain
+
+3. **Flat terrain works**: With 0m height variation, navigation succeeds
+
+4. **Demo uses single-param API BUT editor terrain is painted**: The editor baker can use default because editor terrain has painted nav areas. **Procedural terrain MUST use `false` as second param** or it returns 0 faces!
+
+### Attempts Made (All Failed)
+
+| Attempt | What We Tried | Result |
+|---------|---------------|--------|
+| 1 | Copy demo verbatim (RuntimeNavigationBaker.gd, Enemy.gd) | Same failure |
+| 2 | Fix velocity.y overwrite in `_on_velocity_computed` | Fixed sliding, nav still fails |
+| 3 | Spawn on flat ground (slope < 15°) | Still 0 path points |
+| 4 | Match demo API (single-param `generate_nav_mesh_source_geometry`) | **WRONG!** Returns 0 faces for procedural terrain |
+| 5 | Force NavigationServer map update | No effect |
+| 6 | Wait 10 physics frames for sync | No effect |
+| 7 | **Fix `map_get_random_point` API** | Previous code treated Vector3 return as PackedVector3Array, causing silent crash (2026-01-12) |
+| 8 | **Add post-processing + null-reassign from editor baker** | **FAILED** (2026-01-12) - Post-processing ran (219->219 polys, no change), navigation still fails. See Discovery #1 below |
+| 9 | **Enable region BEFORE bake** | **SUCCESS!** (2026-01-12) - Discovery #2: Region was disabled during bake. FIX WORKED! |
+
+---
+
+### 🔍 DISCOVERY #2 (2026-01-12): NavigationRegion3D Disabled During Bake - **THE FIX!**
+
+**Status: THIS WAS THE SOLUTION**
+
+**Source**: Fresh log output from new debug line in `RuntimeNavBaker._bake_finished()`:
+```
+[RuntimeNavBaker] Region enabled=false, layers=1
+```
+
+**Problem**: The NavigationRegion3D was DISABLED when the baked NavMesh was assigned to it. A disabled region is ignored by NavigationServer queries, which is why:
+- `map_get_random_point()` returns Vector3.ZERO
+- `map_get_path()` returns 0 points
+- Navigation considers the mesh EMPTY despite having 218 polygons
+
+**Root Cause**: In `procedural_game_controller.gd`:
+1. Line 295: `runtime_nav_baker.enabled = false` - Disabled to prevent auto-baking
+2. Line 119: `force_bake_at()` called - Bake happens while region disabled
+3. Line 120: `await bake_finished` - Mesh assigned to DISABLED region
+4. Line 327: `enabled = true` - TOO LATE! Bake already finished
+
+**Fix Applied** (line 122 of `procedural_game_controller.gd`):
+```gdscript
+# DISCOVERY #2 FIX (2026-01-12): Must enable region BEFORE bake, not after!
+runtime_nav_baker.enabled = true  # Enable BEFORE bake so region is active when mesh assigned
+runtime_nav_baker.force_bake_at(spawn_pos)
+await runtime_nav_baker.bake_finished
+```
+
+**Result**: Navigation now works on procedural terrain! Captain moves correctly on dynamically baked NavMesh.
+
+---
+
+### 🔍 DISCOVERY #1 (2026-01-12): Editor Baker Post-Processing Missing
+
+**Source File**: `addons/terrain_3d/menu/baker.gd`
+
+**Problem**: NavMesh shows 218 polygons but `map_get_random_point()` returns Vector3.ZERO and all paths return 0 points.
+
+**Root Cause Found**: The editor baker (`_bake_nav_region_nav_mesh()`) does TWO critical things our RuntimeNavBaker was missing:
+
+#### 1. Post-processing (baker.gd lines 211, 225-242)
+
+```gdscript
+_postprocess_nav_mesh(nav_mesh)
+```
+
+The `_postprocess_nav_mesh()` function does three things:
+- **Rounds all vertices** to cell_size/cell_height to eliminate edges shorter than cell size
+- **Removes empty polygons** that result from vertex rounding
+- **Removes overlapping polygons** that cause navigation failures
+
+This fixes Godot issue #85548.
+
+#### 2. Null-reassign trick (baker.gd lines 213-215)
+
+```gdscript
+# Assign null first to force the debug display to actually update:
+p_nav_region.set_navigation_mesh(null)
+p_nav_region.set_navigation_mesh(nav_mesh)
+```
+
+This forces NavigationServer to properly re-register the mesh. Without this, the region may show polygon counts but navigation queries fail.
+
+#### Evidence from logs (2026-01-12):
+```
+[RuntimeNavBaker] NavMesh ready: 218 polygons, 127 vertices
+[ProceduralGame] WARNING: map_get_random_point returned ZERO!
+[ProceduralGame] Micro-path (1m away): 0 points
+```
+
+218 polygons exist but navigation considers the mesh EMPTY.
+
+#### Fix Required:
+Add `_postprocess_nav_mesh()` functions and null-reassign to `RuntimeNavBaker._bake_finished()`.
+
+---
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/systems/runtime_nav_baker.gd` | Copied demo, added debug logging, changed to single-param API |
+| `src/procedural_game_controller.gd` | Added spawn location finder, extensive debug logging |
+| `src/characters/clickable_unit.gd` | Fixed gravity erasure bug (by other agent) |
+| `scenes/test_flat_terrain.tscn` | Created minimal test scene |
+
+### Next Steps to Try
+
+1. **Port post-processing from editor baker**: Terrain3D editor baker has `_postprocess_nav_mesh()` that rounds vertices and removes overlapping polygons. Our runtime baker doesn't do this.
+
+2. **Try larger cell_size**: Default 0.25 may be too fine for procedural terrain. Editor baker may use different defaults.
+
+3. **Check if NavMesh vertices are connected**: The 200 polygons might be isolated islands, not a connected graph.
+
+4. **Compare NavMesh structure**: Dump vertex/polygon data from both working (main.tscn) and failing (procedural) cases.
+
+### Inlet "Cone Hole" Problem
+
+The inlet carving creates a 300m radius depression from ~70m down to ~5m height. This results in:
+- Slopes > 60° at inlet edges (way beyond 30° NavMesh limit)
+- Captains spawning at bottom of a "pit" with no walkable NavMesh
+- Need to spawn OUTSIDE inlet on gentler slopes
+
+**Fix Applied**: `_find_navigable_spawn()` searches outward from inlet center to find slope < 25°.
+
+### References
+
+- [Terrain3D Navigation Docs](https://terrain3d.readthedocs.io/en/stable/docs/navigation.html)
+- [Godot NavigationMesh Docs](https://docs.godotengine.org/en/stable/classes/class_navigationmesh.html)
+- Demo reference: `tmp/demo/src/RuntimeNavigationBaker.gd`
+- Editor baker reference: `addons/terrain_3d/menu/baker.gd`
+
+---
+
 ## Signals
 
 The `TerrainGenerator` emits these signals for UI integration:

@@ -115,7 +115,11 @@ func _generate_game() -> void:
 			print("[ProceduralGame] Spawn pos terrain height: %.2f" % actual_height)
 
 	# Bake NavMesh at the spawn location (not ship center)
+	# DISCOVERY #2 FIX (2026-01-12): Must enable region BEFORE bake, not after!
+	# See src/terrain/CLAUDE.md "DISCOVERY #2" - region was disabled during bake,
+	# causing NavigationServer to ignore the mesh despite having 218 polygons.
 	_update_loading("Baking navigation mesh...")
+	runtime_nav_baker.enabled = true  # Enable BEFORE bake so region is active when mesh assigned
 	runtime_nav_baker.force_bake_at(spawn_pos)
 	await runtime_nav_baker.bake_finished
 
@@ -322,9 +326,9 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 
 	print("[ProceduralGame] Captain spawned at %s" % captain.global_position)
 
-	# Tell RuntimeNavBaker to track captain
+	# Tell RuntimeNavBaker to track captain for auto-rebaking as they move
 	runtime_nav_baker.player = captain
-	runtime_nav_baker.enabled = true
+	# Note: enabled was already set to true before bake (see DISCOVERY #2 fix above)
 
 	# Spawn containers around ship (they don't need navigation)
 	_spawn_containers(ship_pos)
@@ -363,6 +367,12 @@ func _finalize_captain_setup() -> void:
 			var path := NavigationServer3D.map_get_path(baker_map, closest_start, closest_end, true)
 			print("[ProceduralGame] Test path from %s to %s: %d points" % [closest_start, closest_end, path.size()])
 
+			# CRITICAL DEBUG: Check height differences
+			print("[ProceduralGame] Captain Y=%.2f, closest_start Y=%.2f, delta=%.2f" % [
+				start.y, closest_start.y, abs(start.y - closest_start.y)])
+			print("[ProceduralGame] Target Y=%.2f, closest_end Y=%.2f, delta=%.2f" % [
+				test_target.y, closest_end.y, abs(test_target.y - closest_end.y)])
+
 			# Check edge connection margin
 			var edge_margin := NavigationServer3D.map_get_edge_connection_margin(baker_map)
 			print("[ProceduralGame] Edge connection margin: %.1f" % edge_margin)
@@ -384,6 +394,27 @@ func _finalize_captain_setup() -> void:
 				var region_rid: RID = regions[i]
 				var region_enabled: bool = NavigationServer3D.region_get_enabled(region_rid)
 				print("[ProceduralGame]   Region %d: RID=%s, enabled=%s" % [i, region_rid, region_enabled])
+
+			# DEBUG: Get random point from NavMesh (returns Vector3, not array)
+			# map_get_random_point(map: RID, navigation_layers: int, uniformly: bool) -> Vector3
+			var random_pt: Vector3 = NavigationServer3D.map_get_random_point(baker_map, 1, true)
+			if random_pt != Vector3.ZERO:
+				print("[ProceduralGame] Random NavMesh point: %s" % random_pt)
+				# Try pathing to random point to verify connectivity
+				var path_to_random := NavigationServer3D.map_get_path(baker_map, closest_start, random_pt, true)
+				print("[ProceduralGame] Path to random point: %d points" % path_to_random.size())
+			else:
+				print("[ProceduralGame] WARNING: map_get_random_point returned ZERO!")
+
+			# Check if we can path from start to a very close point (micro-path test)
+			var micro_target := closest_start + Vector3(1, 0, 1)
+			var micro_closest := NavigationServer3D.map_get_closest_point(baker_map, micro_target)
+			var micro_path := NavigationServer3D.map_get_path(baker_map, closest_start, micro_closest, true)
+			print("[ProceduralGame] Micro-path (1m away): %d points, from %s to %s" % [micro_path.size(), closest_start, micro_closest])
+
+			# Check distance between start/end - if they snap to same point, path would be empty
+			var start_end_dist := closest_start.distance_to(closest_end)
+			print("[ProceduralGame] Distance between closest_start and closest_end: %.2f" % start_end_dist)
 
 	# Now add AI controller (NavMesh should be ready)
 	_add_ai_controller(captain)
