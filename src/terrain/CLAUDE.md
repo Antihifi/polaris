@@ -1646,9 +1646,99 @@ Add `_postprocess_nav_mesh()` functions and null-reassign to `RuntimeNavBaker._b
 | File | Changes |
 |------|---------|
 | `src/systems/runtime_nav_baker.gd` | Copied demo, added debug logging, changed to single-param API |
-| `src/procedural_game_controller.gd` | Added spawn location finder, extensive debug logging |
+| `src/procedural_game_controller.gd` | Added spawn location finder, extensive debug logging, ship spawning, removed AI controller from captain |
 | `src/characters/clickable_unit.gd` | Fixed gravity erasure bug (by other agent) |
 | `scenes/test_flat_terrain.tscn` | Created minimal test scene |
+
+---
+
+## Terrain Generation Improvements (2026-01-12)
+
+### GDD Requirements Implemented
+
+The `heightmap_generator.gd` was updated to match the Game Design Document specifications:
+
+| Feature | GDD Requirement | Implementation |
+|---------|-----------------|----------------|
+| Mountains | Peaks up to 400m, central areas | `MAX_MOUNTAIN_HEIGHT: 350m`, concentrated at `ny=0.4` |
+| Cliffs | Steep slopes creating barriers | Ridge noise adds cliff-like features in mountain band |
+| Flat plains | Common in central/south | `FLAT_PLAINS_START: 0.6` reduces hills in south |
+| Beaches | Low elevation, south shore | `BEACH_START: 0.85` lerps towards `BEACH_HEIGHT: 8m` |
+| Northern rugged | Higher elevation, difficult | +40m boost for `ny < 0.3` |
+| Southern easy | Gentle slopes, sled travel | Height reduced up to 50% in south |
+
+### Regional Height System
+
+```gdscript
+# Normalized Y coordinates (0=north, 1=south)
+MOUNTAIN_BAND_CENTER: 0.4   # Mountains peak at 40% from north
+MOUNTAIN_BAND_WIDTH: 0.25   # Mountain band spans ~25% of terrain
+FLAT_PLAINS_START: 0.6      # Flat plains begin 60% from north
+BEACH_START: 0.85           # Beaches begin 85% from north
+```
+
+### Height Components
+
+1. **Base terrain** - Gentle undulation (0-25m amplitude)
+2. **Hills** - Rolling terrain, reduced in south (0-120m)
+3. **Mountains** - Sharp peaks in central band (0-350m)
+4. **Ridge boost** - Cliff-like features in mountain band
+5. **Northern boost** - +40m at north edge, decreasing southward
+6. **Detail noise** - Micro-terrain (±3m)
+
+### Ship Spawning (2026-01-12)
+
+The `procedural_game_controller.gd` now spawns the ship at the inlet position:
+
+```gdscript
+# Ship spawns at ship_pos (inlet center from POI placement)
+ship = _ship_scene.instantiate()
+ship.global_position = Vector3(ship_pos.x, terrain_height, ship_pos.z)
+
+# Captain spawns at nearby navigable position (50-200m from ship)
+# _find_navigable_spawn() searches for gentle slopes (<25°)
+```
+
+### Inlet/River Carving System (2026-01-12)
+
+The inlet system was completely rewritten to use erosion-style river carving:
+
+**Previous approach (BROKEN):**
+- Carved a circular cone-hole 20% into the island
+- Inlet was too far inland from coast
+- Created steep slopes that NavMesh couldn't traverse
+
+**New approach (WORKING):**
+- Finds actual coastline on north coast
+- Carves river valley FROM coast INTO island
+- River tapers: ~150m wide at mouth, ~80m at end
+- Flat river floor with sloped valley walls (V-profile)
+- Connects frozen sea to ship spawn location
+
+**Key constants in `heightmap_generator.gd`:**
+```gdscript
+INLET_WIDTH_PIXELS: 60     # ~150m wide river mouth
+INLET_LENGTH_PIXELS: 200   # ~500m long river into island
+INLET_FLOOR_HEIGHT: 3.0    # River floor (ship sits here)
+FROZEN_SEA_HEIGHT: -2.0    # Flat ice buffer around island
+```
+
+### Frozen Sea Buffer (2026-01-12)
+
+Added `_ensure_flat_frozen_sea()` function that guarantees:
+- All terrain outside island (mask < 0.1) is perfectly flat at -2m
+- Transition zone (mask 0.1-0.3) blends smoothly to frozen sea level
+- This creates the 500m+ ice buffer around the island
+
+### Captain Control (2026-01-12)
+
+The captain is now player-controlled (NO AI controller) to match `main.tscn` behavior:
+
+```gdscript
+# In _finalize_captain_setup():
+# IMPORTANT: Captain is player-controlled (like main.tscn) - NO AI controller
+# The ManAIController is for NPC survivors only, not the player character
+```
 
 ### Next Steps to Try
 

@@ -172,9 +172,9 @@ static func _carve_fjord(mask: Image, start: Vector2i, direction: Vector2, lengt
 			mask.set_pixel(px, py, Color(new_value, 0.0, 0.0, 1.0))
 
 
-## Attempt to find the inlet position (used for ship spawn)
-## Returns the position in normalized coordinates (0-1) and which side
-## With new scale, the island fills most of the terrain, so inlet is near actual north edge.
+## Find inlet position on the ACTUAL COASTLINE of the north coast.
+## The inlet should start AT the coast and carve INTO the island like a river mouth.
+## Returns the coastline point where the inlet begins, plus direction into island.
 static func find_inlet_position(mask: Image, inlet_rng: RandomNumberGenerator) -> Dictionary:
 	var width := mask.get_width()
 	var height := mask.get_height()
@@ -182,45 +182,69 @@ static func find_inlet_position(mask: Image, inlet_rng: RandomNumberGenerator) -
 	# Choose east or west side of north coast
 	var east_side := inlet_rng.randf() > 0.5
 
-	# Target position on north coast - moved INSIDE island to ensure NavMesh coverage
-	# Previous 8% was in the ice border zone with no NavMesh polygons!
-	# 20% from north edge = well inside the walkable island area
-	var target_x := width * (0.60 if east_side else 0.40)
-	var target_y := height * 0.20  # Further inside island (was 0.08 - too close to ice)
+	# Target X position on north coast (60% or 40% from left)
+	var target_x := int(width * (0.60 if east_side else 0.40))
 
-	# Find actual coast position near target
-	var best_pos := Vector2i(int(target_x), int(target_y))
-	var best_score := -1000.0
+	# FIND THE ACTUAL COASTLINE by scanning from north edge downward
+	# The coastline is where mask transitions from 0 (ice) to >0.5 (island)
+	var coastline_y := -1
+	for y in range(0, height):
+		var value: float = mask.get_pixel(target_x, y).r
+		if value > 0.3:  # Found the coast transition
+			coastline_y = y
+			break
 
-	# Search in larger area around target
-	for dy in range(-50, 80):  # Search more into island
-		for dx in range(-60, 60):
-			var check_x := int(target_x) + dx
-			var check_y := int(target_y) + dy
+	if coastline_y == -1:
+		# Fallback: use 15% from north
+		coastline_y = int(height * 0.15)
+		push_warning("[IslandShape] Could not find coastline at x=%d, using fallback y=%d" % [target_x, coastline_y])
 
-			if check_x < 0 or check_x >= width or check_y < 0 or check_y >= height:
-				continue
+	# Fine-tune: search horizontally for best coastline point
+	var best_coast := Vector2i(target_x, coastline_y)
+	var best_coast_value := mask.get_pixel(target_x, coastline_y).r
 
-			var value: float = mask.get_pixel(check_x, check_y).r
-			# We want to be FIRMLY on the island (value > 0.6) to ensure NavMesh coverage
-			# Previous 0.4 threshold placed inlet at ice border where NavMesh has no polygons!
-			if value < 0.6:
-				continue
+	for dx in range(-100, 100):
+		var check_x := target_x + dx
+		if check_x < 0 or check_x >= width:
+			continue
 
-			# Score: prefer higher mask value (more solidly on island)
-			# but also prefer being more north (lower Y)
-			var island_score: float = value  # Higher = more on island
-			var north_score: float = 1.0 - (float(check_y) / float(height))  # Higher = more north
-			var position_score: float = 1.0 - abs(float(check_x) - target_x) / 80.0
-			var score: float = island_score * 0.4 + north_score * 0.4 + position_score * 0.2
+		# Find coastline at this X
+		for y in range(0, height):
+			var value: float = mask.get_pixel(check_x, y).r
+			if value > 0.3 and value < 0.7:  # Coastline transition zone
+				# Prefer points closer to target_x
+				var dist_penalty: float = absf(float(dx)) * 0.001
+				var adjusted_value: float = value - dist_penalty
+				if adjusted_value > best_coast_value - 0.1:  # Allow some variation
+					best_coast = Vector2i(check_x, y)
+					best_coast_value = value
+				break
 
-			if score > best_score:
-				best_score = score
-				best_pos = Vector2i(check_x, check_y)
+	# The ship spawn point should be JUST INSIDE the coastline (on walkable terrain)
+	# Move ~100 pixels (250m) into the island from the coastline
+	var spawn_offset := 80  # ~200m inland
+	var spawn_pos := Vector2i(best_coast.x, best_coast.y + spawn_offset)
+
+	# Verify spawn position is on solid island
+	if spawn_pos.y < height:
+		var spawn_value: float = mask.get_pixel(spawn_pos.x, spawn_pos.y).r
+		if spawn_value < 0.5:
+			# Move further inland if needed
+			for extra in range(20, 200, 20):
+				spawn_pos.y = best_coast.y + spawn_offset + extra
+				if spawn_pos.y >= height:
+					break
+				spawn_value = mask.get_pixel(spawn_pos.x, spawn_pos.y).r
+				if spawn_value >= 0.5:
+					break
+
+	print("[IslandShape] Inlet coastline at pixel (%d, %d), spawn at (%d, %d)" % [
+		best_coast.x, best_coast.y, spawn_pos.x, spawn_pos.y])
 
 	return {
-		"position": Vector2(float(best_pos.x) / float(width), float(best_pos.y) / float(height)),
-		"pixel_position": best_pos,
+		"position": Vector2(float(spawn_pos.x) / float(width), float(spawn_pos.y) / float(height)),
+		"pixel_position": spawn_pos,
+		"coastline_pixel": best_coast,
 		"east_side": east_side
 	}
 

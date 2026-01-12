@@ -8,6 +8,7 @@ var _captain_scene: PackedScene = preload("res://src/characters/captain.tscn")
 var _camera_scene: PackedScene = preload("res://src/camera/rts_camera.tscn")
 var _hud_scene: PackedScene = preload("res://ui/game_hud.tscn")
 var _inventory_hud_scene: PackedScene = preload("res://ui/inventory_hud.tscn")
+var _ship_scene: PackedScene = preload("res://objects/ship1/ship_1.tscn")
 
 ## Load existing terrain configuration from world_map.tscn
 ## This gives us properly configured textures without recreating them
@@ -23,6 +24,7 @@ const METERS_PER_PIXEL: float = VERTEX_SPACING
 var terrain: Node = null  # Terrain3D (dynamically created)
 var runtime_nav_baker: RuntimeNavBaker = null
 var captain: Node3D = null
+var ship: Node3D = null  # The frozen ship
 var rts_camera: Camera3D = null
 var _seed_manager = null  # SeedManager instance
 
@@ -312,8 +314,9 @@ func _place_pois(inlet_position: Vector3) -> void:
 
 
 func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
-	## Spawn captain at navigable spawn_pos, containers around ship_pos.
+	## Spawn captain at navigable spawn_pos, ship at ship_pos, containers around ship.
 	## spawn_pos is pre-calculated to be on gentle terrain where NavMesh works.
+	## ship_pos comes from POI placement (inlet center).
 
 	# Spawn captain
 	captain = _captain_scene.instantiate()
@@ -325,6 +328,26 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	captain.movement_speed = 5.0
 
 	print("[ProceduralGame] Captain spawned at %s" % captain.global_position)
+
+	# Spawn ship at ship_pos (inlet center where it's "trapped in ice")
+	ship = _ship_scene.instantiate()
+	ship.name = "Ship1"
+	add_child(ship)
+
+	# Get terrain height at ship position
+	var ship_height := ship_pos.y
+	if terrain and "data" in terrain and terrain.data:
+		var terrain_height: float = terrain.data.get_height(Vector3(ship_pos.x, 0, ship_pos.z))
+		if not is_nan(terrain_height):
+			ship_height = terrain_height
+
+	ship.global_position = Vector3(ship_pos.x, ship_height, ship_pos.z)
+
+	# Verify ship is within 500m of captain (GDD requirement)
+	var distance_to_captain := captain.global_position.distance_to(ship.global_position)
+	print("[ProceduralGame] Ship spawned at %s (distance to captain: %.1fm)" % [ship.global_position, distance_to_captain])
+	if distance_to_captain > 500.0:
+		push_warning("[ProceduralGame] Ship is %.1fm from captain - exceeds 500m requirement!" % distance_to_captain)
 
 	# Tell RuntimeNavBaker to track captain for auto-rebaking as they move
 	runtime_nav_baker.player = captain
@@ -416,8 +439,8 @@ func _finalize_captain_setup() -> void:
 			var start_end_dist := closest_start.distance_to(closest_end)
 			print("[ProceduralGame] Distance between closest_start and closest_end: %.2f" % start_end_dist)
 
-	# Now add AI controller (NavMesh should be ready)
-	_add_ai_controller(captain)
+	# IMPORTANT: Captain is player-controlled (like main.tscn) - NO AI controller
+	# The ManAIController is for NPC survivors only, not the player character
 
 	# Verify position
 	_verify_captain_position()
