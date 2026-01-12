@@ -50,6 +50,15 @@ signal zoom_changed(zoom_level: float, zoom_ratio: float)
 @export var bounds_group: String = "selectable_units"
 
 # =========================
+# Terrain collision
+# =========================
+@export_category("Terrain Collision")
+## Minimum height above terrain surface. Camera will be pushed up if below this.
+@export var min_height_above_terrain: float = 3.0
+## Enable terrain collision checking. Only needed for procedurally generated terrain.
+@export var terrain_collision_enabled: bool = false
+
+# =========================
 # Runtime state
 # =========================
 var orbit_center: Vector3 = Vector3.ZERO
@@ -64,8 +73,11 @@ var _pitch: float = 0.8              # radians (~45° initial)
 var _focus_target: Node3D = null     # Object to orbit around when MMB rotating
 var _is_focusing: bool = false       # Smooth transition in progress
 var _focus_destination: Vector3 = Vector3.ZERO
+var _terrain: Node = null            # Cached Terrain3D reference for collision
 
 func _ready() -> void:
+	# Find Terrain3D for collision checking
+	_find_terrain()
 	var pmin := deg_to_rad(pitch_min_deg)
 	var pmax := deg_to_rad(pitch_max_deg)
 	_pitch = clamp(_pitch, pmin, pmax)
@@ -228,7 +240,16 @@ func _update_camera_position() -> void:
 		cos(_yaw) * cos(_pitch)
 	).normalized()
 
-	position = orbit_center + dir * orbit_distance
+	var new_pos := orbit_center + dir * orbit_distance
+
+	# Terrain collision: ensure camera stays above terrain surface
+	if terrain_collision_enabled:
+		var terrain_height := _get_terrain_height(new_pos)
+		var min_y := terrain_height + min_height_above_terrain
+		if new_pos.y < min_y:
+			new_pos.y = min_y
+
+	position = new_pos
 	look_at(orbit_center, Vector3.UP)
 
 	# Derived values (useful if other systems read them)
@@ -287,3 +308,46 @@ func get_zoom_ratio() -> float:
 func _emit_zoom_changed() -> void:
 	var ratio := get_zoom_ratio()
 	zoom_changed.emit(orbit_distance, ratio)
+
+
+# =========================
+# Terrain Helpers
+# =========================
+func _find_terrain() -> void:
+	## Find and cache Terrain3D node for collision checking.
+	# Check terrain group first
+	var terrain_nodes := get_tree().get_nodes_in_group("terrain")
+	for node in terrain_nodes:
+		if node.get_class() == "Terrain3D" or "Terrain3D" in node.name:
+			_terrain = node
+			return
+
+	# Fallback: search scene tree
+	var scene := get_tree().current_scene
+	if scene:
+		_terrain = _find_node_by_class(scene, "Terrain3D")
+
+
+func _find_node_by_class(node: Node, class_name_str: String) -> Node:
+	## Recursively find node by class name.
+	if node.get_class() == class_name_str or class_name_str in node.name:
+		return node
+	for child in node.get_children():
+		var found := _find_node_by_class(child, class_name_str)
+		if found:
+			return found
+	return null
+
+
+func _get_terrain_height(world_pos: Vector3) -> float:
+	## Get terrain height at world position. Returns -INF if terrain not found.
+	if not _terrain:
+		_find_terrain()  # Try again in case terrain was added later
+
+	if _terrain and "data" in _terrain and _terrain.data:
+		if _terrain.data.has_method("get_height"):
+			var height: float = _terrain.data.get_height(world_pos)
+			if not is_nan(height) and height > -1000.0:
+				return height
+
+	return -INF  # No terrain or invalid height

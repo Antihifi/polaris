@@ -1,0 +1,11 @@
+Model Information:
+* title:	Tent_Tribal_Guard_17_MB
+* source:	https://sketchfab.com/3d-models/tent-tribal-guard-17-mb-1a6c7f71a57247cabf2f08222182037f
+* author:	Mehdi Shahsavan (https://sketchfab.com/ahmagh2e)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Tent_Tribal_Guard_17_MB" (https://sketchfab.com/3d-models/tent-tribal-guard-17-mb-1a6c7f71a57247cabf2f08222182037f) by Mehdi Shahsavan (https://sketchfab.com/ahmagh2e) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

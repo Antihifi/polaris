@@ -182,10 +182,11 @@ static func find_inlet_position(mask: Image, inlet_rng: RandomNumberGenerator) -
 	# Choose east or west side of north coast
 	var east_side := inlet_rng.randf() > 0.5
 
-	# Target position on north coast - now closer to edge since island fills terrain
-	# With 500m ice border on 10km terrain, that's ~5% from edge
+	# Target position on north coast - moved INSIDE island to ensure NavMesh coverage
+	# Previous 8% was in the ice border zone with no NavMesh polygons!
+	# 20% from north edge = well inside the walkable island area
 	var target_x := width * (0.60 if east_side else 0.40)
-	var target_y := height * 0.08  # Near north edge (within ice border transition)
+	var target_y := height * 0.20  # Further inside island (was 0.08 - too close to ice)
 
 	# Find actual coast position near target
 	var best_pos := Vector2i(int(target_x), int(target_y))
@@ -201,8 +202,9 @@ static func find_inlet_position(mask: Image, inlet_rng: RandomNumberGenerator) -
 				continue
 
 			var value: float = mask.get_pixel(check_x, check_y).r
-			# We want to be on the island (value > 0.5) but near the northern edge
-			if value < 0.4:
+			# We want to be FIRMLY on the island (value > 0.6) to ensure NavMesh coverage
+			# Previous 0.4 threshold placed inlet at ice border where NavMesh has no polygons!
+			if value < 0.6:
 				continue
 
 			# Score: prefer higher mask value (more solidly on island)

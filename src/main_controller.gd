@@ -55,8 +55,7 @@ func _ready() -> void:
 	# Connect container click to inventory HUD
 	input_handler.container_clicked.connect(_on_container_clicked)
 
-	# Add NeedsController to captain
-	_add_needs_controller(captain)
+	# Captain is player-controlled only - no AI controller
 
 	# Focus camera on captain initially
 	if rts_camera.has_method("focus_on"):
@@ -79,9 +78,9 @@ func _spawn_test_survivors() -> void:
 	var survivors: Array[Node] = character_spawner.spawn_survivors(test_survivor_count, spawn_center)
 	print("[MainController] Spawned %d survivors" % survivors.size())
 
-	# Add NeedsController to each spawned survivor
+	# Add AI controller to each spawned survivor
 	for survivor in survivors:
-		_add_needs_controller(survivor)
+		_add_ai_controller(survivor)
 
 	# Print summary
 	character_spawner.print_survivor_summary()
@@ -140,11 +139,13 @@ func _on_container_clicked(container: StorageContainer) -> void:
 	inventory_hud.open_container(container)
 
 
-func _add_needs_controller(unit: Node) -> void:
-	## Add NeedsController component to a unit.
+func _add_ai_controller(unit: Node) -> void:
+	## Add ManAIController component to a unit for behavior tree AI.
 	if not unit:
 		return
-	var NeedsControllerScript: Script = preload("res://src/ai/needs_controller.gd")
-	var needs: Node = NeedsControllerScript.new()
-	needs.name = "NeedsController"
-	unit.add_child(needs)
+	var ManAIControllerScript: Script = preload("res://ai/man_ai_controller.gd")
+	var ai_controller: Node = ManAIControllerScript.new()
+	ai_controller.name = "ManAIController"
+	# Load the behavior tree
+	ai_controller.behavior_tree = preload("res://ai/man_bt.tres")
+	unit.add_child(ai_controller)

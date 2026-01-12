@@ -44,9 +44,12 @@ var _footstep_player: AudioStreamPlayer3D
 
 var is_selected: bool = false
 var is_moving: bool = false
-var _debug_frame_count: int = 0
+## Set by behavior tree tasks during stationary animations (sitting, sleeping).
+## When true, physics processing is skipped to prevent drift.
+var is_animation_locked: bool = false
 var _time_manager: Node = null
 var _last_energy_signal: float = 100.0  # Track last energy value for signal emission
+var _terrain_cache: Node = null  # Cached Terrain3D reference for floor checks
 
 ## Animation offset (0-1) to desync animations between units
 var animation_offset: float = 0.0
@@ -58,14 +61,13 @@ const INVENTORY_GRID_SIZE := Vector2i(3, 3)
 
 
 func _ready() -> void:
-	print("[ClickableUnit] _ready() called on: ", name)
-	print("[ClickableUnit] Position: ", global_position)
-	print("[ClickableUnit] NavigationAgent3D: ", navigation_agent)
-
 	# Initialize stats if not set
 	if stats == null:
 		stats = SurvivorStats.new()
-		print("[ClickableUnit] Created new SurvivorStats")
+
+	# Ensure unit starts in idle state (not walking)
+	is_moving = false
+	velocity = Vector3.ZERO
 
 	# Setup navigation callbacks
 	navigation_agent.velocity_computed.connect(_on_velocity_computed)
@@ -74,10 +76,9 @@ func _ready() -> void:
 	# Find AnimationPlayer in children (CaptainAnimations/AnimationPlayer)
 	animation_player = _find_animation_player(self)
 	if animation_player:
-		print("[ClickableUnit] Found AnimationPlayer: ", animation_player.name)
+		# Force idle animation immediately (override any autoplay setting)
+		animation_player.stop()
 		_play_animation("idle")
-	else:
-		print("[ClickableUnit] WARNING: No AnimationPlayer found")
 
 	# Create 3D positional footstep audio player
 	_footstep_player = AudioStreamPlayer3D.new()
@@ -101,21 +102,22 @@ func _ready() -> void:
 	# Setup inventory
 	_setup_inventory()
 
-	print("[ClickableUnit] Ready complete, added to selectable_units and survivors groups")
 
+var _debug_physics_counter: int = 0
 
 func _physics_process(delta: float) -> void:
-	_debug_frame_count += 1
+	_debug_physics_counter += 1
 
-	# Debug every 120 frames to confirm _physics_process is running
-	if _debug_frame_count % 120 == 1:
-		print("[ClickableUnit] _physics_process running, frame: ", _debug_frame_count, " is_moving: ", is_moving)
+	# Skip physics entirely during locked animations (sitting, sleeping)
+	# This prevents drift from move_and_slide() during stationary poses
+	if is_animation_locked:
+		return
 
 	if not is_moving:
 		return
 
 	if navigation_agent.is_navigation_finished():
-		print("[ClickableUnit] Navigation finished at: ", global_position)
+		print("[Unit:%s] Navigation finished at %s" % [unit_name, global_position])
 		is_moving = false
 		velocity = Vector3.ZERO
 		_play_animation("idle")
@@ -126,14 +128,17 @@ func _physics_process(delta: float) -> void:
 	var next_position := navigation_agent.get_next_path_position()
 	var current_pos := global_position
 
-	# Debug every 60 frames (~1 second)
-	if _debug_frame_count % 60 == 0:
-		print("[ClickableUnit] Frame ", _debug_frame_count, " | pos: ", current_pos, " -> next: ", next_position)
-
 	# Calculate direction to next waypoint (full 3D - NavigationAgent provides correct Y from NavMesh)
 	var direction := next_position - current_pos
 
 	var distance := direction.length()
+
+	# Debug every 60 frames while moving
+	if _debug_physics_counter % 60 == 0:
+		var path := navigation_agent.get_current_navigation_path()
+		print("[Unit:%s] Moving: pos=%s, next=%s, dist=%.2f, path_size=%d" % [
+			unit_name, current_pos, next_position, distance, path.size()])
+
 	if distance < 0.1:
 		# Very close to waypoint - wait for next one
 		return
@@ -144,17 +149,16 @@ func _physics_process(delta: float) -> void:
 	var target_rotation := atan2(direction.x, direction.z)
 	rotation.y = lerp_angle(rotation.y, target_rotation, rotation_speed * delta)
 
-	# Calculate and apply velocity using proper physics (scaled by time)
+	# Calculate DESIRED velocity (what we want to move at)
 	var time_scale := _get_time_scale()
-	velocity = direction * movement_speed * time_scale
-	move_and_slide()
+	var desired_velocity := direction * movement_speed * time_scale
+
+	# Set velocity on NavigationAgent - it computes safe velocity avoiding obstacles
+	# and emits velocity_computed signal which triggers _on_velocity_computed()
+	navigation_agent.velocity = desired_velocity
 
 	# Drain energy while walking (scales with time and condition)
 	_drain_walking_energy(delta, time_scale)
-
-	# Debug: show actual movement
-	if _debug_frame_count % 60 == 0:
-		print("[ClickableUnit] velocity: ", velocity, " | new pos: ", global_position)
 
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
@@ -167,23 +171,95 @@ func _on_navigation_finished() -> void:
 	velocity = Vector3.ZERO
 	_stop_footsteps()
 	reached_destination.emit()
+	_clear_player_command()
+
+
+func _apply_terrain_floor_check() -> void:
+	## =====================================================================
+	## FLOOR CHECK - DEBUGGING HISTORY (2026-01-11)
+	## See /home/antih/.claude/plans/fizzy-coalescing-charm.md for full details
+	## =====================================================================
+	##
+	## THE CORE PROBLEM: NavMesh is baked ~0.5-0.6m ABOVE terrain surface.
+	## Captain standing on terrain (Y=13.5) is BELOW navmesh minimum (Y=13.97).
+	## Paths return 0 points because captain can't reach the navmesh.
+	##
+	## APPROACHES TRIED (ALL FAILED):
+	##
+	## 1. maxf(y, terrain_height) - Demo Enemy.gd pattern
+	##    Result: Captain stays below navmesh, paths=0
+	##    Why: maxf only prevents falling BELOW, doesn't lift UP to navmesh
+	##
+	## 2. Snap to terrain height exactly
+	##    Result: Captain on terrain but below navmesh
+	##    Why: NavMesh height != terrain height due to cell_height quantization
+	##
+	## 3. Spawn high (Y+50) + gravity
+	##    Result: Captain barely falls (0.11m instead of 0.56m expected)
+	##    Why: move_and_slide() needs collision, terrain collision may be wrong
+	##
+	## 4. Snap to navmesh height during spawn
+	##    Result: Teleported to (0,0,0)
+	##    Why: Called before navmesh was ready
+	##
+	## 5. Reduce cell_height to 0.1
+	##    Result: Partial success ~10 seconds, then stuck
+	##    Why: Gap reduced but still too large
+	##
+	## CURRENT APPROACH (NEW - Attempt #10): Snap to NAVMESH height
+	## Instead of terrain height, use navmesh closest point Y.
+	## This LIFTS the captain to navmesh level where paths can work.
+	## =====================================================================
+
+	# Use terrain height (demo pattern) - this is the reliable fallback
+	# NavMesh height snapping caused issues with pre-sync queries
+	var terrain := _find_terrain3d()
+	if terrain and "data" in terrain and terrain.data:
+		var height: float = terrain.data.get_height(global_position)
+		if not is_nan(height):
+			if global_position.y < height:
+				global_position.y = height
+				velocity.y = 0.0  # Stop accumulating gravity when snapped to floor
+
+
+func _find_terrain3d() -> Node:
+	## Find Terrain3D node in scene (cached for performance).
+	if _terrain_cache and is_instance_valid(_terrain_cache):
+		return _terrain_cache
+
+	var nodes := get_tree().get_nodes_in_group("terrain")
+	if nodes.size() > 0:
+		_terrain_cache = nodes[0]
+		return _terrain_cache
+
+	# Fallback: search for Terrain3D by class
+	_terrain_cache = _find_node_by_class(get_tree().current_scene, "Terrain3D")
+	return _terrain_cache
+
+
+func _find_node_by_class(node: Node, class_name_str: String) -> Node:
+	## Recursively find node by class name.
+	if node.get_class() == class_name_str:
+		return node
+	for child in node.get_children():
+		var result := _find_node_by_class(child, class_name_str)
+		if result:
+			return result
+	return null
 
 
 func move_to(target_position: Vector3) -> void:
 	## Navigate to target position.
-	print("[ClickableUnit] move_to called with target: ", target_position)
-	print("[ClickableUnit] Current position: ", global_position)
+	print("[Unit:%s] move_to(%s) from %s" % [unit_name, target_position, global_position])
 	navigation_agent.target_position = target_position
 	is_moving = true
 	_play_animation("walking")
 	_start_footsteps()
 	_update_speed_scale()
-	print("[ClickableUnit] Navigation target set, is_moving = ", is_moving)
-	print("[ClickableUnit] Nav agent is_target_reachable: ", navigation_agent.is_target_reachable())
-	print("[ClickableUnit] Nav agent is_navigation_finished: ", navigation_agent.is_navigation_finished())
 
 
 func stop() -> void:
+	print("[Unit:%s] stop() at %s" % [unit_name, global_position])
 	is_moving = false
 	velocity = Vector3.ZERO
 	_play_animation("idle")
@@ -276,12 +352,21 @@ func _update_speed_scale() -> void:
 	var time_scale := _get_time_scale()
 
 	# Animation: scale by both movement speed and time scale
+	# Animation speed_scale can be 0 (paused), but we use maxf to prevent negative values
 	if animation_player:
-		animation_player.speed_scale = base_animation_speed * movement_speed * time_scale
+		animation_player.speed_scale = maxf(0.0, base_animation_speed * movement_speed * time_scale)
 
 	# Footsteps: scale pitch by both movement speed and time scale
+	# IMPORTANT: pitch_scale must be > 0 or Godot throws an error
+	# When paused (time_scale=0), we stop footsteps instead of setting pitch to 0
 	if is_instance_valid(_footstep_player):
-		_footstep_player.pitch_scale = base_footstep_speed * movement_speed * time_scale
+		var pitch := base_footstep_speed * movement_speed * time_scale
+		if pitch > 0.01:  # Minimum viable pitch
+			_footstep_player.pitch_scale = pitch
+		else:
+			# Can't set pitch to 0, so stop playback when paused
+			if _footstep_player.playing:
+				_footstep_player.stop()
 
 
 # --- Survival Needs ---
@@ -458,3 +543,20 @@ func get_morale_aura_name() -> String:
 func get_morale_aura_radius() -> float:
 	## Returns the radius of this unit's morale aura in meters.
 	return 0.0
+
+
+# --- AI Integration ---
+
+func _clear_player_command() -> void:
+	## Clears the player command flag in the AI controller when destination reached.
+	var ai_controller: Node = get_node_or_null("ManAIController")
+	if ai_controller and ai_controller.has_method("set_player_command_active"):
+		ai_controller.set_player_command_active(false)
+
+
+func get_current_action() -> String:
+	## Returns the current AI action for UI display.
+	var ai_controller: Node = get_node_or_null("ManAIController")
+	if ai_controller and ai_controller.has_method("get_current_action"):
+		return ai_controller.get_current_action()
+	return "Idle"

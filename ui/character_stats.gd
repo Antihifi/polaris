@@ -475,12 +475,16 @@ func _update_action() -> void:
 		action_label.text = ""
 		return
 
-	# Get ManAIComponent from unit
-	var ai_component: Node = _current_unit.get_node_or_null("ManAIComponent")
-	if ai_component and ai_component.has_method("get_current_action"):
-		action_label.text = ai_component.get_current_action()
+	# Try get_current_action() method on unit first (added to clickable_unit.gd)
+	if _current_unit.has_method("get_current_action"):
+		action_label.text = _current_unit.get_current_action()
 	else:
-		action_label.text = "Idle"
+		# Fallback: try to find ManAIController directly
+		var ai_controller: Node = _current_unit.get_node_or_null("ManAIController")
+		if ai_controller and ai_controller.has_method("get_current_action"):
+			action_label.text = ai_controller.get_current_action()
+		else:
+			action_label.text = "Idle"
 
 
 func _update_effects() -> void:

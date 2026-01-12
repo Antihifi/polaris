@@ -91,6 +91,9 @@ func generate(seed_manager: SeedManager) -> void:
 	await get_tree().process_frame
 	_carve_inlet()
 
+	# Save debug images with inlet position marked
+	_save_debug_images_with_inlet()
+
 	# Stage 4: Import to Terrain3D
 	generation_progress.emit("Importing terrain data...", 0.35)
 	await get_tree().process_frame
@@ -284,7 +287,17 @@ func _import_to_terrain() -> bool:
 	_terrain.region_size = Terrain3D.SIZE_2048
 	print("[TerrainGenerator] Set region_size to SIZE_2048")
 
-	# STEP 3: Calculate offset to center terrain at world origin
+	# STEP 3: Clear existing terrain data BEFORE import
+	# This is CRITICAL! Old terrain data from world_map.tscn persists through import_images()
+	# causing visual/data mismatch where get_height() returns new data but mesh shows old data.
+	if _terrain.data:
+		var existing_regions: Array = _terrain.data.get_regions_active()
+		var cleared_count: int = existing_regions.size()
+		for region_pos in existing_regions:
+			_terrain.data.remove_region(region_pos, false)
+		print("[TerrainGenerator] Cleared %d existing terrain regions" % cleared_count)
+
+	# STEP 4: Calculate offset to center terrain at world origin
 	# The offset is in PIXEL coordinates (image space), NOT world coordinates!
 	# Official demo uses Vector3(-1024, 0, -1024) for 2048x2048 image
 	# We use Vector3(-2048, 0, -2048) for 4096x4096 image
@@ -293,7 +306,7 @@ func _import_to_terrain() -> bool:
 	var offset := Vector3(-half_img, 0, -half_img)
 	print("[TerrainGenerator] Import offset (pixel coords): %s" % offset)
 
-	# STEP 4: Height scale
+	# STEP 5: Height scale
 	# Our heightmap stores actual meters in .r channel (0-150m range)
 	# import_images multiplies pixel values by this scale
 	# Since heights are already in meters, scale = 1.0
@@ -533,28 +546,23 @@ func _bake_navigation_mesh() -> void:
 		var terrain_aabb: AABB = _terrain.get_aabb()
 		print("[TerrainGenerator] Terrain AABB: %s" % terrain_aabb)
 
+	# Use Terrain3D's generate_nav_mesh_source_geometry() method
+	# CRITICAL: Second parameter is require_nav (default=true)
+	# true = only generates geometry for terrain marked navigable in editor (paint tool)
+	# false = generates geometry for ENTIRE terrain regardless of paint
+	# Our procedurally generated terrain has NO navigable paint, so we MUST use false!
+	# See: https://terrain3d.readthedocs.io/en/stable/api/class_terrain3d.html
 	if _terrain.has_method("generate_nav_mesh_source_geometry"):
-		# CRITICAL: Second parameter is require_nav (default=true)
-		# true = only generates geometry for terrain marked navigable in editor (paint tool)
-		# false = generates geometry for ENTIRE terrain regardless of paint
-		# Our procedurally generated terrain has NO navigable paint, so we MUST use false!
-		# See: https://terrain3d.readthedocs.io/en/stable/api/class_terrain3d.html
 		var faces: PackedVector3Array = _terrain.generate_nav_mesh_source_geometry(aabb, false)
-		print("[TerrainGenerator] generate_nav_mesh_source_geometry(aabb, false) returned %d vertices (%d faces)" % [faces.size(), faces.size() / 3])
+		@warning_ignore("integer_division")
+		var face_count: int = faces.size() / 3
+		print("[TerrainGenerator] generate_nav_mesh_source_geometry(aabb, false) returned %d vertices (%d faces)" % [faces.size(), face_count])
 		if not faces.is_empty():
 			source_geometry.add_faces(faces, Transform3D.IDENTITY)
-			print("[TerrainGenerator] Added %d terrain faces to source geometry" % (faces.size() / 3))
+			print("[TerrainGenerator] Added %d terrain faces to source geometry" % face_count)
 		else:
-			push_warning("[TerrainGenerator] No terrain faces generated even with require_nav=false!")
-			push_warning("[TerrainGenerator] This may mean terrain mesh hasn't been built yet.")
-			push_warning("[TerrainGenerator] Check that import_images() succeeded and created regions.")
-
-			# Try alternative: manually generate faces from height data
-			print("[TerrainGenerator] Attempting fallback: generate faces from height data...")
-			faces = _generate_navmesh_faces_from_heightmap()
-			if not faces.is_empty():
-				source_geometry.add_faces(faces, Transform3D.IDENTITY)
-				print("[TerrainGenerator] Fallback: Added %d faces from heightmap" % (faces.size() / 3))
+			push_error("[TerrainGenerator] No terrain faces generated! NavMesh baking will fail.")
+			return
 	else:
 		push_error("[TerrainGenerator] Terrain3D missing generate_nav_mesh_source_geometry method!")
 		return
@@ -630,11 +638,13 @@ func _refresh_all_navigation_agents() -> void:
 			agents_refreshed += 1
 
 			# Debug: Check if agent can now pathfind
-			var agent_pos: Vector3 = agent.get_parent().global_position if agent.get_parent() else Vector3.ZERO
+			var parent_node: Node = agent.get_parent()
+			var agent_pos: Vector3 = parent_node.global_position if parent_node else Vector3.ZERO
 			var closest_point := NavigationServer3D.map_get_closest_point(nav_map, agent_pos)
 			var distance := agent_pos.distance_to(closest_point)
+			var parent_name: String = parent_node.name if parent_node else "unknown"
 			print("[TerrainGenerator] Agent '%s' at %s -> closest NavMesh point: %s (dist: %.2f)" % [
-				agent.get_parent().name if agent.get_parent() else "unknown",
+				parent_name,
 				agent_pos,
 				closest_point,
 				distance
@@ -675,9 +685,11 @@ func _generate_navmesh_faces_from_heightmap() -> PackedVector3Array:
 	# With 4096 resolution: step=8 gives 512 grid points = ~20m resolution
 	# This produces ~500k faces (512 * 512 * 2) which Godot can handle
 	# Increase step if NavMesh baking is too slow
-	var step := 8
-	var nav_res_x := width / step
-	var nav_res_z := height / step
+	var step: int = 8
+	@warning_ignore("integer_division")
+	var nav_res_x: int = width / step
+	@warning_ignore("integer_division")
+	var nav_res_z: int = height / step
 
 	print("[TerrainGenerator] Generating NavMesh grid from heightmap (step=%d)..." % step)
 
@@ -745,8 +757,10 @@ func _generate_navmesh_faces_from_heightmap() -> PackedVector3Array:
 	for i in range(temp_faces.size()):
 		faces[i] = temp_faces[i]
 
+	@warning_ignore("integer_division")
+	var generated_face_count: int = faces.size() / 3
 	print("[TerrainGenerator] Generated %d faces (skipped %d ice, %d steep)" % [
-		faces.size() / 3, skipped_ice, skipped_steep
+		generated_face_count, skipped_ice, skipped_steep
 	])
 
 	# Debug: Print bounds of generated mesh
@@ -828,3 +842,68 @@ func save_mask_debug(path: String) -> void:
 	if _island_mask:
 		_island_mask.save_png(path)
 		print("[TerrainGenerator] Mask saved to: %s" % path)
+
+
+## Save debug images with inlet position marked (call after inlet carving)
+func _save_debug_images_with_inlet() -> void:
+	if not _island_mask or not _heightmap:
+		return
+
+	var inlet_pixel := _inlet_info.get("pixel_position", Vector2i(-1, -1)) as Vector2i
+	if inlet_pixel.x < 0:
+		print("[TerrainGenerator] No inlet position to mark on debug images")
+		return
+
+	# Create RGB version of mask for visualization with red marker
+	var width := _island_mask.get_width()
+	var height := _island_mask.get_height()
+	var debug_mask := Image.create(width, height, false, Image.FORMAT_RGB8)
+
+	for y in range(height):
+		for x in range(width):
+			var mask_val: float = _island_mask.get_pixel(x, y).r
+			var gray := int(mask_val * 255.0)
+			debug_mask.set_pixel(x, y, Color8(gray, gray, gray))
+
+	# Draw red circle at inlet position
+	var marker_radius := 30
+	for dy in range(-marker_radius, marker_radius + 1):
+		for dx in range(-marker_radius, marker_radius + 1):
+			var dist := sqrt(float(dx * dx + dy * dy))
+			if dist <= marker_radius:
+				var px := inlet_pixel.x + dx
+				var py := inlet_pixel.y + dy
+				if px >= 0 and px < width and py >= 0 and py < height:
+					# Red for inner circle, yellow for outer ring
+					if dist <= marker_radius * 0.7:
+						debug_mask.set_pixel(px, py, Color.RED)
+					else:
+						debug_mask.set_pixel(px, py, Color.YELLOW)
+
+	# Draw crosshairs extending from inlet
+	for i in range(50):
+		# Horizontal line
+		if inlet_pixel.x + marker_radius + i < width:
+			debug_mask.set_pixel(inlet_pixel.x + marker_radius + i, inlet_pixel.y, Color.YELLOW)
+		if inlet_pixel.x - marker_radius - i >= 0:
+			debug_mask.set_pixel(inlet_pixel.x - marker_radius - i, inlet_pixel.y, Color.YELLOW)
+		# Vertical line
+		if inlet_pixel.y + marker_radius + i < height:
+			debug_mask.set_pixel(inlet_pixel.x, inlet_pixel.y + marker_radius + i, Color.YELLOW)
+		if inlet_pixel.y - marker_radius - i >= 0:
+			debug_mask.set_pixel(inlet_pixel.x, inlet_pixel.y - marker_radius - i, Color.YELLOW)
+
+	debug_mask.save_png("user://debug_mask_with_inlet.png")
+
+	# Calculate and log inlet position info
+	var inlet_percent_y: float = float(inlet_pixel.y) / float(height) * 100.0
+	var inlet_percent_x: float = float(inlet_pixel.x) / float(width) * 100.0
+	print("[TerrainGenerator] Debug image saved: user://debug_mask_with_inlet.png")
+	print("[TerrainGenerator] Inlet pixel position: (%d, %d) = (%.1f%% from left, %.1f%% from top)" % [
+		inlet_pixel.x, inlet_pixel.y, inlet_percent_x, inlet_percent_y
+	])
+
+	# Convert to world coords and log
+	var world_x := (float(inlet_pixel.x) - float(width) / 2.0) * METERS_PER_PIXEL
+	var world_z := (float(inlet_pixel.y) - float(height) / 2.0) * METERS_PER_PIXEL
+	print("[TerrainGenerator] Inlet world position: (%.1f, ?, %.1f)" % [world_x, world_z])

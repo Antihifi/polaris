@@ -262,14 +262,16 @@ func _update_sky3d_time_scale() -> void:
 		return
 
 	if is_paused or time_scale <= 0.0:
-		sky3d.pause()
-		print("[TimeManager] Sky3D paused")
+		# Use game_time_enabled property - more reliable than pause()/resume()
+		# pause() only stops the timer, but game_time_enabled fully disables time progression
+		sky3d.game_time_enabled = false
+		print("[TimeManager] Sky3D paused (game_time_enabled = false)")
 	else:
 		# Adjust minutes_per_day based on time scale
 		# Base: 15 minutes per day, faster speeds = shorter real-time days
 		var new_minutes_per_day := minutes_per_game_day / time_scale
 		sky3d.minutes_per_day = new_minutes_per_day
-		sky3d.resume()
+		sky3d.game_time_enabled = true
 		print("[TimeManager] Sky3D speed set to ", new_minutes_per_day, " minutes/day (", time_scale, "x)")
 
 #TODO: FIX NEAR FIRE CHECK TO SEND TO TIME MANAGER?
@@ -333,10 +335,29 @@ func cycle_time_scale() -> void:
 		set_time_scale(0.0)
 
 
+# --- Temperature Override (Debug) ---
+var _temperature_override_enabled: bool = false
+var _temperature_override_value: float = 0.0
+
+func set_temperature_override(enabled: bool, value: float = 0.0) -> void:
+	## Enable/disable temperature override for debugging.
+	_temperature_override_enabled = enabled
+	_temperature_override_value = value
+
+func is_temperature_override_enabled() -> bool:
+	return _temperature_override_enabled
+
+func get_temperature_override_value() -> float:
+	return _temperature_override_value
+
 # --- Environment Queries ---
 
 func get_current_temperature() -> float:
 	## Get current temperature in Celsius based on season and time of day.
+	## Returns override value if debug override is enabled.
+	if _temperature_override_enabled:
+		return _temperature_override_value
+
 	var config: Dictionary = SEASON_CONFIG[current_season]
 	var base_temp: float = config.base_temperature
 
@@ -399,6 +420,25 @@ func get_wind_direction() -> float:
 	if sky3d:
 		return sky3d.wind_direction
 	return 0.0
+
+
+func is_blizzard() -> bool:
+	## Returns true if weather is severe (HEAVY snow).
+	## Used by AI to trigger emergency shelter seeking.
+	var snow_controller: Node = _find_snow_controller()
+	if snow_controller and "current_intensity" in snow_controller:
+		# SnowIntensity.HEAVY = 2
+		return snow_controller.current_intensity == 2
+	return false
+
+
+func _find_snow_controller() -> Node:
+	## Finds the SnowController node in the scene.
+	var nodes := get_tree().get_nodes_in_group("weather")
+	if nodes.size() > 0:
+		return nodes[0]
+	# Search by name
+	return get_tree().current_scene.find_child("SnowController", true, false)
 
 
 # --- Getters ---

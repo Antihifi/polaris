@@ -54,6 +54,37 @@ Open in Godot 4.5+ and run. The main scene is `main.tscn`.
 
 **Godot Path**: `/mnt/c/Users/antih/Desktop/Godot_v4.5.1-stable_win64_console.exe`
 
+---
+
+## ⚠️ CRITICAL: Terrain3D Demo Reference Files
+
+**ALWAYS refer to the WORKING Terrain3D demo code when implementing procedural terrain, navigation, or entity spawning.**
+
+**Demo Location**: `/mnt/c/Users/antih/Documents/polaris/tmp/demo/src/`
+
+| File | Purpose |
+|------|---------|
+| `RuntimeNavigationBaker.gd` | **REFERENCE** for dynamic NavMesh baking around player |
+| `CodeGenerated.gd` | **REFERENCE** for creating Terrain3D dynamically from code |
+| `Enemy.gd` | **REFERENCE** for NavigationAgent3D usage with terrain floor checks |
+| `Player.gd` | **REFERENCE** for CharacterBody3D movement with gravity |
+
+### Key Patterns from Demo
+
+```gdscript
+# Enemy.gd - Terrain floor check (lines 48-52)
+if get_parent().terrain:
+    var height: float = get_parent().terrain.data.get_height(global_position)
+    if not is_nan(height):
+        global_position.y = maxf(global_position.y, height)
+
+# CodeGenerated.gd - Enable runtime nav baking (lines 14-17)
+$RuntimeNavigationBaker.terrain = terrain
+$RuntimeNavigationBaker.enabled = true
+```
+
+**DO NOT look for demo at `/tmp/demo/` - it's in the PROJECT folder at `tmp/demo/src/`**
+
 ```bash
 /mnt/c/Users/antih/Desktop/Godot_v4.5.1-stable_win64_console.exe \
   --headless --script path/to/script.gd 2>&1
@@ -311,6 +342,9 @@ if is_instance_valid(target):
 - `ui_shift` is NOT a default action - manually added in Project Settings
 - Default actions: `ui_left`, `ui_right`, `ui_up`, `ui_down`, `ui_accept`, `ui_cancel`
 
+### Full-Screen Control Mouse Filter
+- Full-screen Controls (PRESET_FULL_RECT) block ALL UI clicks unless `mouse_filter = MOUSE_FILTER_IGNORE`
+
 ## Performance Guidelines
 
 **Always warn about potentially expensive implementations.** When adding features that run frequently (every frame, every physics tick), document the cost and scaling behavior.
@@ -349,12 +383,80 @@ Don't pre-optimize, but **do document**. If profiling shows issues:
 
 ## Navigation Setup (Terrain3D)
 
-1. Select Terrain3D node -> Terrain3D menu -> "Set up Navigation"
-2. Use "Navigable" terrain tool to paint walkable areas (shows magenta)
-3. Select Terrain3D -> Terrain3D menu -> "Bake NavMesh"
+**Reference:** [Terrain3D Navigation Docs](https://terrain3d.readthedocs.io/en/stable/docs/navigation.html)
+
+### Setup Steps
+1. Select Terrain3D node → Terrain3D menu → "Set up Navigation"
+2. Use "Navigable" terrain tool to paint walkable areas (shows dark magenta)
+3. Select Terrain3D → Terrain3D menu → "Bake NavMesh"
 4. Save scene immediately after baking
 
-**Important:** Do NOT use standard NavigationRegion3D bake - only Terrain3D's baker.
+### ⚠️ CRITICAL: Baking Rules
+
+| Action | Correct Method |
+|--------|----------------|
+| Bake NavMesh | Terrain3D menu → "Bake NavMesh" |
+| Standard NavigationRegion3D "Bake" button | **DO NOT USE** - will not work with Terrain3D |
+
+### Including Static Obstacles in NavMesh
+
+To make NavMesh carve around buildings/ships:
+1. Set `NavigationMesh.parsed_geometry_type` to **"Static Colliders"** (not "Mesh Instance")
+2. Place obstacle scenes as **children of NavigationRegion3D**
+3. Rebake via Terrain3D menu
+
+### Performance Notes
+- Only paint navigable areas where agents will actually travel
+- For large worlds, use multiple smaller navmeshes instead of one huge mesh
+- Baking is slow - avoid unnecessary rebakes
+
+---
+
+## ⚠️ CRITICAL: Navigation Pitfalls
+
+### NavigationObstacle3D Does NOT Affect Pathfinding!
+
+**This is a common source of bugs.** `NavigationObstacle3D` only affects agent-agent avoidance at runtime. It does **NOT** make units pathfind around walls or buildings.
+
+From [Godot docs](https://docs.godotengine.org/en/stable/tutorials/navigation/navigation_using_navigationobstacles.html):
+> "NavigationObstacle3D does NOT affect the pathfinding of agents. You need to change the navigation meshes for that instead."
+
+### Making Units Path Around Static Obstacles
+
+For units to pathfind around walls, buildings, ships, etc.:
+
+1. **Static obstacles MUST be children of NavigationRegion3D** so they're included when baking the NavMesh
+2. OR the StaticBody3D colliders must be parsed by the navigation source geometry during baking
+
+**Current main.tscn Problem:**
+```
+main.tscn
+├── world_map
+│   └── NavigationRegion3D
+│       └── Terrain3D        ← NavMesh only includes terrain!
+└── Ship1                    ← SIBLING - NOT included in NavMesh baking!
+```
+
+**Solution:** Move Ship1 (and other static obstacles) to be children of NavigationRegion3D, then rebake.
+
+### When to Use NavigationObstacle3D
+
+Use `NavigationObstacle3D` for:
+- **Dynamic obstacles** that move at runtime (moving platforms, doors)
+- **Agent-agent avoidance** (units avoiding each other)
+- Temporary barriers
+
+Do **NOT** rely on it for:
+- Walls, buildings, terrain features
+- Any static geometry units should pathfind around
+
+### Summary
+
+| Need | Solution |
+|------|----------|
+| Units avoid each other | `NavigationObstacle3D` with `avoidance_enabled = true` |
+| Units path around walls | Include walls as children of NavigationRegion3D, rebake NavMesh |
+| Units path around terrain | Paint navigable areas in Terrain3D, rebake |
 
 ## Key Files Quick Reference
 

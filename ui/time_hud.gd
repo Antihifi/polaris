@@ -39,9 +39,9 @@ func _ready() -> void:
 	speed_2x_button.pressed.connect(_on_speed_2x_pressed)
 	speed_4x_button.pressed.connect(_on_speed_4x_pressed)
 
-	# Find camera and connect scroll toggle
+	# Find camera and connect scroll toggle (only if it's our RTS camera with edge_scroll_margin)
 	_camera = get_viewport().get_camera_3d()
-	if _camera and scroll_toggle:
+	if _camera and scroll_toggle and "edge_scroll_margin" in _camera:
 		# Initialize toggle to current camera state
 		scroll_toggle.button_pressed = _camera.edge_scroll_margin > 0.0
 		scroll_toggle.toggled.connect(_on_scroll_toggled)
@@ -52,9 +52,10 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	# Update time display every frame for smooth clock
+	# Update time and temperature display every frame for smooth updates
 	if _time_manager:
 		_update_time_display()
+		_update_temp_display()
 
 
 func _on_hour_passed(_hour: int, _day: int) -> void:
@@ -163,5 +164,3 @@ func _on_scroll_toggled(enabled: bool) -> void:
 			_camera.edge_scroll_margin = 20.0  # Default value from rts_camera.gd
 		else:
 			_camera.edge_scroll_margin = 0.0
-
-

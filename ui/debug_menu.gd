@@ -10,6 +10,16 @@ var _progress_label: Label = null
 var _new_game_btn: Button = null
 var _is_generating: bool = false
 
+# Temperature controls
+var _temp_label: Label = null
+var _temp_override_check: CheckBox = null
+var _temp_slider: HSlider = null
+var _temp_value_label: Label = null
+
+# Stat override controls
+var _stat_sliders: Dictionary = {}  # stat_name -> HSlider
+var _stat_value_labels: Dictionary = {}  # stat_name -> Label
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -37,6 +47,9 @@ func _open_menu() -> void:
 	# Pause Sky3D time progression
 	if has_node("/root/TimeManager"):
 		get_node("/root/TimeManager").pause()
+	# Update temperature display
+	_update_temp_label()
+	_sync_temp_override_state()
 
 
 func _close_menu() -> void:
@@ -58,22 +71,34 @@ func _create_panel() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.process_mode = Node.PROCESS_MODE_ALWAYS
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Don't block clicks when panel hidden
 	canvas.add_child(center)
 
 	_panel = PanelContainer.new()
 	_panel.process_mode = Node.PROCESS_MODE_ALWAYS
-	_panel.custom_minimum_size = Vector2(350, 500)
+	_panel.custom_minimum_size = Vector2(400, 600)
+	# Limit max height to 80% of viewport
+	_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	center.add_child(_panel)
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(380, 0)
+	_panel.add_child(scroll)
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 20)
 	margin.add_theme_constant_override("margin_right", 20)
 	margin.add_theme_constant_override("margin_top", 20)
 	margin.add_theme_constant_override("margin_bottom", 20)
-	_panel.add_child(margin)
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 10)
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.add_child(vbox)
 
 	var title := Label.new()
@@ -126,6 +151,59 @@ func _create_panel() -> void:
 	_add_button(vbox, "Heavy Blizzard", _on_heavy_blizzard)
 	_add_button(vbox, "Stop Snow (Fade)", _on_stop_fade)
 	_add_button(vbox, "Stop Snow (Immediate)", _on_stop_immediate)
+
+	vbox.add_child(HSeparator.new())
+
+	# Temperature controls
+	var temp_header := Label.new()
+	temp_header.text = "TEMPERATURE"
+	temp_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(temp_header)
+
+	# Current temperature display
+	_temp_label = Label.new()
+	_temp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_update_temp_label()
+	vbox.add_child(_temp_label)
+
+	# Override checkbox
+	_temp_override_check = CheckBox.new()
+	_temp_override_check.text = "Override Temperature"
+	_temp_override_check.toggled.connect(_on_temp_override_toggled)
+	vbox.add_child(_temp_override_check)
+
+	# Slider row
+	var slider_hbox := HBoxContainer.new()
+	vbox.add_child(slider_hbox)
+
+	_temp_slider = HSlider.new()
+	_temp_slider.min_value = -60.0
+	_temp_slider.max_value = 10.0
+	_temp_slider.step = 1.0
+	_temp_slider.value = -20.0
+	_temp_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_temp_slider.editable = false  # Disabled until override is checked
+	_temp_slider.value_changed.connect(_on_temp_slider_changed)
+	slider_hbox.add_child(_temp_slider)
+
+	_temp_value_label = Label.new()
+	_temp_value_label.text = "-20°C"
+	_temp_value_label.custom_minimum_size.x = 50
+	slider_hbox.add_child(_temp_value_label)
+
+	vbox.add_child(HSeparator.new())
+
+	# Survivor stats controls
+	var stats_header := Label.new()
+	stats_header.text = "SURVIVOR STATS (ALL UNITS)"
+	stats_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(stats_header)
+
+	_add_stat_slider(vbox, "hunger", "Hunger")
+	_add_stat_slider(vbox, "warmth", "Warmth")
+	_add_stat_slider(vbox, "health", "Health")
+	_add_stat_slider(vbox, "morale", "Morale")
+	_add_stat_slider(vbox, "energy", "Energy")
 
 	vbox.add_child(HSeparator.new())
 
@@ -229,8 +307,10 @@ func _on_generation_completed(pois: Dictionary, generator: Node) -> void:
 	print("[DebugMenu] POIs received: %s" % str(pois.keys()))
 	print("[DebugMenu] Ship position from POIs: %s" % ship_pos)
 
+	var scene := get_tree().current_scene
+
 	# Move captain to ship position
-	var captain := get_tree().current_scene.get_node_or_null("Captain")
+	var captain := scene.get_node_or_null("Captain")
 	if captain:
 		# Query actual terrain height at ship position for accurate Y
 		var terrain_height := _get_terrain_height(ship_pos)
@@ -261,12 +341,16 @@ func _on_generation_completed(pois: Dictionary, generator: Node) -> void:
 			print("[DebugMenu] Captain NavigationAgent map updated")
 
 		# Focus camera on new position
-		var camera := get_tree().current_scene.get_node_or_null("RTScamera")
+		var camera := scene.get_node_or_null("RTScamera")
 		if camera and camera.has_method("focus_on"):
 			camera.focus_on(captain, true)
 			print("[DebugMenu] Camera focused on captain")
 	else:
 		push_warning("[DebugMenu] Captain node not found!")
+
+	# Move existing containers to ship position
+	# This handles containers that were spawned at the original captain position before terrain generation
+	_relocate_containers_to_ship(scene, ship_pos)
 
 	_progress_label.text = "Complete! Seed: %s" % GameManager.get_seed_string()
 	_new_game_btn.disabled = false
@@ -307,3 +391,176 @@ func _on_generation_failed(reason: String, generator: Node) -> void:
 	_is_generating = false
 
 	generator.queue_free()
+
+
+## Relocate all containers to the ship position after terrain generation
+## Containers are spawned at the captain's initial position before terrain is generated,
+## so we need to move them to the actual ship inlet position afterwards.
+func _relocate_containers_to_ship(scene: Node, ship_pos: Vector3) -> void:
+	# Find ObjectSpawner which manages containers
+	var object_spawner := scene.get_node_or_null("ObjectSpawner")
+	if not object_spawner:
+		print("[DebugMenu] No ObjectSpawner found - skipping container relocation")
+		return
+
+	# Get all container children (barrels and crates)
+	var containers: Array[Node] = []
+	for child in object_spawner.get_children():
+		if child.has_method("open"):  # StorageContainer has open()
+			containers.append(child)
+
+	if containers.is_empty():
+		print("[DebugMenu] No containers found to relocate")
+		return
+
+	print("[DebugMenu] Relocating %d containers to ship position..." % containers.size())
+
+	# Calculate spawn radius (same as used in object_spawner)
+	var spawn_radius := 30.0  # Default from main_controller.gd
+	if "spawn_radius" in object_spawner:
+		spawn_radius = object_spawner.spawn_radius
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = GameManager.seed_manager.current_seed ^ 0xC047A1E5
+
+	for container in containers:
+		# Random offset within spawn radius
+		var angle := rng.randf() * TAU
+		var distance := rng.randf_range(5.0, spawn_radius)
+		var offset := Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+
+		var new_pos := ship_pos + offset
+		# Get terrain height at new position
+		var terrain_height := _get_terrain_height(new_pos)
+		if terrain_height > -100.0:
+			new_pos.y = terrain_height + 0.1  # Slightly above ground
+		else:
+			new_pos.y = ship_pos.y
+
+		container.global_position = new_pos
+		print("[DebugMenu] Relocated %s to %s" % [container.name, new_pos])
+
+	print("[DebugMenu] Container relocation complete")
+
+
+# --- Temperature Controls ---
+
+func _update_temp_label() -> void:
+	if not _temp_label:
+		return
+	var time_manager := get_node_or_null("/root/TimeManager")
+	if time_manager:
+		var temp: float = time_manager.get_current_temperature()
+		var override_str := " (OVERRIDE)" if time_manager.is_temperature_override_enabled() else ""
+		_temp_label.text = "Current: %.0f°C%s" % [temp, override_str]
+	else:
+		_temp_label.text = "Current: --°C"
+
+
+func _on_temp_override_toggled(enabled: bool) -> void:
+	_temp_slider.editable = enabled
+	var time_manager := get_node_or_null("/root/TimeManager")
+	if time_manager:
+		if enabled:
+			time_manager.set_temperature_override(true, _temp_slider.value)
+		else:
+			time_manager.set_temperature_override(false)
+		_update_temp_label()
+
+
+func _on_temp_slider_changed(value: float) -> void:
+	_temp_value_label.text = "%.0f°C" % value
+	if _temp_override_check and _temp_override_check.button_pressed:
+		var time_manager := get_node_or_null("/root/TimeManager")
+		if time_manager:
+			time_manager.set_temperature_override(true, value)
+			_update_temp_label()
+
+
+func _sync_temp_override_state() -> void:
+	## Sync UI controls with current TimeManager override state.
+	if not _temp_override_check or not _temp_slider or not _temp_value_label:
+		return
+	var time_manager := get_node_or_null("/root/TimeManager")
+	if time_manager:
+		var is_override: bool = time_manager.is_temperature_override_enabled()
+		_temp_override_check.set_pressed_no_signal(is_override)
+		_temp_slider.editable = is_override
+		if is_override:
+			var override_val: float = time_manager.get_temperature_override_value()
+			_temp_slider.set_value_no_signal(override_val)
+			_temp_value_label.text = "%.0f°C" % override_val
+
+
+# --- Survivor Stats Controls ---
+
+func _add_stat_slider(parent: Control, stat_name: String, display_name: String) -> void:
+	## Add a slider + apply button row for a survivor stat.
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 5)
+	parent.add_child(hbox)
+
+	var label := Label.new()
+	label.text = display_name + ":"
+	label.custom_minimum_size.x = 60
+	hbox.add_child(label)
+
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 100.0
+	slider.step = 1.0
+	slider.value = 100.0
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value_changed.connect(_on_stat_slider_changed.bind(stat_name))
+	hbox.add_child(slider)
+	_stat_sliders[stat_name] = slider
+
+	var value_label := Label.new()
+	value_label.text = "100"
+	value_label.custom_minimum_size.x = 30
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hbox.add_child(value_label)
+	_stat_value_labels[stat_name] = value_label
+
+	var apply_btn := Button.new()
+	apply_btn.text = "Apply"
+	apply_btn.custom_minimum_size.x = 50
+	apply_btn.pressed.connect(_apply_stat_to_all_units.bind(stat_name))
+	hbox.add_child(apply_btn)
+
+
+func _on_stat_slider_changed(value: float, stat_name: String) -> void:
+	if stat_name in _stat_value_labels:
+		_stat_value_labels[stat_name].text = "%.0f" % value
+
+
+func _apply_stat_to_all_units(stat_name: String) -> void:
+	## Apply the slider value to all survivors in the game.
+	if stat_name not in _stat_sliders:
+		return
+
+	var value: float = _stat_sliders[stat_name].value
+	var survivors := get_tree().get_nodes_in_group("survivors")
+	var count: int = 0
+
+	for survivor in survivors:
+		# Check for stats property (could be SurvivorStats resource or direct properties)
+		if "stats" in survivor and survivor.stats:
+			var stats: SurvivorStats = survivor.stats
+			match stat_name:
+				"hunger":
+					stats.hunger = value
+				"warmth":
+					stats.warmth = value
+				"health":
+					stats.health = value
+				"morale":
+					stats.morale = value
+				"energy":
+					stats.energy = value
+			# Trigger UI update
+			if survivor.has_signal("stats_changed"):
+				survivor.stats_changed.emit()
+			count += 1
+
+	print("[DebugMenu] Set %s to %.0f on %d survivors" % [stat_name, value, count])

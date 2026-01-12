@@ -41,7 +41,7 @@ Grid-based inventory using Godot's [gloot](https://github.com/peter-kish/gloot) 
 | `ui/inventory_hud.gd` | HUD manager for panels |
 | `ui/inventory_panel.gd` | Reusable inventory panel UI |
 | `src/systems/object_spawner.gd` | Spawns containers with items |
-| `src/ai/needs_controller.gd` | Autonomous food-seeking behavior |
+| `ai/man_ai_controller.gd` | Autonomous behavior (includes food-seeking) |
 
 ## Item Definitions
 
@@ -231,16 +231,13 @@ signal unit_inventory_closed
 
 ## Autonomous Behavior
 
-`NeedsController` (child of ClickableUnit) handles automatic food-seeking:
+`ManAIController` (child of ClickableUnit) handles automatic food-seeking via LimboAI behavior tree:
 
-1. When hunger drops below `hunger_seek_threshold` (50):
-   - If no food in personal inventory, pathfind to nearest food container
-   - Take one food item
+1. When hunger drops below threshold (set via BTCheckAgentProperty):
+   - AI seeks nearest container with food
+   - Takes food item and eats it
 
-2. When hunger drops below `hunger_eat_threshold` (35):
-   - Eat from personal stash if available
-
-This creates Kenshi-style autonomous resupply behavior.
+See [AI System](../../ai/CLAUDE.md) for full behavior tree documentation.
 
 ## Object Spawner
 

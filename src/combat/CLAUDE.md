@@ -243,5 +243,5 @@ func _evaluate_threat(threat: Node) -> void:
 
 - `src/characters/survivor.gd` - Health, flee, traits
 - `src/characters/survivor_stats.gd` - Health tracking, damage
-- `src/ai/` - Behavior responses to threats
+- `ai/` - Behavior responses to threats (LimboAI behavior trees)
 - `addons/ninetailsrabbit.indie_blueprint_rpg/` - Health component

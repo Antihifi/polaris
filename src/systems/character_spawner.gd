@@ -106,11 +106,12 @@ func _randomize_stats(unit: Node) -> void:
 	var stats: SurvivorStats = unit.stats
 
 	# Vary base needs (start with some variation in condition)
-	stats.hunger = _vary_value(85.0, 0.15)
-	stats.warmth = _vary_value(80.0, 0.2)
-	stats.health = _vary_value(95.0, 0.1)
-	stats.morale = _vary_value(70.0, 0.25)
-	stats.energy = _vary_value(90.0, 0.15)
+	# Testing: Start at ~55% (47-63%) to trigger priority behaviors
+	stats.hunger = _vary_value(55.0, 0.15)
+	stats.warmth = _vary_value(55.0, 0.15)
+	stats.health = _vary_value(60.0, 0.08)
+	stats.morale = _vary_value(55.0, 0.15)
+	stats.energy = _vary_value(55.0, 0.15)
 
 	# Vary skills significantly
 	stats.hunting_skill = _vary_value(25.0, 0.5)

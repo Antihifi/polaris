@@ -34,3 +34,5 @@ Thumbs.db
 # Backup files
 *.backup
 *.bak
+tmp/
+Terrain3D-demo/

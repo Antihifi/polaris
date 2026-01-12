@@ -525,6 +525,8 @@ Uses `PROCESS_MODE_ALWAYS` to run while tree is paused.
 
 4. **Missing Instance Validity Checks** - When units die or are removed, connected signals can reference invalid objects, causing silent failures.
 
+5. **Full-Screen Container Without MOUSE_FILTER_IGNORE** - Creating a CenterContainer with `PRESET_FULL_RECT` to center a popup leaves an invisible full-screen blocker when the popup is hidden. The container's default `mouse_filter = MOUSE_FILTER_STOP` blocks all clicks to underlying UI. **ALWAYS set `mouse_filter = MOUSE_FILTER_IGNORE` on full-screen layout containers.**
+
 **Fixes Applied (January 2026):**
 
 In `character_stats.gd`:

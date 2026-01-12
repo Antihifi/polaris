@@ -245,11 +245,16 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	# Move all selected units in formation
 	if selected_units.size() > 1:
 		_move_units_in_formation(selected_units, target_position)
+		# Set player command active for all units
+		for unit in selected_units:
+			_set_player_command_active(unit, true)
 	elif selected_units.size() == 1:
 		selected_units[0].move_to(target_position)
+		_set_player_command_active(selected_units[0], true)
 	elif selected_unit:
 		# Legacy single selection
 		selected_unit.move_to(target_position)
+		_set_player_command_active(selected_unit, true)
 
 	_show_move_indicator(target_position)
 
@@ -529,3 +534,10 @@ func get_box_selection_rect() -> Rect2:
 		abs(box_current.x - box_start.x),
 		abs(box_current.y - box_start.y)
 	)
+
+
+func _set_player_command_active(unit: Node, active: bool) -> void:
+	## Set the player command flag on a unit's AI controller.
+	var ai_controller: Node = unit.get_node_or_null("ManAIController")
+	if ai_controller and ai_controller.has_method("set_player_command_active"):
+		ai_controller.set_player_command_active(active)

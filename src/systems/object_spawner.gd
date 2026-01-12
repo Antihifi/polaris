@@ -1,12 +1,17 @@
 class_name ObjectSpawner extends Node
-## Spawns storage containers (barrels, crates) around a center point.
+## Spawns storage containers (barrels, crates) and the ship around a center point.
 ## Follows CharacterSpawner pattern. Adds StorageContainer component via composition.
 
 signal containers_spawned(count: int)
+signal ship_spawned(ship: Node3D)
 
 ## Scenes to instantiate
 var barrel_scene: PackedScene
 var crate_scene: PackedScene
+var ship_scene: PackedScene
+
+## Spawned ship reference
+var spawned_ship: Node3D = null
 
 ## Spawn configuration
 @export var spawn_radius: float = 15.0
@@ -25,6 +30,7 @@ func _ready() -> void:
 	_rng.randomize()
 	barrel_scene = preload("res://objects/storage_barrel.tscn")
 	crate_scene = preload("res://objects/storage_crate_small.tscn")
+	ship_scene = preload("res://objects/ship1/ship_1.tscn")
 
 
 func spawn_containers(barrel_count: int, crate_count: int, center: Vector3) -> Array[Node]:
@@ -103,6 +109,8 @@ func _populate_container(storage: StorageContainer, is_barrel: bool) -> void:
 
 func _generate_spawn_positions(count: int, center: Vector3) -> Array[Vector3]:
 	## Generate spread-out positions avoiding overlap.
+	## Containers are static objects so we use terrain height directly.
+	## Unlike characters, containers don't have gravity/collision to settle onto terrain.
 	var positions: Array[Vector3] = []
 	var max_attempts := 100
 
@@ -123,6 +131,7 @@ func _generate_spawn_positions(count: int, center: Vector3) -> Array[Vector3]:
 					valid = false
 					break
 
+		# Use terrain height for static objects (they can't fall with physics)
 		pos.y = _get_terrain_height(pos)
 		positions.append(pos)
 
@@ -160,6 +169,46 @@ func _find_node_by_class(node: Node, class_name_str: String) -> Node:
 		var result := _find_node_by_class(child, class_name_str)
 		if result:
 			return result
+	return null
+
+
+func spawn_ship(position: Vector3, rotation_y: float = 0.0) -> Node3D:
+	## Spawn the ship at the given position.
+	## Used for procedurally generated terrain where ship isn't pre-placed.
+	if spawned_ship and is_instance_valid(spawned_ship):
+		print("[ObjectSpawner] Ship already spawned, skipping")
+		return spawned_ship
+
+	spawned_ship = ship_scene.instantiate()
+	get_tree().current_scene.add_child(spawned_ship)
+
+	# Position ship - spawn slightly high and let it settle if needed
+	# Ship is static so we query terrain height directly
+	var ship_height := _get_terrain_height(position)
+	spawned_ship.global_position = Vector3(position.x, ship_height, position.z)
+	spawned_ship.rotation.y = rotation_y
+
+	print("[ObjectSpawner] Spawned ship at %s" % spawned_ship.global_position)
+	ship_spawned.emit(spawned_ship)
+	return spawned_ship
+
+
+func get_ship() -> Node3D:
+	## Get the spawned ship, or find existing ship in scene.
+	if spawned_ship and is_instance_valid(spawned_ship):
+		return spawned_ship
+
+	# Check if ship already exists in scene (from pre-made terrain)
+	var existing_ships := get_tree().get_nodes_in_group("ship")
+	if existing_ships.size() > 0:
+		return existing_ships[0] as Node3D
+
+	# Search by name as fallback
+	var scene := get_tree().current_scene
+	var ship := scene.find_child("Ship1", true, false)
+	if ship:
+		return ship as Node3D
+
 	return null
 
 

@@ -359,3 +359,29 @@ var direction := next_position - current_pos
 ```
 
 The NavigationAgent3D already provides correct Y coordinates from the baked NavMesh - no gravity or terrain height queries needed.
+
+### Navigation Avoidance Erasing Gravity (Fixed 2026-01-11)
+
+**Problem:** Units would float/slide instead of falling properly, and movement was erratic.
+
+**Root Cause:** The `_on_velocity_computed` callback overwrote the entire velocity vector:
+```gdscript
+# BAD - erases gravity every frame!
+func _on_velocity_computed(safe_velocity: Vector3) -> void:
+    velocity = safe_velocity  # ← Overwrites velocity.y, erasing gravity!
+    move_and_slide()
+```
+
+The navigation avoidance system returns safe XZ velocity but doesn't know about gravity. By assigning the entire vector, gravity was erased every frame.
+
+**Solution:** Match the Terrain3D demo pattern (`tmp/demo/src/Enemy.gd` lines 55-58):
+```gdscript
+# GOOD - preserves gravity on Y axis
+func _on_velocity_computed(safe_velocity: Vector3) -> void:
+    velocity.x = safe_velocity.x
+    velocity.z = safe_velocity.z
+    # velocity.y is preserved (gravity already applied in _physics_process)
+    move_and_slide()
+```
+
+**Key insight:** Navigation avoidance only affects XZ movement. Gravity is applied separately in `_physics_process()` and must be preserved.
