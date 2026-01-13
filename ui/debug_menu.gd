@@ -16,6 +16,13 @@ var _temp_override_check: CheckBox = null
 var _temp_slider: HSlider = null
 var _temp_value_label: Label = null
 
+# Camera controls
+var _camera_constraint_check: CheckBox = null
+var _camera_original_max_distance: float = 300.0
+var _camera_original_zoom_max: float = 50.0
+var _camera_original_speed: float = 20.0
+var _camera_original_zoom_speed: float = 20.0
+
 # Stat override controls
 var _stat_sliders: Dictionary = {}  # stat_name -> HSlider
 var _stat_value_labels: Dictionary = {}  # stat_name -> Label
@@ -47,9 +54,10 @@ func _open_menu() -> void:
 	# Pause Sky3D time progression
 	if has_node("/root/TimeManager"):
 		get_node("/root/TimeManager").pause()
-	# Update temperature display
+	# Update displays
 	_update_temp_label()
 	_sync_temp_override_state()
+	_sync_camera_constraint_state()
 
 
 func _close_menu() -> void:
@@ -190,6 +198,19 @@ func _create_panel() -> void:
 	_temp_value_label.text = "-20°C"
 	_temp_value_label.custom_minimum_size.x = 50
 	slider_hbox.add_child(_temp_value_label)
+
+	vbox.add_child(HSeparator.new())
+
+	# Camera controls
+	var camera_header := Label.new()
+	camera_header.text = "CAMERA"
+	camera_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(camera_header)
+
+	_camera_constraint_check = CheckBox.new()
+	_camera_constraint_check.text = "Free Camera (no unit constraint)"
+	_camera_constraint_check.toggled.connect(_on_camera_constraint_toggled)
+	vbox.add_child(_camera_constraint_check)
 
 	vbox.add_child(HSeparator.new())
 
@@ -490,6 +511,56 @@ func _sync_temp_override_state() -> void:
 			var override_val: float = time_manager.get_temperature_override_value()
 			_temp_slider.set_value_no_signal(override_val)
 			_temp_value_label.text = "%.0f°C" % override_val
+
+
+# --- Camera Controls ---
+
+func _on_camera_constraint_toggled(enabled: bool) -> void:
+	## Toggle free camera mode: no constraint, extended zoom, faster movement.
+	var camera := get_viewport().get_camera_3d()
+	if not camera:
+		return
+
+	if enabled:
+		# Store original values
+		if "max_distance_from_units" in camera:
+			_camera_original_max_distance = camera.max_distance_from_units
+		if "camera_zoom_max" in camera:
+			_camera_original_zoom_max = camera.camera_zoom_max
+		if "camera_speed" in camera:
+			_camera_original_speed = camera.camera_speed
+		if "camera_zoom_speed" in camera:
+			_camera_original_zoom_speed = camera.camera_zoom_speed
+
+		# Apply free camera settings
+		if "max_distance_from_units" in camera:
+			camera.max_distance_from_units = 0.0
+		if "camera_zoom_max" in camera:
+			camera.camera_zoom_max = 500.0  # Much further zoom out
+		if "camera_speed" in camera:
+			camera.camera_speed = 160.0  # 8x faster WASD
+		if "camera_zoom_speed" in camera:
+			camera.camera_zoom_speed = 200.0  # 10x faster scroll
+	else:
+		# Restore original values
+		if "max_distance_from_units" in camera:
+			camera.max_distance_from_units = _camera_original_max_distance
+		if "camera_zoom_max" in camera:
+			camera.camera_zoom_max = _camera_original_zoom_max
+		if "camera_speed" in camera:
+			camera.camera_speed = _camera_original_speed
+		if "camera_zoom_speed" in camera:
+			camera.camera_zoom_speed = _camera_original_zoom_speed
+
+
+func _sync_camera_constraint_state() -> void:
+	## Sync checkbox with current camera state.
+	if not _camera_constraint_check:
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera and "max_distance_from_units" in camera:
+		var is_free: bool = camera.max_distance_from_units <= 0.0
+		_camera_constraint_check.set_pressed_no_signal(is_free)
 
 
 # --- Survivor Stats Controls ---

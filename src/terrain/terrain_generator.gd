@@ -35,6 +35,7 @@ var _seed_manager: SeedManager = null
 ## Generated data (kept for debugging/save)
 var _island_mask: Image = null
 var _heightmap: Image = null
+var _control_map: Image = null
 var _inlet_info: Dictionary = {}
 var _pois: Dictionary = {}
 
@@ -68,23 +69,9 @@ func generate(seed_manager: SeedManager) -> void:
 	await get_tree().process_frame
 	_generate_heightmap()
 
-	# Debug: Save heightmap for inspection
+	# Debug: Save heightmap for inspection (to /tmp for easy access)
 	if _heightmap:
-		var debug_path := "user://debug_heightmap.png"
-		# Convert to visible format for debugging (normalize to 0-255)
-		var debug_img := Image.create(_heightmap.get_width(), _heightmap.get_height(), false, Image.FORMAT_L8)
-		var stats := HeightmapGenerator.get_height_stats(_heightmap)
-		var height_range: float = stats.max - stats.min
-		if height_range < 0.01:
-			height_range = 1.0  # Prevent division by zero
-		for y in range(_heightmap.get_height()):
-			for x in range(_heightmap.get_width()):
-				var h: float = _heightmap.get_pixel(x, y).r
-				var normalized: float = (h - stats.min) / height_range
-				var byte_val: int = int(clampf(normalized * 255.0, 0.0, 255.0))
-				debug_img.set_pixel(x, y, Color8(byte_val, byte_val, byte_val))
-		debug_img.save_png(debug_path)
-		print("[TerrainGenerator] Debug heightmap saved to: %s" % debug_path)
+		_export_debug_heightmap(_heightmap, "pre_inlet")
 
 	# Stage 3: Carve inlet for ship
 	generation_progress.emit("Carving ship inlet...", 0.25)
@@ -94,8 +81,17 @@ func generate(seed_manager: SeedManager) -> void:
 	# Save debug images with inlet position marked
 	_save_debug_images_with_inlet()
 
-	# Stage 4: Import to Terrain3D
-	generation_progress.emit("Importing terrain data...", 0.35)
+	# Export final heightmap to /tmp for inspection
+	if _heightmap:
+		_export_debug_heightmap(_heightmap, "final")
+
+	# Stage 4: Generate control map (textures) BEFORE import
+	generation_progress.emit("Generating texture map...", 0.30)
+	await get_tree().process_frame
+	_generate_control_map()
+
+	# Stage 5: Import to Terrain3D (heightmap + control map together)
+	generation_progress.emit("Importing terrain data...", 0.40)
 	await get_tree().process_frame
 	if not await _import_to_terrain():
 		generation_failed.emit("Failed to import terrain data")
@@ -108,18 +104,13 @@ func generate(seed_manager: SeedManager) -> void:
 	# Verify terrain was imported by querying a height
 	_verify_terrain_import()
 
-	# Stage 5: Paint textures
-	generation_progress.emit("Painting terrain textures...", 0.45)
-	await get_tree().process_frame
-	_paint_textures()
-
-	# Stage 6: Update terrain
-	generation_progress.emit("Updating terrain maps...", 0.55)
+	# Stage 6: Update terrain maps (force refresh after import)
+	generation_progress.emit("Updating terrain maps...", 0.50)
 	await get_tree().process_frame
 	_update_terrain_maps()
 
 	# Stage 7: Bake NavMesh (slow)
-	generation_progress.emit("Baking navigation mesh (this may take a minute)...", 0.60)
+	generation_progress.emit("Baking navigation mesh (this may take a minute)...", 0.55)
 	await get_tree().process_frame
 	await _bake_navigation_mesh()
 
@@ -247,7 +238,35 @@ func _carve_inlet() -> void:
 	])
 
 
-## Stage 4: Import heightmap to Terrain3D
+## Stage 4: Generate control map (texture painting) using proper 32-bit packed format
+## CRITICAL: Control map MUST be generated BEFORE import_images() is called!
+## The control map encodes texture IDs using Terrain3D's bit-packed format.
+## See src/terrain/CLAUDE.md "Control Map Format" section for bit field docs.
+func _generate_control_map() -> void:
+	print("[TerrainGenerator] Generating control map (textures)...")
+	var texture_rng := _seed_manager.get_texture_rng()
+
+	_control_map = TexturePainter.generate_control_map_for_import(
+		_heightmap,
+		_island_mask,
+		texture_rng
+	)
+
+	# Get and print texture distribution stats
+	var stats := TexturePainter.get_texture_stats(_heightmap, _island_mask)
+	print("[TerrainGenerator] Texture distribution: Snow %.1f%%, Rock %.1f%%, Gravel %.1f%%, Ice %.1f%%" % [
+		stats.snow_percent,
+		stats.rock_percent,
+		stats.gravel_percent,
+		stats.ice_percent
+	])
+	print("[TerrainGenerator] Control map generated: %dx%d (FORMAT_RF)" % [
+		_control_map.get_width(),
+		_control_map.get_height()
+	])
+
+
+## Stage 5: Import heightmap to Terrain3D
 ## Uses official import_images() approach from Terrain3D demo (CodeGenerated.gd)
 ##
 ## CRITICAL SETTINGS (based on official demo and documentation):
@@ -319,19 +338,26 @@ func _import_to_terrain() -> bool:
 		world_min, world_max, world_max.x - world_min.x, world_max.z - world_min.z
 	])
 
-	# Import the heightmap - this creates regions automatically!
+	# Import the heightmap AND control map together - this creates regions automatically!
 	# Array format: [height_image, control_image, color_image]
 	var images: Array[Image] = []
 	images.resize(3)
-	images[0] = _heightmap  # Height map (FORMAT_RF with heights in meters)
-	images[1] = null        # Control map (textures) - will paint in next stage
-	images[2] = null        # Color map - not used
+	images[0] = _heightmap    # Height map (FORMAT_RF with heights in meters)
+	images[1] = _control_map  # Control map (FORMAT_RF with bit-packed texture IDs)
+	images[2] = null          # Color map - not used
 
 	# import_images(images, global_position, height_offset, height_scale)
 	# - global_position: offset in PIXEL coordinates (image space)
 	# - height_offset: added to all height values (0.0 for us)
 	# - height_scale: multiplied with height values (1.0 since already in meters)
-	print("[TerrainGenerator] Calling import_images()...")
+	print("[TerrainGenerator] Calling import_images() with heightmap + control map...")
+	print("[TerrainGenerator]   Heightmap: %dx%d format=%d" % [
+		_heightmap.get_width(), _heightmap.get_height(), _heightmap.get_format()
+	])
+	if _control_map:
+		print("[TerrainGenerator]   Control map: %dx%d format=%d" % [
+			_control_map.get_width(), _control_map.get_height(), _control_map.get_format()
+		])
 	_terrain.data.import_images(images, offset, 0.0, height_scale)
 	print("[TerrainGenerator] import_images() completed")
 
@@ -423,26 +449,6 @@ func _verify_terrain_import() -> void:
 		push_error("[TerrainGenerator] HEIGHT VERIFICATION FAILED - terrain may not be properly imported!")
 	else:
 		print("[TerrainGenerator] === HEIGHT VERIFICATION PASSED ===")
-
-
-## Stage 5: Paint textures
-func _paint_textures() -> void:
-	print("[TerrainGenerator] Painting textures...")
-
-	if not _terrain or not "data" in _terrain:
-		push_warning("[TerrainGenerator] Cannot paint textures - no terrain data")
-		return
-
-	var texture_rng := _seed_manager.get_texture_rng()
-	TexturePainter.paint_terrain(_terrain.data, _heightmap, _island_mask, texture_rng)
-
-	var stats := TexturePainter.get_texture_stats(_heightmap, _island_mask)
-	print("[TerrainGenerator] Texture distribution: Snow %.1f%%, Rock %.1f%%, Ice %.1f%%, Gravel %.1f%%" % [
-		stats.snow_percent,
-		stats.rock_percent,
-		stats.ice_percent,
-		stats.gravel_percent
-	])
 
 
 ## Stage 6: Update terrain maps
@@ -907,3 +913,48 @@ func _save_debug_images_with_inlet() -> void:
 	var world_x := (float(inlet_pixel.x) - float(width) / 2.0) * METERS_PER_PIXEL
 	var world_z := (float(inlet_pixel.y) - float(height) / 2.0) * METERS_PER_PIXEL
 	print("[TerrainGenerator] Inlet world position: (%.1f, ?, %.1f)" % [world_x, world_z])
+
+
+## Export heightmap as grayscale PNG to /tmp for debugging/inspection
+## The PNG uses grayscale with heights normalized to 0-255
+func _export_debug_heightmap(heightmap: Image, suffix: String) -> void:
+	var width := heightmap.get_width()
+	var height := heightmap.get_height()
+
+	# Get height stats for normalization
+	var stats := HeightmapGenerator.get_height_stats(heightmap)
+	var height_range: float = stats.max - stats.min
+	if height_range < 0.01:
+		height_range = 1.0
+
+	# Create grayscale image
+	var debug_img := Image.create(width, height, false, Image.FORMAT_L8)
+	for y in range(height):
+		for x in range(width):
+			var h: float = heightmap.get_pixel(x, y).r
+			var normalized: float = (h - stats.min) / height_range
+			var byte_val: int = int(clampf(normalized * 255.0, 0.0, 255.0))
+			debug_img.set_pixel(x, y, Color8(byte_val, byte_val, byte_val))
+
+	# Save to both user:// and /tmp for accessibility
+	var user_path := "user://heightmap_%s.png" % suffix
+	var tmp_path := "/tmp/polaris_heightmap_%s.png" % suffix
+
+	debug_img.save_png(user_path)
+	print("[TerrainGenerator] Heightmap saved to: %s" % user_path)
+
+	# Also try saving to /tmp (may fail on Windows, that's OK)
+	var err := debug_img.save_png(tmp_path)
+	if err == OK:
+		print("[TerrainGenerator] Heightmap also saved to: %s" % tmp_path)
+	else:
+		# On Windows, save to a Windows-accessible temp path
+		var win_tmp_path := "C:/tmp/polaris_heightmap_%s.png" % suffix
+		err = debug_img.save_png(win_tmp_path)
+		if err == OK:
+			print("[TerrainGenerator] Heightmap saved to: %s" % win_tmp_path)
+
+	# Print height stats
+	print("[TerrainGenerator] Height stats [%s]: min=%.1f, max=%.1f, avg=%.1f meters" % [
+		suffix, stats.min, stats.max, stats.average
+	])

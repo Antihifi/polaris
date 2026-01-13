@@ -38,13 +38,45 @@ ls -la "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/"
 
 ## Project Overview
 
-**Polaris** is an arctic survival RTS set in the age of exploration, inspired by The Terror, Franklin/Scott expeditions, Rimworld, and Kenshi. Players manage 10-16 shipwreck survivors trying to endure a year until rescue arrives.
+**Polaris** is an arctic survival RTS set in the age of exploration, inspired by The Terror, Franklin/Scott expeditions, Rimworld, and Kenshi. Players manage 10-16 crew members of a stricken polar exploration vessel trying to endure a year until rescue arrives.
 
 - **Engine:** Godot 4.5 (mobile renderer)
 - **Main Scene:** `main.tscn`
 - **Historical Setting:** September 1846, Franklin expedition trapped in ice (uses 60°N in-game, see [Systems CLAUDE.md](src/systems/CLAUDE.md) for latitude quirk)
 
 See `GameDesignDocument.md` for complete design specifications.
+
+---
+
+## Terminology: Units / Survivors / Crew
+
+**"Unit" and "Survivor" are synonymous** in this codebase. Both refer to any game entity under the player's command.
+
+### Hierarchy
+
+| Term | Code Class | Description |
+|------|------------|-------------|
+| **Unit / Survivor** | `ClickableUnit` | Generic term for ANY crew member |
+| **Men** (Enlisted) | `ClickableUnit` + AI | Rank-and-file sailors, semi-autonomous via LimboAI behavior trees |
+| **Officers** | `ClickableUnit` | Promoted men, directly controllable by player |
+| **Captain** | `ClickableUnit` | Player's primary character, always directly controllable |
+
+### Class Notes
+
+- **`ClickableUnit`** - The ONE active class for all controllable characters
+- **`SurvivorStats`** - Resource class for survival needs (hunger, warmth, energy, etc.)
+- **`SurvivorTrait`** - Resource class for character traits and modifiers
+- **`Survivor`** - **DELETED** (was duplicate of ClickableUnit, caused confusion)
+
+### Why "Survivor"?
+
+The crew aren't survivors of a crash - they're Royal Navy personnel doing their jobs. However, they ARE surviving the arctic conditions, hence the name. The term persists in:
+- `SurvivorStats` - survival needs resource
+- `SurvivorTrait` - trait modifiers
+- Group name `"survivors"` - for TimeManager updates
+- Various signals and documentation
+
+**Do NOT rename these** - the terminology is established and functional.
 
 ## Running the Project
 
@@ -60,7 +92,7 @@ Open in Godot 4.5+ and run. The main scene is `main.tscn`.
 
 **ALWAYS refer to the WORKING Terrain3D demo code when implementing procedural terrain, navigation, or entity spawning.**
 
-**Demo Location**: `/mnt/c/Users/antih/Documents/polaris/tmp/demo/src/`
+**Demo Location**: `res://Terrain3D-demo/src/` (permanent location in project)
 
 | File | Purpose |
 |------|---------|
@@ -81,9 +113,11 @@ if get_parent().terrain:
 # CodeGenerated.gd - Enable runtime nav baking (lines 14-17)
 $RuntimeNavigationBaker.terrain = terrain
 $RuntimeNavigationBaker.enabled = true
-```
 
-**DO NOT look for demo at `/tmp/demo/` - it's in the PROJECT folder at `tmp/demo/src/`**
+# CodeGenerated.gd - Import heightmap (line 61)
+terrain.data.import_images([img, null, null], Vector3(-1024, 0, -1024), 0.0, 150.0)
+# Array: [heightmap, control_map, color_map] - control_map encodes texture IDs
+```
 
 ```bash
 /mnt/c/Users/antih/Desktop/Godot_v4.5.1-stable_win64_console.exe \
@@ -99,11 +133,10 @@ polaris/
 ├── src/                          # Game-specific code
 │   ├── camera/                   # RTS camera system
 │   │   └── rts_camera.gd         # WASD, edge scroll, zoom, MMB orbit
-│   ├── characters/               # Survivor/unit system
-│   │   ├── clickable_unit.gd     # Base click-to-move CharacterBody3D
-│   │   ├── survivor.gd           # Full survivor with traits/states
+│   ├── characters/               # Unit/survivor system
+│   │   ├── clickable_unit.gd     # Base click-to-move CharacterBody3D (THE unit class)
 │   │   ├── survivor_stats.gd     # Survival needs resource
-│   │   ├── trait.gd              # Trait modifiers resource
+│   │   ├── trait.gd              # Trait modifiers resource (SurvivorTrait)
 │   │   └── eye_controller.gd     # Character eye animation
 │   ├── control/                  # Input handling
 │   │   ├── rts_input_handler.gd  # Click select, right-click move

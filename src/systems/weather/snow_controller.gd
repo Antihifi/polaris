@@ -482,6 +482,10 @@ func _update_particle_position() -> void:
 	if _camera:
 		var cam_pos := _camera.global_position
 
+		# Guard against NaN/Inf camera position (prevents "!v.is_finite()" error spam)
+		if not cam_pos.is_finite():
+			return
+
 		# Spawn particles above camera (camera-relative, not absolute Y)
 		var spawn_y := cam_pos.y + spawn_height_offset
 
@@ -490,11 +494,15 @@ func _update_particle_position() -> void:
 		if sky3d and "wind_direction" in sky3d and "wind_speed" in sky3d:
 			var wind_dir: float = sky3d.wind_direction
 			var wind_speed: float = sky3d.wind_speed
-			# Offset upwind (opposite of wind direction) so snow drifts into view
-			offset.x = -sin(wind_dir) * wind_speed * 1.5
-			offset.z = -cos(wind_dir) * wind_speed * 1.5
+			# Guard against bad wind values
+			if is_finite(wind_dir) and is_finite(wind_speed):
+				# Offset upwind (opposite of wind direction) so snow drifts into view
+				offset.x = -sin(wind_dir) * wind_speed * 1.5
+				offset.z = -cos(wind_dir) * wind_speed * 1.5
 
-		_snow_particles.global_position = Vector3(cam_pos.x + offset.x, spawn_y, cam_pos.z + offset.z)
+		var new_pos := Vector3(cam_pos.x + offset.x, spawn_y, cam_pos.z + offset.z)
+		if new_pos.is_finite():
+			_snow_particles.global_position = new_pos
 
 
 func _update_fog_position() -> void:
@@ -506,7 +514,10 @@ func _update_fog_position() -> void:
 		_camera = get_viewport().get_camera_3d()
 
 	if _camera:
-		_fog_volume.global_position = _camera.global_position
+		var cam_pos := _camera.global_position
+		# Guard against NaN/Inf camera position (prevents "!v.is_finite()" error spam)
+		if cam_pos.is_finite():
+			_fog_volume.global_position = cam_pos
 
 
 func _update_wind() -> void:

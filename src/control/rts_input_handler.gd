@@ -1,6 +1,6 @@
 extends Node
 ## Handles RTS-style input: click to select, right-click to move.
-## Supports both single-select (ClickableUnit) and multi-select (Survivor) modes.
+## Supports both single-select and multi-select modes for ClickableUnit.
 ## Attach to main scene or as child of camera.
 
 @export var camera: Camera3D
@@ -15,10 +15,10 @@ signal unit_double_clicked(unit: Node)
 signal selection_changed(units: Array)
 signal container_clicked(container: StorageContainer)
 
-# Single selection (legacy support for ClickableUnit)
+# Single selection (legacy support)
 var selected_unit: ClickableUnit = null
 
-# Multi-selection for Survivor units
+# Multi-selection for units
 var selected_units: Array[Node] = []
 
 # Box selection state
@@ -134,13 +134,13 @@ func _raycast_for_unit(screen_position: Vector2) -> Node:
 
 	var hit: Object = unit_result.collider
 
-	# Check if it's a selectable unit (ClickableUnit or Survivor)
-	if hit is ClickableUnit or hit is Survivor:
+	# Check if it's a selectable unit (ClickableUnit)
+	if hit is ClickableUnit:
 		return hit as Node
 
 	# Check parent in case we hit a child collider
 	var parent: Node = hit.get_parent()
-	if parent is ClickableUnit or parent is Survivor:
+	if parent is ClickableUnit:
 		return parent
 
 	return null
@@ -538,6 +538,12 @@ func get_box_selection_rect() -> Rect2:
 
 func _set_player_command_active(unit: Node, active: bool) -> void:
 	## Set the player command flag on a unit's AI controller.
+	## Also clears animation lock so unit can respond immediately.
 	var ai_controller: Node = unit.get_node_or_null("ManAIController")
 	if ai_controller and ai_controller.has_method("set_player_command_active"):
 		ai_controller.set_player_command_active(active)
+
+	# Clear animation lock so unit can move immediately
+	# (otherwise unit stays frozen during BT waits until lock is released)
+	if active and "is_animation_locked" in unit:
+		unit.is_animation_locked = false

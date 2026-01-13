@@ -64,6 +64,47 @@ All survivors dead.
 
 When an Officer dies, Captain promotes a random Man to Officer status.
 
+### Promotion System
+
+**Hierarchy Limits:**
+- Maximum 1 Captain
+- Maximum 11 Officers (including Captain)
+- Unlimited Enlisted Men
+
+**Officer Promotion:**
+When an officer dies, the player can select a new officer from the pool of enlisted men. Promotion considerations:
+- Direct stats of enlisted men are **obscured** - player cannot see exact numbers
+- Each man displays earned **Skill Icons** (see Skills section below)
+- Longer-surviving men have more skills, making them more valuable
+- This creates incentive to keep enlisted men alive as a "bench" of future officers
+
+**Captain Succession:**
+If the captain dies:
+- Player may promote any officer to captain
+- **Cost:** [TO BE DETERMINED]
+- **Penalty for no captain:** Large morale debuff to ALL units (regardless of proximity)
+- Captain vacancy is a serious strategic problem
+
+**Demotion:**
+Units cannot currently be demoted. This prevents exploits such as:
+- Trading down officers for more skilled enlisted men
+- Intentionally killing weak officers to access the enlisted pool
+
+### Skills (Earned Over Time)
+
+Skills are displayed as icons and are earned by surviving in the arctic. These are distinct from permanent Traits - skills represent learned abilities.
+
+| Skill | Effect | Levels |
+|-------|--------|--------|
+| **Captain's Presence** | LARGE morale buff to units in LARGE proximity | N/A (Captain only) |
+| **Well Liked** | Morale buff to units in proximity | Single level |
+| **Polar Navigation** | Compensates for unreliable compass; at higher levels provides pathfinding hints for routes through ice fields/mountains | 3 levels |
+
+**Skill Acquisition:**
+- Skills are unlocked based on time survived
+- More experienced survivors have more skill icons displayed
+- Skills are visible on enlisted men, helping inform promotion decisions
+
 ### Stat Interactions & Cascading Effects
 
 **Energy → Hunger Cascade:**
@@ -94,15 +135,15 @@ When hunger, energy, OR warmth reaches 0:
 - Only medical intervention or immediate need fulfillment can save them
 - Dead characters become lootable corpses containing 2-6 human meat (1x1 each)
 
-### Mental Breaks (Morale = 0)
+### Mental Breaks (Morale < 25%)
 
-When morale reaches 0, character "snaps" and exhibits dangerous behavior:
+When morale drops below 25%, character may "snap" and exhibit dangerous behavior:
 
 | Condition | Break Type | Behavior |
 |-----------|------------|----------|
-| Morale = 0, Hunger > 25 | Berserk | Attacks other survivors |
-| Morale = 0, Hunger ≤ 25 | Food Binge | Consumes all available food recklessly |
-| Morale = 0, Hunger = 0 | Wendigo | Kills and consumes other survivors |
+| Morale < 25%, Hunger > 25 | Berserk | Attacks other survivors |
+| Morale < 25%, Hunger ≤ 25 | Food Binge | Consumes all available food recklessly |
+| Morale < 25%, Hunger = 0 | Wendigo | Kills and consumes other survivors |
 
 **Note:** High morale characters will NOT break regardless of physical condition. They will simply die of starvation/exposure/exhaustion with dignity.
 
@@ -135,6 +176,30 @@ When morale reaches 0, character "snaps" and exhibits dangerous behavior:
 | Forced march in blizzard | -2.0/hr | Continuous |
 | Multiple days of low-quality food | -5/day | After 2+ days |
 | Man-hauling sleds | -0.25/hr | Continuous |
+
+**Group Size Morale Scaling (TO BE IMPLEMENTED):**
+
+Morale scales in proportion to the number of nearby units. This mechanic:
+- **Favors keeping the main group together** - larger groups maintain morale more easily
+- **Penalizes small expeditions** - hunting parties, trading missions, and exploration groups suffer morale drain
+- **Prevents solo "hail mary" attempts** - even the Captain with his generous morale aura cannot sustain a solo march to the HBC whaling outpost
+
+| Nearby Units | Morale Effect |
+|--------------|---------------|
+| 6+ units | Normal morale (no penalty) |
+| 4-5 units | Mild isolation penalty |
+| 2-3 units | Moderate isolation penalty |
+| 1 unit (solo) | Severe isolation penalty - rapid morale drain |
+
+**Ship Morale Floor:**
+The ship provides a tiny morale floor-cap that prevents reaching absolute zero morale. This enables a "last survivor" win condition:
+- A lone survivor at the ship can wait out rescue (barely)
+- A lone survivor away from the ship will succumb to isolation
+
+**Death by Despair:**
+When morale reaches 0% due to isolation (rather than mental break triggers), the unit dies with cause of death: **"Lost the will to live."**
+
+This is distinct from Mental Breaks (Berserk, Food Binge, Wendigo) which require specific hunger conditions. Isolation-induced zero morale is a quiet surrender.
 
 ### Temperature Modifiers
 
@@ -228,6 +293,7 @@ Being in darkness (nighttime) DOUBLES cold effects when combined with sub-zero t
 | Weak | -carry capacity, -construction speed |
 | Cold Blooded | Slower cold buildup |
 | Leader | +morale aura, priority in conflicts |
+| Greedy | Hoards 2+ food and rum in personal inventory at all times |
 
 ### Behavior AI
 **Priority Order:**

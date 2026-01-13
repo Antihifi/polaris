@@ -5,7 +5,7 @@ class_name BTFindSeat
 
 @export var output_position_var: StringName = &"target_position"
 @export var output_marker_var: StringName = &"target_marker"
-@export var min_spacing: float = 1.0
+@export var min_spacing: float = 2.0
 
 func _generate_name() -> String:
 	return "FindSeat (%.1fm apart)" % min_spacing

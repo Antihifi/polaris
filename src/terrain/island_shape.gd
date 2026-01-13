@@ -9,8 +9,10 @@ extends RefCounted
 ## IMPORTANT: The island fills MOST of the terrain (~9x12km).
 ## The ice wasteland is just a thin border around the edges.
 
-## Ice border width in meters (N/E/W edges only)
+## Ice border width in meters (N/E/W edges - south is ocean)
+## North border should match east/west for consistent ice wasteland
 const ICE_BORDER_METERS: float = 500.0
+const NORTH_ICE_BORDER_METERS: float = 600.0  # Slightly larger north buffer for ship approach
 
 ## How much the teardrop widens towards the south (0.0 = ellipse, higher = more teardrop)
 const TEARDROP_FACTOR: float = 0.25  # Reduced for more natural shape
@@ -44,19 +46,22 @@ static func generate_mask(width_px: int, height_px: int, shape_rng: RandomNumber
 	var terrain_size_meters: float = TerrainGenerator.WORLD_SIZE_METERS  # 10240m
 	var meters_per_pixel: float = terrain_size_meters / float(width_px)
 
-	# Ice border in pixels
+	# Ice border in pixels (E/W sides)
 	var ice_border_px: float = ICE_BORDER_METERS / meters_per_pixel
+	# North ice border (matching or larger than E/W for consistent wasteland)
+	var north_ice_border_px: float = NORTH_ICE_BORDER_METERS / meters_per_pixel
 
 	# Island fills most of the terrain, with ice border on N/E/W
-	# The island is centered but slightly north (teardrop narrow end north)
+	# The island is centered but slightly south (to accommodate larger north ice)
 	var center_x := float(width_px) / 2.0
-	var center_y := float(height_px) * CENTER_Y_RATIO
+	# Shift center south to account for north ice wasteland
+	var center_y := float(height_px) * (CENTER_Y_RATIO + 0.05)
 
 	# Island radii - fill terrain minus ice border
 	# X radius: half of width minus ice border on both sides
 	var radius_x := (float(width_px) - ice_border_px * 2.0) / 2.0
-	# Y radius: most of height, ice border only on north, ocean on south
-	var radius_y := (float(height_px) - ice_border_px) / 2.0
+	# Y radius: height minus north ice border, with some south margin for ocean
+	var radius_y := (float(height_px) - north_ice_border_px - ice_border_px * 0.5) / 2.0
 
 	for y in range(height_px):
 		for x in range(width_px):

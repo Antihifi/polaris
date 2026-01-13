@@ -10,9 +10,9 @@ var _hud_scene: PackedScene = preload("res://ui/game_hud.tscn")
 var _inventory_hud_scene: PackedScene = preload("res://ui/inventory_hud.tscn")
 var _ship_scene: PackedScene = preload("res://objects/ship1/ship_1.tscn")
 
-## Load existing terrain configuration from world_map.tscn
-## This gives us properly configured textures without recreating them
-var _world_map_scene: PackedScene = preload("res://terrain/world_map.tscn")
+## Load terrain texture configuration (dedicated scene for procedural generation)
+## Contains Terrain3DAssets with 4 textures: snow (0), rock (1), gravel (2), ice (3)
+var _terrain_config_scene: PackedScene = preload("res://terrain/procedural_terrain_config.tscn")
 
 ## Terrain configuration (matches terrain_generator.gd)
 const TERRAIN_RESOLUTION: int = 4096
@@ -35,6 +35,11 @@ var _pois: Dictionary = {}
 
 ## Loading UI
 var _loading_label: Label = null
+var _loading_detail_label: Label = null  # Shows current step details
+var _loading_canvas: CanvasLayer = null
+var _ellipsis_timer: Timer = null
+var _ellipsis_count: int = 0
+var _current_loading_text: String = ""
 
 ## Spawn configuration
 @export var spawn_radius: float = 30.0
@@ -70,40 +75,46 @@ func _generate_game() -> void:
 	var start_time := Time.get_ticks_msec()
 
 	# Stage 1: Generate terrain data
-	_update_loading("Generating island shape...")
+	_update_loading("Generating Island", "Creating landmass shape (4096x4096)")
 	await get_tree().process_frame
 	_generate_island_mask()
+	_update_loading_detail("Adding fjords and coastal features")
+	await get_tree().process_frame
 
-	_update_loading("Generating heightmap...")
+	_update_loading("Generating Heightmap", "Creating terrain elevations")
 	await get_tree().process_frame
 	_generate_heightmap()
+	_update_loading_detail("Mountains, valleys, and coastline complete")
+	await get_tree().process_frame
 
-	_update_loading("Carving ship inlet...")
+	_update_loading("Carving Inlet", "Creating ship harbor")
 	await get_tree().process_frame
 	var inlet_info := _carve_inlet()
 
 	# Stage 2: Create Terrain3D dynamically (like CodeGenerated.gd)
-	_update_loading("Creating terrain...")
+	_update_loading("Creating Terrain", "Initializing Terrain3D node")
 	await get_tree().process_frame
 	await _create_terrain()
+	_update_loading_detail("Terrain node configured with 4 textures")
+	await get_tree().process_frame
 
 	# Stage 3: Import terrain data
-	_update_loading("Importing terrain data...")
+	_update_loading("Importing Terrain Data", "Generating control map (textures)")
 	await get_tree().process_frame
 	await _import_terrain()
 
 	# Stage 4: Setup navigation
-	_update_loading("Setting up navigation...")
+	_update_loading("Setting Up Navigation", "Preparing navigation system")
 	await get_tree().process_frame
 	_setup_navigation()
 
 	# Stage 5: Place POIs
-	_update_loading("Placing points of interest...")
+	_update_loading("Placing Points of Interest", "Determining key locations")
 	await get_tree().process_frame
 	_place_pois(inlet_info.position)
 
 	# Stage 6: Find navigable spawn location and bake NavMesh there
-	_update_loading("Finding spawn location...")
+	_update_loading("Finding Spawn Location", "Searching for gentle terrain")
 	var ship_pos: Vector3 = _pois.get("ship", Vector3.ZERO)
 
 	# Find a navigable spawn position (inlet center has steep slopes)
@@ -120,18 +131,20 @@ func _generate_game() -> void:
 	# DISCOVERY #2 FIX (2026-01-12): Must enable region BEFORE bake, not after!
 	# See src/terrain/CLAUDE.md "DISCOVERY #2" - region was disabled during bake,
 	# causing NavigationServer to ignore the mesh despite having 218 polygons.
-	_update_loading("Baking navigation mesh...")
+	_update_loading("Baking Navigation Mesh", "This may take a minute")
 	runtime_nav_baker.enabled = true  # Enable BEFORE bake so region is active when mesh assigned
 	runtime_nav_baker.force_bake_at(spawn_pos)
 	await runtime_nav_baker.bake_finished
+	_update_loading_detail("NavMesh baked successfully")
+	await get_tree().process_frame
 
 	# Stage 7: NOW spawn entities (after terrain + NavMesh ready)
-	_update_loading("Spawning entities...")
+	_update_loading("Spawning Entities", "Creating captain and supplies")
 	await get_tree().process_frame
 	_spawn_entities_at(spawn_pos, ship_pos)
 
 	# Stage 8: Setup camera and UI
-	_update_loading("Setting up UI...")
+	_update_loading("Setting Up UI", "Configuring game interface")
 	await get_tree().process_frame
 	_setup_game_ui()
 
@@ -144,13 +157,13 @@ func _generate_game() -> void:
 
 
 func _create_loading_ui() -> void:
-	var canvas := CanvasLayer.new()
-	canvas.layer = 100
-	add_child(canvas)
+	_loading_canvas = CanvasLayer.new()
+	_loading_canvas.layer = 100
+	add_child(_loading_canvas)
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	canvas.add_child(center)
+	_loading_canvas.add_child(center)
 
 	var panel := PanelContainer.new()
 	center.add_child(panel)
@@ -162,22 +175,74 @@ func _create_loading_ui() -> void:
 	margin.add_theme_constant_override("margin_bottom", 20)
 	panel.add_child(margin)
 
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Title label - shows main step with animated ellipsis
 	_loading_label = Label.new()
 	_loading_label.text = "Loading..."
 	_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	margin.add_child(_loading_label)
+	_loading_label.add_theme_font_size_override("font_size", 20)
+	vbox.add_child(_loading_label)
+
+	# Detail label - shows sub-steps and progress info
+	_loading_detail_label = Label.new()
+	_loading_detail_label.text = ""
+	_loading_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loading_detail_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1.0))
+	vbox.add_child(_loading_detail_label)
+
+	# Create timer for animated ellipsis
+	_ellipsis_timer = Timer.new()
+	_ellipsis_timer.wait_time = 0.4
+	_ellipsis_timer.autostart = true
+	_ellipsis_timer.timeout.connect(_on_ellipsis_tick)
+	add_child(_ellipsis_timer)
 
 
-func _update_loading(text: String) -> void:
+func _update_loading(text: String, detail: String = "") -> void:
+	_current_loading_text = text
+	_ellipsis_count = 0  # Reset ellipsis animation
+
 	if _loading_label:
-		_loading_label.text = text
-		print("[ProceduralGame] %s" % text)
+		_loading_label.text = text + "..."
+
+	if _loading_detail_label:
+		_loading_detail_label.text = detail
+
+	print("[ProceduralGame] %s" % text + ((" - " + detail) if detail else ""))
+
+
+func _update_loading_detail(detail: String) -> void:
+	## Update just the detail text without changing the main loading text
+	if _loading_detail_label:
+		_loading_detail_label.text = detail
+	print("[ProceduralGame]   %s" % detail)
+
+
+func _on_ellipsis_tick() -> void:
+	## Animate the ellipsis: . -> .. -> ... -> (repeat)
+	_ellipsis_count = (_ellipsis_count + 1) % 4
+	if _loading_label and _current_loading_text:
+		var dots := ".".repeat(_ellipsis_count) if _ellipsis_count > 0 else ""
+		# Pad to 3 chars so text doesn't jump around
+		var padded_dots := dots + " ".repeat(3 - _ellipsis_count)
+		_loading_label.text = _current_loading_text + padded_dots
 
 
 func _hide_loading() -> void:
-	if _loading_label and _loading_label.get_parent():
-		_loading_label.get_parent().get_parent().get_parent().get_parent().queue_free()
-		_loading_label = null
+	if _ellipsis_timer:
+		_ellipsis_timer.stop()
+		_ellipsis_timer.queue_free()
+		_ellipsis_timer = null
+
+	if _loading_canvas:
+		_loading_canvas.queue_free()
+		_loading_canvas = null
+
+	_loading_label = null
+	_loading_detail_label = null
 
 
 func _generate_island_mask() -> void:
@@ -203,12 +268,13 @@ func _carve_inlet() -> Dictionary:
 
 
 func _create_terrain() -> void:
-	## Create Terrain3D dynamically, but copy material/assets from world_map.tscn
-	## This ensures we have properly configured textures
+	## Create Terrain3D dynamically with textures from procedural_terrain_config.tscn
+	## Texture slots: 0=snow, 1=rock, 2=gravel, 3=ice (all with detiling enabled)
 
-	# Load world_map to extract its Terrain3D configuration
-	var world_map: Node3D = _world_map_scene.instantiate()
-	var source_terrain: Node = world_map.get_node("NavigationRegion3D/Terrain3D")
+	# Load terrain config to extract Terrain3DAssets
+	var config: Node3D = _terrain_config_scene.instantiate()
+	var assets_holder: Node = config.get_node("Terrain3DAssetsHolder")
+	var terrain_assets = assets_holder.get_meta("terrain_assets") if assets_holder else null
 
 	# Create new Terrain3D node
 	terrain = ClassDB.instantiate("Terrain3D")
@@ -230,26 +296,51 @@ func _create_terrain() -> void:
 		terrain.set_camera(_temp_camera)
 
 	# Set material properties using demo pattern (terrain auto-creates material)
-	# Use safe property access since Terrain3DMaterial API may vary
 	if terrain.material:
 		terrain.material.world_background = Terrain3DMaterial.NONE
 		if "auto_shader" in terrain.material:
 			terrain.material.auto_shader = true
+
+		# Configure shader parameters for proper texture blending and detiling
+		# These settings match world_map.tscn for consistent appearance
+		if terrain.material.has_method("set_shader_param"):
+			# Texture blending - lower = smoother transitions between textures
+			terrain.material.set_shader_param("blend_sharpness", 0.5)
+
+			# Enable macro variation (detiling) - breaks up texture repetition
+			terrain.material.set_shader_param("enable_macro_variation", true)
+			terrain.material.set_shader_param("macro_variation1", Color(1, 1, 1, 1))
+			terrain.material.set_shader_param("macro_variation2", Color(1, 1, 1, 1))
+			terrain.material.set_shader_param("macro_variation_slope", 0.333)
+
+			# Noise scales for macro variation
+			terrain.material.set_shader_param("noise1_scale", 0.04)
+			terrain.material.set_shader_param("noise2_scale", 0.076)
+			terrain.material.set_shader_param("noise1_offset", Vector2(0.5, 0.5))
+
+			# Triplanar projection for steep slopes
+			terrain.material.set_shader_param("enable_projection", true)
+			terrain.material.set_shader_param("projection_threshold", 0.8)
+
+			# Other quality settings
+			terrain.material.set_shader_param("bias_distance", 512.0)
+			terrain.material.set_shader_param("mipmap_bias", 1.0)
+
+			print("[ProceduralGame] Configured terrain material shader parameters")
+
 		print("[ProceduralGame] Set terrain material properties")
 	else:
 		push_warning("[ProceduralGame] Terrain3D material not yet created")
 
-	# Copy assets from world_map's Terrain3D for textures
-	if source_terrain:
-		var src_assets = source_terrain.get("assets")
-		if src_assets:
-			terrain.assets = src_assets.duplicate()
-			print("[ProceduralGame] Copied terrain assets from world_map")
-		else:
-			push_warning("[ProceduralGame] Source terrain has no assets")
+	# Copy assets from config scene for textures (snow, rock, gravel, ice)
+	if terrain_assets:
+		terrain.assets = terrain_assets.duplicate()
+		print("[ProceduralGame] Loaded terrain assets: 4 textures (snow, rock, gravel, ice)")
+	else:
+		push_warning("[ProceduralGame] Could not load terrain assets from config scene")
 
-	# Free the temporary world_map instance (we only needed its configuration)
-	world_map.queue_free()
+	# Free the temporary config instance (we only needed its assets)
+	config.queue_free()
 
 	print("[ProceduralGame] Created Terrain3D with vertex_spacing=%.2f" % VERTEX_SPACING)
 
@@ -263,12 +354,38 @@ func _import_terrain() -> void:
 	var half_img: float = float(_heightmap.get_width()) / 2.0
 	var offset := Vector3(-half_img, 0, -half_img)
 
-	# Import heightmap
+	# Generate control map with proper 32-bit packed format BEFORE import
+	var texture_rng: RandomNumberGenerator = _seed_manager.get_texture_rng()
+	print("[ProceduralGame] Generating control map (textures)...")
+	var control_map: Image = TexturePainter.generate_control_map_for_import(
+		_heightmap,
+		_island_mask,
+		texture_rng
+	)
+
+	# Get texture distribution stats
+	var stats := TexturePainter.get_texture_stats(_heightmap, _island_mask)
+	print("[ProceduralGame] Texture distribution: Snow %.1f%%, Rock %.1f%%, Gravel %.1f%%, Ice %.1f%%" % [
+		stats.snow_percent,
+		stats.rock_percent,
+		stats.gravel_percent,
+		stats.ice_percent
+	])
+
+	# Import heightmap AND control map together
 	var images: Array[Image] = []
 	images.resize(3)
-	images[0] = _heightmap
-	images[1] = null  # Control map
-	images[2] = null  # Color map
+	images[0] = _heightmap    # Height map (FORMAT_RF)
+	images[1] = control_map   # Control map (FORMAT_RF with bit-packed texture IDs)
+	images[2] = null          # Color map - not used
+
+	print("[ProceduralGame] Importing terrain with heightmap + control map...")
+	print("[ProceduralGame]   Heightmap: %dx%d format=%d" % [
+		_heightmap.get_width(), _heightmap.get_height(), _heightmap.get_format()
+	])
+	print("[ProceduralGame]   Control map: %dx%d format=%d" % [
+		control_map.get_width(), control_map.get_height(), control_map.get_format()
+	])
 
 	terrain.data.import_images(images, offset, 0.0, 1.0)
 
@@ -279,13 +396,20 @@ func _import_terrain() -> void:
 	# Recalculate height range
 	terrain.data.calc_height_range(true)
 
+	# Update terrain maps to apply texture changes
+	if terrain.data.has_method("update_maps"):
+		terrain.data.update_maps()
+		print("[ProceduralGame] Terrain maps updated")
+
 	# Verify import
 	var test_h: float = terrain.data.get_height(Vector3.ZERO)
 	print("[ProceduralGame] Terrain imported. Height at origin: %.2f" % test_h)
 
-	# Paint textures
-	var texture_rng: RandomNumberGenerator = _seed_manager.get_texture_rng()
-	TexturePainter.paint_terrain(terrain.data, _heightmap, _island_mask, texture_rng)
+	# NOTE: We intentionally DON'T call paint_terrain_post_import() here anymore!
+	# The control map already contains per-pixel texture data with smooth blending.
+	# Calling set_control_base_id() with step=4 was overriding the blend values and
+	# creating blocky "digital camo" patterns. The import_images() approach with
+	# bit-packed control map is the correct method for smooth texture transitions.
 
 
 func _setup_navigation() -> void:

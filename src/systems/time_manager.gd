@@ -285,11 +285,17 @@ func _update_survivor_needs() -> void:
 
 	for node in survivors:
 		if node.has_method("update_needs"):
-			# Sunlight = daytime AND not in shelter (shelter check done inside unit)
-			var in_sunlight := is_day
-			if node.has_method("is_in_shelter") and node.is_in_shelter():
-				in_sunlight = false
-			node.update_needs(1.0, in_sunlight, false, temp)
+			# Check shelter status from unit
+			var in_shelter := false
+			if node.has_method("is_in_shelter"):
+				in_shelter = node.is_in_shelter()
+			# Sunlight = daytime AND not in shelter
+			var in_sunlight := is_day and not in_shelter
+			# Check fire proximity
+			var near_fire := false
+			if node.has_method("is_near_fire"):
+				near_fire = node.is_near_fire()
+			node.update_needs(1.0, in_shelter, near_fire, temp, in_sunlight)
 
 
 # --- Time Control ---

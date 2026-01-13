@@ -1,24 +1,24 @@
 extends Node
-## Singleton managing selection of survivors and other selectable entities.
+## Singleton managing selection of units and other selectable entities.
 ## Access via SelectionManager autoload.
 
-signal selection_changed(selected: Array[Survivor])
-signal survivor_selected(survivor: Survivor)
-signal survivor_deselected(survivor: Survivor)
-signal group_assigned(group_number: int, survivors: Array[Survivor])
+signal selection_changed(selected: Array[Node])
+signal unit_selected(unit: Node)
+signal unit_deselected(unit: Node)
+signal group_assigned(group_number: int, units: Array[Node])
 
-# Currently selected survivors
-var selected_survivors: Array[Survivor] = []
+# Currently selected units
+var selected_units: Array[Node] = []
 
 # Control groups (1-9)
-var control_groups: Dictionary = {}  # {group_number: Array[Survivor]}
+var control_groups: Dictionary = {}  # {group_number: Array[Node]}
 
 # Selection box (for drag selection)
 var selection_box_start: Vector2 = Vector2.ZERO
 var is_dragging_selection: bool = false
 
 # Layer for raycasting
-const SURVIVOR_COLLISION_LAYER: int = 2
+const UNIT_COLLISION_LAYER: int = 2
 
 
 func _ready() -> void:
@@ -58,83 +58,91 @@ func _get_number_from_keycode(keycode: Key) -> int:
 
 # --- Selection Methods ---
 
-func select(survivor: Survivor, add_to_selection: bool = false) -> void:
-	## Select a single survivor. If add_to_selection is true, adds to current selection.
+func select(unit: Node, add_to_selection: bool = false) -> void:
+	## Select a single unit. If add_to_selection is true, adds to current selection.
 	if not add_to_selection:
 		clear_selection()
 
-	if survivor not in selected_survivors:
-		selected_survivors.append(survivor)
-		survivor.select()
-		survivor_selected.emit(survivor)
+	if unit not in selected_units:
+		selected_units.append(unit)
+		if unit.has_method("select"):
+			unit.select()
+		unit_selected.emit(unit)
 
-	selection_changed.emit(selected_survivors)
+	selection_changed.emit(selected_units)
 
 
-func deselect(survivor: Survivor) -> void:
-	## Remove a survivor from selection.
-	if survivor in selected_survivors:
-		selected_survivors.erase(survivor)
-		survivor.deselect()
-		survivor_deselected.emit(survivor)
-		selection_changed.emit(selected_survivors)
+func deselect(unit: Node) -> void:
+	## Remove a unit from selection.
+	if unit in selected_units:
+		selected_units.erase(unit)
+		if unit.has_method("deselect"):
+			unit.deselect()
+		unit_deselected.emit(unit)
+		selection_changed.emit(selected_units)
 
 
 func clear_selection() -> void:
-	## Deselect all survivors.
-	for survivor in selected_survivors:
-		survivor.deselect()
-		survivor_deselected.emit(survivor)
+	## Deselect all units.
+	for unit in selected_units:
+		if unit.has_method("deselect"):
+			unit.deselect()
+		unit_deselected.emit(unit)
 
-	selected_survivors.clear()
-	selection_changed.emit(selected_survivors)
+	selected_units.clear()
+	selection_changed.emit(selected_units)
 
 
-func select_multiple(survivors: Array[Survivor], add_to_selection: bool = false) -> void:
-	## Select multiple survivors at once.
+func select_multiple(units: Array[Node], add_to_selection: bool = false) -> void:
+	## Select multiple units at once.
 	if not add_to_selection:
 		clear_selection()
 
-	for survivor in survivors:
-		if survivor not in selected_survivors:
-			selected_survivors.append(survivor)
-			survivor.select()
-			survivor_selected.emit(survivor)
+	for unit in units:
+		if unit not in selected_units:
+			selected_units.append(unit)
+			if unit.has_method("select"):
+				unit.select()
+			unit_selected.emit(unit)
 
-	selection_changed.emit(selected_survivors)
+	selection_changed.emit(selected_units)
 
 
 func select_all() -> void:
-	## Select all survivors in the scene.
-	var all_survivors := get_tree().get_nodes_in_group("survivors")
-	var typed_survivors: Array[Survivor] = []
-	for node in all_survivors:
-		if node is Survivor:
-			typed_survivors.append(node as Survivor)
-	select_multiple(typed_survivors)
+	## Select all units in the scene.
+	var all_units := get_tree().get_nodes_in_group("survivors")
+	all_units.append_array(get_tree().get_nodes_in_group("selectable_units"))
+
+	# Remove duplicates
+	var unique_units: Array[Node] = []
+	for node in all_units:
+		if node not in unique_units and is_instance_valid(node):
+			unique_units.append(node)
+
+	select_multiple(unique_units)
 
 
-func toggle_selection(survivor: Survivor) -> void:
-	## Toggle selection state of a survivor.
-	if survivor in selected_survivors:
-		deselect(survivor)
+func toggle_selection(unit: Node) -> void:
+	## Toggle selection state of a unit.
+	if unit in selected_units:
+		deselect(unit)
 	else:
-		select(survivor, true)
+		select(unit, true)
 
 
 # --- Control Groups ---
 
 func assign_control_group(group_number: int) -> void:
-	## Assign currently selected survivors to a control group.
+	## Assign currently selected units to a control group.
 	if group_number < 1 or group_number > 9:
 		return
 
-	control_groups[group_number] = selected_survivors.duplicate()
+	control_groups[group_number] = selected_units.duplicate()
 	group_assigned.emit(group_number, control_groups[group_number])
 
 
 func recall_control_group(group_number: int) -> void:
-	## Select all survivors in a control group.
+	## Select all units in a control group.
 	if group_number < 1 or group_number > 9:
 		return
 
@@ -142,21 +150,30 @@ func recall_control_group(group_number: int) -> void:
 	if group.is_empty():
 		return
 
-	# Filter out dead or removed survivors
-	var valid_survivors: Array[Survivor] = []
-	for survivor in group:
-		if is_instance_valid(survivor) and survivor.current_state != Survivor.State.DEAD:
-			valid_survivors.append(survivor)
+	# Filter out dead or removed units
+	var valid_units: Array[Node] = []
+	for unit in group:
+		if is_instance_valid(unit):
+			# Check if unit is dead (if it has stats)
+			var is_dead := false
+			if "stats" in unit and unit.stats and unit.stats.has_method("is_dead"):
+				is_dead = unit.stats.is_dead()
+			if not is_dead:
+				valid_units.append(unit)
 
-	control_groups[group_number] = valid_survivors
-	select_multiple(valid_survivors)
+	control_groups[group_number] = valid_units
+	select_multiple(valid_units)
 
 
-func get_control_group(group_number: int) -> Array[Survivor]:
-	## Get survivors in a control group.
+func get_control_group(group_number: int) -> Array[Node]:
+	## Get units in a control group.
 	if group_number < 1 or group_number > 9:
 		return []
-	return control_groups[group_number]
+
+	var result: Array[Node] = []
+	for unit in control_groups[group_number]:
+		result.append(unit)
+	return result
 
 
 # --- Box Selection ---
@@ -185,37 +202,37 @@ func update_box_selection(current_position: Vector2) -> Rect2:
 
 
 func finish_box_selection(camera: Camera3D, selection_rect: Rect2, add_to_selection: bool = false) -> void:
-	## Finish box selection and select survivors within the box.
+	## Finish box selection and select units within the box.
 	is_dragging_selection = false
 
 	if selection_rect.size.length() < 5.0:
 		# Too small, treat as a click
 		return
 
-	var survivors_in_box: Array[Survivor] = []
-	var all_survivors := get_tree().get_nodes_in_group("survivors")
+	var units_in_box: Array[Node] = []
+	var all_units := get_tree().get_nodes_in_group("survivors")
+	all_units.append_array(get_tree().get_nodes_in_group("selectable_units"))
 
-	for node in all_survivors:
-		if node is Survivor:
-			var survivor := node as Survivor
-			var screen_pos := camera.unproject_position(survivor.global_position)
-			if selection_rect.has_point(screen_pos):
-				survivors_in_box.append(survivor)
+	for node in all_units:
+		if node is Node3D:
+			var screen_pos := camera.unproject_position(node.global_position)
+			if selection_rect.has_point(screen_pos) and node not in units_in_box:
+				units_in_box.append(node)
 
-	if not survivors_in_box.is_empty():
-		select_multiple(survivors_in_box, add_to_selection)
+	if not units_in_box.is_empty():
+		select_multiple(units_in_box, add_to_selection)
 
 
 # --- Raycast Selection ---
 
 func try_select_at_position(camera: Camera3D, screen_position: Vector2, add_to_selection: bool = false) -> bool:
-	## Attempt to select a survivor at the given screen position using raycast.
-	## Returns true if a survivor was selected.
+	## Attempt to select a unit at the given screen position using raycast.
+	## Returns true if a unit was selected.
 	var from := camera.project_ray_origin(screen_position)
 	var to := from + camera.project_ray_normal(screen_position) * 1000.0
 
 	var space_state := camera.get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(from, to, SURVIVOR_COLLISION_LAYER)
+	var query := PhysicsRayQueryParameters3D.create(from, to, UNIT_COLLISION_LAYER)
 	var result := space_state.intersect_ray(query)
 
 	if result.is_empty():
@@ -224,14 +241,16 @@ func try_select_at_position(camera: Camera3D, screen_position: Vector2, add_to_s
 		return false
 
 	var collider: Object = result.collider
-	if collider is Survivor:
-		select(collider as Survivor, add_to_selection)
+
+	# Check if collider is selectable
+	if _is_selectable(collider):
+		select(collider as Node, add_to_selection)
 		return true
 
 	# Check parent in case we hit a child collider
 	var parent: Node = collider.get_parent()
-	if parent is Survivor:
-		select(parent as Survivor, add_to_selection)
+	if _is_selectable(parent):
+		select(parent, add_to_selection)
 		return true
 
 	if not add_to_selection:
@@ -240,43 +259,53 @@ func try_select_at_position(camera: Camera3D, screen_position: Vector2, add_to_s
 	return false
 
 
+func _is_selectable(node: Object) -> bool:
+	## Check if a node is selectable (in survivors or selectable_units group).
+	if not node is Node:
+		return false
+	var n := node as Node
+	return n.is_in_group("survivors") or n.is_in_group("selectable_units")
+
+
 # --- Utility ---
 
 func get_selected_count() -> int:
-	return selected_survivors.size()
+	return selected_units.size()
 
 
 func has_selection() -> bool:
-	return not selected_survivors.is_empty()
+	return not selected_units.is_empty()
 
 
-func get_first_selected() -> Survivor:
-	if selected_survivors.is_empty():
+func get_first_selected() -> Node:
+	if selected_units.is_empty():
 		return null
-	return selected_survivors[0]
+	return selected_units[0]
 
 
 func get_selection_center() -> Vector3:
-	## Get the center position of all selected survivors.
-	if selected_survivors.is_empty():
+	## Get the center position of all selected units.
+	if selected_units.is_empty():
 		return Vector3.ZERO
 
 	var total := Vector3.ZERO
-	for survivor in selected_survivors:
-		total += survivor.global_position
+	for unit in selected_units:
+		if unit is Node3D:
+			total += unit.global_position
 
-	return total / selected_survivors.size()
+	return total / selected_units.size()
 
 
 func command_selected_to_move(target_position: Vector3) -> void:
-	## Command all selected survivors to move to a position.
-	if selected_survivors.is_empty():
+	## Command all selected units to move to a position.
+	if selected_units.is_empty():
 		return
 
 	# Simple formation: spread out around target
-	var count := selected_survivors.size()
+	var count := selected_units.size()
 	if count == 1:
-		selected_survivors[0].move_to(target_position)
+		if selected_units[0].has_method("move_to"):
+			selected_units[0].move_to(target_position)
 	else:
 		var spacing := 1.5
 		var angle_step := TAU / count
@@ -286,4 +315,15 @@ func command_selected_to_move(target_position: Vector3) -> void:
 				0,
 				sin(angle_step * i) * spacing
 			)
-			selected_survivors[i].move_to(target_position + offset)
+			if selected_units[i].has_method("move_to"):
+				selected_units[i].move_to(target_position + offset)
+
+
+# --- Legacy compatibility ---
+# These properties/methods provide backwards compatibility for code using old names
+
+var selected_survivors: Array[Node]:
+	get:
+		return selected_units
+	set(value):
+		selected_units = value

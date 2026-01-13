@@ -59,6 +59,10 @@ var inventory: Inventory = null
 var _inventory_protoset: JSON = null
 const INVENTORY_GRID_SIZE := Vector2i(3, 3)
 
+## Warmth/shelter tracking (populated by Area3D enter/exit signals)
+var _active_heat_sources: Array[Node] = []  # WarmthArea nodes currently in range
+var _current_shelter: Node = null  # ShelterArea node if inside shelter
+
 
 func _ready() -> void:
 	# Initialize stats if not set
@@ -219,7 +223,8 @@ func _apply_terrain_floor_check() -> void:
 	var terrain := _find_terrain3d()
 	if terrain and "data" in terrain and terrain.data:
 		var height: float = terrain.data.get_height(global_position)
-		if not is_nan(height):
+		# Guard against NaN and Inf values (prevents "!v.is_finite()" error spam)
+		if is_finite(height):
 			if global_position.y < height:
 				global_position.y = height
 				velocity.y = 0.0  # Stop accumulating gravity when snapped to floor
@@ -404,13 +409,14 @@ func _drain_walking_energy(delta: float, time_scale: float) -> void:
 		stats_changed.emit()
 
 
-func update_needs(delta_hours: float, is_in_shelter: bool, is_near_fire: bool, ambient_temp: float) -> void:
+func update_needs(delta_hours: float, in_shelter: bool, near_fire: bool, ambient_temp: float, in_sunlight: bool = true) -> void:
 	## Called by TimeManager each in-game hour to update survival needs.
 	if not stats:
 		return
 
 	var is_working := is_moving  # For now, moving counts as working
-	stats.apply_hourly_decay(is_working, is_in_shelter, is_near_fire, ambient_temp)
+	var in_bed := is_in_bed()  # Check if sleeping in actual bed for 2X bonus
+	stats.apply_hourly_decay(is_working, in_shelter, in_bed, near_fire, ambient_temp, in_sunlight)
 	stats_changed.emit()
 
 	# Check for death
@@ -504,27 +510,73 @@ func eat_food_item(item: InventoryItem) -> void:
 	stats_changed.emit()
 	print("[ClickableUnit] %s ate %s (+%.0f hunger)" % [unit_name, item.get_property("name", "food"), nutrition])
 
-# --- Environmental/Aura Detection Stubs ---
-# TODO: Properly implement these when shelter/fire/aura systems are rebuilt
+# --- Environmental Detection (Warmth/Shelter) ---
+# Tracking is populated by WarmthArea/ShelterArea body_entered/exited signals.
+
+func enter_fire_warmth(warmth_area: Node) -> void:
+	## Called by WarmthArea when unit enters heat source range.
+	if warmth_area and warmth_area not in _active_heat_sources:
+		_active_heat_sources.append(warmth_area)
+		print("[ClickableUnit] %s entered fire warmth (sources: %d)" % [unit_name, _active_heat_sources.size()])
+
+
+func exit_fire_warmth(warmth_area: Node) -> void:
+	## Called by WarmthArea when unit exits heat source range.
+	_active_heat_sources.erase(warmth_area)
+	print("[ClickableUnit] %s exited fire warmth (sources: %d)" % [unit_name, _active_heat_sources.size()])
+
+
+func enter_shelter(shelter_area: Node) -> void:
+	## Called by ShelterArea when unit enters shelter.
+	_current_shelter = shelter_area
+	print("[ClickableUnit] %s entered shelter" % unit_name)
+
+
+func exit_shelter() -> void:
+	## Called by ShelterArea when unit exits shelter.
+	_current_shelter = null
+	print("[ClickableUnit] %s exited shelter" % unit_name)
+
+
+func is_in_bed() -> bool:
+	## Returns true if unit is within 1.5m of a bed's foot_of__bed marker.
+	## Used for 2X energy recovery bonus.
+	for bed in get_tree().get_nodes_in_group("beds"):
+		var marker: Marker3D = bed.find_child("foot_of__bed", true, false)
+		if marker and global_position.distance_to(marker.global_position) < 1.5:
+			return true
+	return false
+
 
 func is_in_shelter() -> bool:
 	## Returns true if unit is inside a shelter structure.
-	return false
+	return _current_shelter != null
 
 
 func get_shelter_type() -> int:
 	## Returns shelter type: 0=TENT, 1=IMPROVED_SHELTER, 2=CAVE
+	if _current_shelter and _current_shelter.has_method("get_shelter_type"):
+		return _current_shelter.get_shelter_type()
 	return 0
 
 
 func is_near_fire() -> bool:
 	## Returns true if unit is near a heat source (campfire, etc).
-	return false
+	# Clean up invalid references first
+	var valid_sources: Array[Node] = []
+	for source in _active_heat_sources:
+		if is_instance_valid(source):
+			valid_sources.append(source)
+	_active_heat_sources = valid_sources
+	return _active_heat_sources.size() > 0
 
 
 func is_in_sunlight() -> bool:
 	## Returns true if unit is exposed to sunlight (not in shelter, daytime).
-	# Could check TimeManager.is_daytime() here when implemented
+	if is_in_shelter():
+		return false
+	if _time_manager and _time_manager.has_method("is_daytime"):
+		return _time_manager.is_daytime()
 	return true
 
 

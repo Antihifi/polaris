@@ -6,8 +6,8 @@ class_name BTFindFireSpot
 @export var fire_node_var: StringName = &"target_node"
 @export var output_position_var: StringName = &"target_position"
 @export var fire_position_var: StringName = &"fire_position"  ## Store fire pos for BTFaceTarget
-@export var fire_distance: float = 3.0
-@export var min_spacing: float = 1.0
+@export var fire_distance: float = 4.0
+@export var min_spacing: float = 2.5
 
 func _generate_name() -> String:
 	return "FindFireSpot (%.1fm apart)" % min_spacing

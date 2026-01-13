@@ -237,7 +237,7 @@ func get_most_critical_need() -> String:
 	return most_critical
 
 
-func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_near_fire: bool,
+func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, is_near_fire: bool,
 		ambient_temperature: float, is_in_sunlight: bool = true) -> void:
 	## Called once per in-game hour to update needs.
 	## Uses cascading multipliers: low energy/warmth increase hunger drain, etc.
@@ -277,9 +277,11 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_near_fire: boo
 	else:
 		# Resting recovery
 		var recovery := 3.0  # Base idle recovery
-		if is_in_shelter:
-			recovery = 6.0  # Tent recovery
-			# TODO: Improved shelter gives 8.0
+		if is_in_bed:
+			recovery = 20.0  # Bed recovery (2X shelter rate)
+		elif is_in_shelter:
+			recovery = 10.0  # Tent recovery (~3.3x base)
+			# TODO: Improved shelter gives 12.0
 		if health < 50.0:
 			recovery *= health / 50.0  # Reduced recovery when injured
 		energy_change += recovery

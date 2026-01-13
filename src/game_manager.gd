@@ -2,9 +2,12 @@ extends Node
 ## Singleton managing core game state, win/lose conditions, and game flow.
 ## Access via GameManager autoload.
 
-# Ambient sounds
-var wind_ambient: AudioStream = preload("res://sounds/storm-wind-1.wav")
-var _wind_player: AudioStreamPlayer
+# Ambient sounds - two wind layers that crossfade continuously
+var wind_ambient_1: AudioStream = preload("res://sounds/storm-wind-1.mp3")
+var wind_ambient_2: AudioStream = preload("res://sounds/wind2.mp3")
+var _wind_player_1: AudioStreamPlayer
+var _wind_player_2: AudioStreamPlayer
+var _crossfade_progress: float = 0.0  # 0.0 = full wind1, 1.0 = full wind2
 
 signal game_started
 signal game_over(won: bool, score: int)
@@ -36,6 +39,10 @@ enum GameState {
 @export_range(0.0, 1.0, 0.05) var ambient_volume_min: float = 0.1
 ## Volume multiplier during blizzards (1.5 = 50% louder).
 @export_range(1.0, 3.0, 0.1) var blizzard_volume_multiplier: float = 1.5
+## Volume boost for wind2.mp3 (quieter source file needs compensation).
+@export_range(1.0, 5.0, 0.1) var wind2_volume_boost: float = 2.5
+## Time in seconds for a full crossfade cycle (wind1 -> wind2 -> wind1).
+@export_range(10.0, 120.0, 5.0) var crossfade_cycle_seconds: float = 45.0
 
 ## Whether blizzard volume boost is active.
 var _blizzard_active: bool = false
@@ -53,17 +60,8 @@ var seed_manager: SeedManager = null
 var poi_locations: Dictionary = {}
 var is_new_game: bool = true
 
-# Scene references
-var captain_scene: PackedScene = preload("res://src/characters/captain.tscn")
-
-# Survivor names pool
-const SURVIVOR_NAMES: Array[String] = [
-	"Captain Crozier", "Lieutenant Gore", "Sergeant Tozer", "Dr. Goodsir",
-	"Mr. Blanky", "Mr. Hickey", "Mr. Diggle", "Mr. Collins",
-	"Henry Peglar", "Thomas Evans", "William Strong", "John Hartnell",
-	"William Braine", "James Reid", "Edmund Hoar", "George Chambers",
-	"Robert Sinclair", "David Young", "Abraham Seeley", "Francis Dunn"
-]
+# Scene references - uses CharacterSpawner for unit creation
+var _character_spawner: Node = null
 
 
 func _ready() -> void:
@@ -72,20 +70,37 @@ func _ready() -> void:
 		var time_manager := get_node("/root/TimeManager")
 		time_manager.rescue_arrived.connect(_on_rescue_arrived)
 
-	# Create looping ambient wind player
-	_wind_player = AudioStreamPlayer.new()
-	_wind_player.stream = wind_ambient
-	_wind_player.volume_db = linear_to_db(ambient_volume_max)
-	_wind_player.process_mode = Node.PROCESS_MODE_ALWAYS
-	add_child(_wind_player)
-	_wind_player.finished.connect(_on_wind_finished)
-	_wind_player.play()
+	# Create two looping ambient wind players for crossfading
+	_wind_player_1 = AudioStreamPlayer.new()
+	_wind_player_1.stream = wind_ambient_1
+	_wind_player_1.volume_db = linear_to_db(ambient_volume_max)
+	_wind_player_1.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(_wind_player_1)
+	_wind_player_1.finished.connect(_on_wind1_finished)
+	_wind_player_1.play()
+
+	_wind_player_2 = AudioStreamPlayer.new()
+	_wind_player_2.stream = wind_ambient_2
+	_wind_player_2.volume_db = linear_to_db(0.0)  # Start silent
+	_wind_player_2.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(_wind_player_2)
+	_wind_player_2.finished.connect(_on_wind2_finished)
+	_wind_player_2.play()
 
 	# Connect to camera zoom after scene is ready
 	call_deferred("_connect_camera_zoom")
 
 	# Connect to SnowController for blizzard audio boost
 	call_deferred("_connect_snow_controller")
+
+
+func _process(delta: float) -> void:
+	# Continuously crossfade between the two wind sounds using a sine wave
+	# This creates a smooth, natural variation in the ambient wind
+	_crossfade_progress += delta / crossfade_cycle_seconds
+	if _crossfade_progress > 1.0:
+		_crossfade_progress -= 1.0
+	_update_wind_volume()
 
 
 func _unhandled_input(_event: InputEvent) -> void:
@@ -154,50 +169,28 @@ func start_new_game(seed_value: int = 0) -> void:
 
 
 func _spawn_survivors() -> void:
-	## Create initial survivors with random traits.
+	## Create initial survivors using CharacterSpawner.
+	## CharacterSpawner handles name randomization, stats, and AI setup.
 	var spawn_center := get_ship_position()
-	var spawn_radius := 5.0
 
-	var available_names := SURVIVOR_NAMES.duplicate()
-	available_names.shuffle()
+	# Create CharacterSpawner if not exists
+	if not _character_spawner:
+		var spawner_script: Script = preload("res://src/systems/character_spawner.gd")
+		_character_spawner = spawner_script.new()
+		_character_spawner.name = "CharacterSpawner"
+		add_child(_character_spawner)
 
-	for i in range(initial_survivor_count):
-		var survivor := captain_scene.instantiate() as Survivor
+	# Configure spawner
+	_character_spawner.spawn_center = spawn_center
+	_character_spawner.spawn_radius = 5.0
 
-		# Assign name
-		if i < available_names.size():
-			survivor.survivor_name = available_names[i]
-		else:
-			survivor.survivor_name = "Francis Crozier" % (i + 1)
+	# Spawn units
+	var units: Array[Node] = _character_spawner.spawn_survivors(initial_survivor_count, spawn_center)
 
-		# Assign random traits (1-3 traits)
-		var trait_count := randi_range(1, 3)
-		survivor.traits = SurvivorTrait.get_random_traits(trait_count)
-
-		# Initialize stats with some variation
-		survivor.stats = SurvivorStats.new()
-		survivor.stats.hunger = randf_range(70.0, 100.0)
-		survivor.stats.warmth = randf_range(60.0, 90.0)
-		survivor.stats.morale = starting_morale + randf_range(-10.0, 10.0)
-		survivor.stats.energy = randf_range(80.0, 100.0)
-
-		# Randomize skills
-		survivor.stats.hunting_skill = randf_range(10.0, 50.0)
-		survivor.stats.construction_skill = randf_range(10.0, 50.0)
-		survivor.stats.medicine_skill = randf_range(10.0, 50.0)
-		survivor.stats.navigation_skill = randf_range(10.0, 50.0)
-		survivor.stats.survival_skill = randf_range(10.0, 50.0)
-
-		# Position in a circle around spawn point
-		var angle := (TAU / initial_survivor_count) * i
-		var offset := Vector3(cos(angle), 0, sin(angle)) * spawn_radius
-		survivor.global_position = spawn_center + offset
-
-		# Connect death signal
-		survivor.died.connect(_on_survivor_died)
-
-		# Add to scene
-		get_tree().current_scene.add_child(survivor)
+	# Connect death signals (units emit stats_changed, check for death there)
+	for unit in units:
+		if unit.has_signal("stats_changed"):
+			unit.stats_changed.connect(_on_unit_stats_changed.bind(unit))
 
 
 func _generate_starting_salvage() -> void:
@@ -209,9 +202,20 @@ func _generate_starting_salvage() -> void:
 
 # --- Win/Lose Conditions ---
 
-func _on_survivor_died(_survivor: Survivor) -> void:
+func _on_unit_stats_changed(unit: Node) -> void:
+	## Check if unit died when stats change.
+	if "stats" in unit and unit.stats and unit.stats.is_dead():
+		_on_unit_died(unit)
+
+
+func _on_unit_died(unit: Node) -> void:
+	## Handle unit death.
 	survivors_alive -= 1
 	survivor_count_changed.emit(survivors_alive, initial_survivor_count)
+
+	# Disconnect to prevent multiple calls
+	if unit.has_signal("stats_changed") and unit.stats_changed.is_connected(_on_unit_stats_changed):
+		unit.stats_changed.disconnect(_on_unit_stats_changed)
 
 	# Check for game over
 	if survivors_alive <= 0:
@@ -247,12 +251,10 @@ func calculate_score() -> int:
 
 	# Morale bonus
 	var total_morale := 0.0
-	var survivors := get_tree().get_nodes_in_group("survivors")
-	for node in survivors:
-		if node is Survivor:
-			var survivor := node as Survivor
-			if survivor.current_state != Survivor.State.DEAD:
-				total_morale += survivor.stats.morale
+	var alive_units := get_alive_units()
+	for unit in alive_units:
+		if "stats" in unit and unit.stats:
+			total_morale += unit.stats.morale
 
 	if survivors_alive > 0:
 		var avg_morale := total_morale / survivors_alive
@@ -287,49 +289,57 @@ func is_paused() -> bool:
 
 # --- Queries ---
 
-func get_all_survivors() -> Array[Survivor]:
-	var result: Array[Survivor] = []
+func get_all_units() -> Array[Node]:
+	## Get all units in the "survivors" group (includes dead).
+	var result: Array[Node] = []
 	var nodes := get_tree().get_nodes_in_group("survivors")
 	for node in nodes:
-		if node is Survivor:
-			result.append(node as Survivor)
+		result.append(node)
 	return result
 
 
-func get_alive_survivors() -> Array[Survivor]:
-	var result: Array[Survivor] = []
-	for survivor in get_all_survivors():
-		if survivor.current_state != Survivor.State.DEAD:
-			result.append(survivor)
+func get_alive_units() -> Array[Node]:
+	## Get all living units (not dead).
+	var result: Array[Node] = []
+	for unit in get_all_units():
+		if "stats" in unit and unit.stats:
+			if not unit.stats.is_dead():
+				result.append(unit)
+		else:
+			result.append(unit)  # No stats = assume alive
 	return result
 
 
-func get_survivor_by_name(survivor_name: String) -> Survivor:
-	for survivor in get_all_survivors():
-		if survivor.survivor_name == survivor_name:
-			return survivor
+func get_unit_by_name(unit_name: String) -> Node:
+	## Find a unit by name.
+	for unit in get_all_units():
+		if "unit_name" in unit and unit.unit_name == unit_name:
+			return unit
 	return null
 
 
-func get_survivors_with_trait(trait_id: String) -> Array[Survivor]:
-	var result: Array[Survivor] = []
-	for survivor in get_alive_survivors():
-		if survivor.has_trait(trait_id):
-			result.append(survivor)
+func get_units_with_trait(trait_id: String) -> Array[Node]:
+	## Get all living units with a specific trait.
+	## Note: Traits not yet integrated with ClickableUnit - returns empty for now.
+	var result: Array[Node] = []
+	for unit in get_alive_units():
+		if unit.has_method("has_trait") and unit.has_trait(trait_id):
+			result.append(unit)
 	return result
 
 
 func get_game_stats() -> Dictionary:
 	## Get current game statistics for UI display.
-	var alive := get_alive_survivors()
+	var alive := get_alive_units()
 	var total_hunger := 0.0
 	var total_warmth := 0.0
 	var total_morale := 0.0
 
-	for survivor in alive:
-		total_hunger += survivor.stats.hunger
-		total_warmth += survivor.stats.warmth
-		total_morale += survivor.stats.morale
+	for unit in alive:
+		if "stats" in unit and unit.stats:
+			total_hunger += unit.stats.hunger
+			total_warmth += unit.stats.warmth
+			total_morale += unit.stats.morale
 
 	var count := alive.size()
 	var avg_hunger := total_hunger / count if count > 0 else 0.0
@@ -348,10 +358,16 @@ func get_game_stats() -> Dictionary:
 
 # --- Audio ---
 
-func _on_wind_finished() -> void:
-	## Loop the ambient wind sound.
-	if is_instance_valid(_wind_player):
-		_wind_player.play()
+func _on_wind1_finished() -> void:
+	## Loop the first ambient wind sound.
+	if is_instance_valid(_wind_player_1):
+		_wind_player_1.play()
+
+
+func _on_wind2_finished() -> void:
+	## Loop the second ambient wind sound.
+	if is_instance_valid(_wind_player_2):
+		_wind_player_2.play()
 
 
 func _connect_camera_zoom() -> void:
@@ -377,8 +393,8 @@ func _on_camera_zoom_changed(_zoom_level: float, zoom_ratio: float) -> void:
 
 
 func _update_wind_volume(zoom_ratio: float = -1.0) -> void:
-	## Update wind volume based on zoom and blizzard state.
-	if not is_instance_valid(_wind_player):
+	## Update wind volume based on zoom, blizzard state, and crossfade.
+	if not is_instance_valid(_wind_player_1) or not is_instance_valid(_wind_player_2):
 		return
 
 	# Get current zoom ratio if not provided
@@ -388,13 +404,22 @@ func _update_wind_volume(zoom_ratio: float = -1.0) -> void:
 		else:
 			zoom_ratio = 1.0  # Default to zoomed out
 
-	var volume := lerpf(ambient_volume_min, ambient_volume_max, zoom_ratio)
+	var base_volume := lerpf(ambient_volume_min, ambient_volume_max, zoom_ratio)
 
 	# Apply blizzard multiplier (50% louder)
 	if _blizzard_active:
-		volume *= blizzard_volume_multiplier
+		base_volume *= blizzard_volume_multiplier
 
-	_wind_player.volume_db = linear_to_db(clampf(volume, 0.0, 1.0))
+	# Use sine wave for smooth crossfade (0 -> 1 -> 0 over the cycle)
+	# sin gives us -1 to 1, we convert to 0 to 1 for the mix ratio
+	var mix := (sin(_crossfade_progress * TAU) + 1.0) * 0.5  # 0.0 to 1.0
+
+	# Calculate individual volumes (crossfade: as one goes up, the other goes down)
+	var vol1 := base_volume * (1.0 - mix)
+	var vol2 := base_volume * mix * wind2_volume_boost  # Boost quieter wind2
+
+	_wind_player_1.volume_db = linear_to_db(clampf(vol1, 0.001, 1.0))
+	_wind_player_2.volume_db = linear_to_db(clampf(vol2, 0.001, 1.0))
 
 
 func _connect_snow_controller() -> void:

@@ -2,6 +2,34 @@
 
 ---
 
+## 📚 Reference Resources
+
+### Terrain3D Discord Archive
+
+**Location**: `/terrain3d_discord_archive/` (project root)
+
+This directory contains exported conversations from the official Terrain3D Discord channel in CSV format. Each `.csv` file represents a thread/conversation. Use this archive to search for:
+
+- Procedural terrain generation techniques
+- Troubleshooting common Terrain3D issues
+- API usage examples and best practices
+- Navigation mesh integration patterns
+- Performance optimization tips
+
+**How to search:**
+```bash
+# Search all Discord threads for a topic
+grep -ri "procedural" /mnt/c/Users/antih/Documents/polaris/terrain3d_discord_archive/
+
+# Find specific API usage
+grep -ri "import_images" /mnt/c/Users/antih/Documents/polaris/terrain3d_discord_archive/
+
+# Search for navigation issues
+grep -ri "navmesh\|navigation" /mnt/c/Users/antih/Documents/polaris/terrain3d_discord_archive/
+```
+
+---
+
 ## ⚠️ CURRENT STATUS: FIXES APPLIED (2026-01-11) - NEEDS TESTING
 
 ### What Was Done
@@ -532,117 +560,132 @@ Terrain3D stores data in regions (chunks). After import:
 
 Assign textures based on height and slope.
 
-### Texture Slot Configuration
+### Texture Slot Configuration (Current - 2026-01-12)
+
+**MUST MATCH procedural_terrain_config.tscn Terrain3DAssets texture_list order!**
 
 | ID | Texture Asset | Usage |
 |----|---------------|-------|
-| 0 | snow_01 | Default, high elevation |
-| 1 | rock_dark_01 | Steep slopes (>35°), cliff faces |
-| 2 | ice01 | Sea level edges, surrounding ice |
-| 3 | gravel01 | Low elevation, beaches, transitions |
-| 4 | beach_sand | Southern beaches (optional) |
+| 0 | snow_01 | Default, high elevation, overlay on ice |
+| 1 | rock_dark_01 | Steep slopes (>40°), cliff faces, outcrops |
+| 2 | gravel01 | Low elevation, wind-swept areas, south coast |
+| 3 | ice01 | Frozen sea surface (base layer with snow overlay) |
 
-### Painting Rules
+**NOTE**: Procedural terrain uses `procedural_terrain_config.tscn` (NOT world_map.tscn).
+All textures have detiling enabled to reduce tiling artifacts.
+
+### Painting Rules (Arctic Terrain)
 
 | Condition | Texture | Priority |
 |-----------|---------|----------|
-| Outside island (mask < 0.1) | Ice | Highest |
-| Slope > 35° | Rock | High |
-| Height < 5m | Gravel/Ice blend | Medium |
-| Height 5-15m, Slope > 25° | Gravel | Medium |
-| Default | Snow | Lowest |
+| Slope > 40° (cliffs) | Rock | Highest |
+| Outside island (mask < 0.1) | Ice (frozen sea) | High |
+| South coast (ny > 0.85), height < 8m | Gravel | High |
+| Coastline transition (mask 0.1-0.3) | Ice/Snow/Rock mix | High |
+| Height < 8m (coastal, non-south) | Snow with rock patches | Medium |
+| Height < 40m (lowland) | Snow/Gravel/Rock mix | Medium |
+| Height < 100m (midland) | Snow dominant, rock on steep | Medium |
+| Default (highland) | Snow, rock on steep faces | Lowest |
 
-### Implementation
+### Implementation (Current - 2026-01-12)
+
+**IMPORTANT**: Texture painting now uses bit-packed control maps imported with `import_images()`.
+See [texture_painter.gd](texture_painter.gd) for the actual implementation.
+
+### ⚠️ DO NOT USE paint_terrain_post_import()
+
+The `paint_terrain_post_import()` function using `set_control_base_id()` was causing blocky "digital camo" textures because:
+1. It paints in a grid pattern (step=4, ~10m spacing)
+2. It only sets the base texture ID, discarding blend values
+3. It runs AFTER the control map import, overriding smooth per-pixel blending
+
+**The control map import via `import_images()` is the CORRECT approach** because:
+- Every pixel has independent base, overlay, and blend values
+- Blend values create smooth transitions (not blocky discrete textures)
+- No post-processing needed after import
+
+### Blend Amount Guidelines
+
+In Terrain3D's control map format, **higher blend = MORE overlay texture visible**:
+
+| Zone | Base | Overlay | Blend Range | Effect |
+|------|------|---------|-------------|--------|
+| Frozen sea (mask < 0.3) | ICE | SNOW | 0.85-0.95 | 85-95% snow coverage over ice |
+| Inlet/harbor (height < 5m, flat) | ICE/SNOW | SNOW/ICE | 0.85-0.95 | Frozen water where ship is stuck |
+| Inland terrain | varies | varies | 0.50-0.90 | Smooth natural transitions |
+| Steep cliffs | ROCK | SNOW | 0.30-0.50 | Less blending for sharper rock edges |
+
+### ⚠️ CRITICAL: Inlet/Harbor = ICE/SNOW ONLY
+
+The inlet where the ship is frozen MUST be ice and snow only - **never rock or gravel**. A ship cannot get stuck in stone. The texture logic detects inlet areas by:
+- Height < 5m (at or near sea level)
+- Slope < 15° (flat frozen water surface)
+- Not on south coast (ny < 0.85)
+
+---
+
+### Known Issues (TODO for future fixes)
+
+#### 1. Pixelated Texture Transitions
+Large blocks of two textures meeting (e.g., rock meets snow) still show pixelated/blocky boundaries. Need:
+- Increase blend amount at texture boundaries
+- Add transition noise to break up straight edges
+- Consider larger blend radius in control map generation
+
+#### 2. Ice on Inclines
+Ice texture climbing up rock slopes looks unnatural. With the current ice texture, it should only appear on:
+- Dead flat surfaces (slope < 5°)
+- Sea level only (height ≤ 0m, i.e., Y=0)
+- Not on any inclined surfaces
+
+**Proposed fix**: Add slope check to ice texture assignment:
+```gdscript
+# Only allow ice on completely flat, sea-level surfaces
+if texture_id == TEXTURE_ICE and (slope_deg > 5.0 or height_m > 0.0):
+    return TEXTURE_SNOW  # Snow instead of ice on slopes/above sea level
+```
 
 ```gdscript
 class_name TexturePainter extends RefCounted
 
-const TEXTURE_SNOW: int = 0
-const TEXTURE_ROCK: int = 1
-const TEXTURE_ICE: int = 2
-const TEXTURE_GRAVEL: int = 3
+## Texture slot IDs (MUST MATCH procedural_terrain_config.tscn Terrain3DAssets texture_list order!)
+const TEXTURE_SNOW: int = 0    # Snow layer - base for most terrain
+const TEXTURE_ROCK: int = 1    # Rock - steep cliffs, outcrops
+const TEXTURE_GRAVEL: int = 2  # Gravel - lowlands, wind-swept areas
+const TEXTURE_ICE: int = 3     # Ice - frozen sea surface (under snow overlay)
 
-const BEACH_MAX_HEIGHT: float = 5.0
-const GRAVEL_MAX_HEIGHT: float = 15.0
-const CLIFF_MIN_SLOPE: float = 35.0
-const STEEP_MIN_SLOPE: float = 25.0
+## Height thresholds (meters)
+const COASTAL_MAX_HEIGHT: float = 8.0   # Coastline zone
+const LOWLAND_MAX_HEIGHT: float = 40.0  # Low flats (gravel/rock mix)
+const MIDLAND_MAX_HEIGHT: float = 100.0 # Mid elevation (snow with rock exposure)
 
-static func paint_terrain(
-	terrain_data: Terrain3DData,
+## Slope thresholds (degrees)
+const CLIFF_MIN_SLOPE: float = 40.0   # Steep cliffs - exposed rock
+const STEEP_MIN_SLOPE: float = 28.0   # Moderate slopes - some rock showing
+const GENTLE_MAX_SLOPE: float = 15.0  # Gentle slopes - snow accumulates here
+
+## Generate control map for import_images() using 32-bit packed format
+static func generate_control_map_for_import(
 	heightmap: Image,
 	island_mask: Image,
-	rng: RandomNumberGenerator
-) -> void:
+	texture_rng: RandomNumberGenerator
+) -> Image:
 	var width := heightmap.get_width()
 	var height := heightmap.get_height()
 
-	# Variation noise prevents uniform textures
-	var variation_noise := FastNoiseLite.new()
-	variation_noise.seed = rng.randi()
-	variation_noise.frequency = 0.1
+	# MUST use FORMAT_RF for Terrain3D control map
+	var control_map := Image.create(width, height, false, Image.FORMAT_RF)
 
 	for y in range(1, height - 1):
 		for x in range(1, width - 1):
-			var mask_value: float = island_mask.get_pixel(x, y).r
-			var h: float = heightmap.get_pixel(x, y).r
-			var slope := _calculate_slope(heightmap, x, y)
-			var variation := variation_noise.get_noise_2d(x, y)
+			var texture_id := _determine_texture_for_pixel(...)
 
-			# Convert pixel to world position
-			var world_pos := Vector3(
-				x * 10.0 - 5000.0,
-				h,
-				y * 10.0 - 5500.0
-			)
+			# Encode as uint32 then store as float
+			var control_uint := _encode_control_pixel(texture_id, overlay_id, blend)
+			var control_float := _int_to_float_bits(control_uint)
+			control_map.set_pixel(x, y, Color(control_float, 0.0, 0.0, 1.0))
 
-			var texture_id := _determine_texture(h, slope, mask_value, variation)
-
-			# Apply texture using Terrain3D API
-			terrain_data.set_control_base_id(world_pos, texture_id)
-
-			# Add blend variation to avoid hard edges
-			if absf(variation) > 0.3:
-				var blend := (absf(variation) - 0.3) / 0.7 * 0.3
-				terrain_data.set_control_blend(world_pos, blend)
-
-	# Apply changes
-	terrain_data.update_maps()
-
-static func _determine_texture(height: float, slope: float, mask: float, variation: float) -> int:
-	# Outside island: ice
-	if mask < 0.1:
-		return TEXTURE_ICE
-
-	# Steep slopes: rock
-	if slope > CLIFF_MIN_SLOPE:
-		return TEXTURE_ROCK
-
-	# Near sea level: gravel/beach
-	if height < BEACH_MAX_HEIGHT:
-		return TEXTURE_GRAVEL if variation < 0.5 else TEXTURE_ICE
-
-	# Low elevation with steep slope: gravel
-	if height < GRAVEL_MAX_HEIGHT and slope > STEEP_MIN_SLOPE:
-		return TEXTURE_GRAVEL
-
-	# High steep areas: rock/snow mix
-	if slope > STEEP_MIN_SLOPE:
-		return TEXTURE_ROCK if variation > 0.3 else TEXTURE_SNOW
-
-	return TEXTURE_SNOW
-
-static func _calculate_slope(heightmap: Image, x: int, y: int) -> float:
-	# Calculate slope from neighboring pixels using gradient
-	var h_left := heightmap.get_pixel(x - 1, y).r
-	var h_right := heightmap.get_pixel(x + 1, y).r
-	var h_up := heightmap.get_pixel(x, y - 1).r
-	var h_down := heightmap.get_pixel(x, y + 1).r
-
-	var dx := (h_right - h_left) / 2.0
-	var dy := (h_down - h_up) / 2.0
-
-	var gradient := sqrt(dx * dx + dy * dy)
-	return rad_to_deg(atan(gradient / 10.0))  # 10m per pixel
+	return control_map
 ```
 
 ---
@@ -1071,6 +1114,114 @@ if is_nan(test_height) or test_height < -1000.0:
 
 ---
 
+## ⚠️ CRITICAL: Terrain3D Control Map Format
+
+**Source**: [Terrain3D Control Map Format Docs](https://terrain3d.readthedocs.io/en/stable/docs/controlmap_format.html)
+
+The control map does NOT use simple RGB channels. It uses a **32-bit packed format** where data is encoded as unsigned integers stored in float memory.
+
+### Bit Field Structure (Single uint32 per pixel)
+
+| Data | Bits | Range | Bit Positions | Encode Formula | Decode Formula |
+|------|------|-------|---------------|----------------|----------------|
+| Base texture ID | 5 | 0-31 | 32-28 | `(x & 0x1F) << 27` | `x >> 27 & 0x1F` |
+| Overlay texture ID | 5 | 0-31 | 27-23 | `(x & 0x1F) << 22` | `x >> 22 & 0x1F` |
+| Texture blend | 8 | 0-255 | 22-15 | `(x & 0xFF) << 14` | `x >> 14 & 0xFF` |
+| UV angle | 4 | 0-15 | 14-11 | `(x & 0xF) << 10` | `x >> 10 & 0xF` |
+| UV scale | 3 | 0-7 | 10-8 | `(x & 0x7) << 7` | `x >> 7 & 0x7` |
+| Hole flag | 1 | 0-1 | 3 | `(x & 0x1) << 2` | `x >> 2 & 0x1` |
+| Navigation flag | 1 | 0-1 | 2 | `(x & 0x1) << 1` | `x >> 1 & 0x1` |
+| Autoshader flag | 1 | 0-1 | 1 | `x & 0x1` | `x & 0x1` |
+
+### Image Format
+
+- Uses **FORMAT_RF** (32-bit float) despite storing unsigned 32-bit integers
+- "We read or write each uint32 pixel directly into the 'float' memory" without conversion
+- This prevents precision loss from float normalization
+
+### Terrain3DUtil Encoding Functions
+
+**Source**: [Terrain3DUtil API](https://terrain3d.readthedocs.io/en/stable/api/class_terrain3dutil.html)
+
+Terrain3D provides utility functions for encoding control map data:
+
+```gdscript
+# Encoding functions (combine with bitwise OR)
+Terrain3DUtil.enc_base(base_id: int)      # Encode base texture ID (0-31)
+Terrain3DUtil.enc_overlay(overlay_id: int) # Encode overlay texture ID (0-31)
+Terrain3DUtil.enc_blend(blend: int)        # Encode blend value (0-255)
+Terrain3DUtil.enc_uv_rotation(rot: int)    # Encode UV rotation (0-15)
+Terrain3DUtil.enc_uv_scale(scale: int)     # Encode UV scale (0-7)
+Terrain3DUtil.enc_auto(enabled: bool)      # Encode autoshader flag
+Terrain3DUtil.enc_nav(navigable: bool)     # Encode navigation flag
+Terrain3DUtil.enc_hole(is_hole: bool)      # Encode hole flag
+
+# Usage: Combine encoded values with bitwise OR, then reinterpret as float
+var control_value := Terrain3DUtil.enc_base(0) | Terrain3DUtil.enc_overlay(1) | Terrain3DUtil.enc_blend(128)
+```
+
+### GDScript Bit Packing (Manual Implementation)
+
+If `Terrain3DUtil` isn't accessible from GDScript, implement manually:
+
+```gdscript
+## Encode a control map pixel value
+static func encode_control_pixel(base_id: int, overlay_id: int = 0, blend: int = 0) -> int:
+	var value: int = 0
+	value |= (base_id & 0x1F) << 27       # Base texture (bits 27-31)
+	value |= (overlay_id & 0x1F) << 22    # Overlay texture (bits 22-26)
+	value |= (blend & 0xFF) << 14         # Blend (bits 14-21)
+	# Add navigation flag for procedural terrain
+	value |= 1 << 1                        # Nav flag (bit 1) = navigable
+	return value
+
+## Convert int to float without changing bits (reinterpret cast)
+static func int_to_float_bits(i: int) -> float:
+	var bytes := PackedByteArray()
+	bytes.resize(4)
+	bytes.encode_u32(0, i)
+	return bytes.decode_float(0)
+```
+
+### Control Map Image Creation for import_images()
+
+```gdscript
+## Generate control map for Terrain3D import
+static func generate_control_map_for_import(heightmap: Image, island_mask: Image, rng: RandomNumberGenerator) -> Image:
+	var width := heightmap.get_width()
+	var height := heightmap.get_height()
+
+	# MUST use FORMAT_RF for Terrain3D control map
+	var control_map := Image.create(width, height, false, Image.FORMAT_RF)
+
+	for y in range(height):
+		for x in range(width):
+			var texture_id := _determine_texture_for_pixel(x, y, heightmap, island_mask)
+
+			# Encode as uint32 then store as float
+			var control_uint := encode_control_pixel(texture_id, 0, 0)
+			var control_float := int_to_float_bits(control_uint)
+
+			control_map.set_pixel(x, y, Color(control_float, 0.0, 0.0, 1.0))
+
+	return control_map
+```
+
+### Importing with Control Map
+
+```gdscript
+# Pass control map as second element of images array
+var images: Array[Image] = []
+images.resize(3)
+images[0] = heightmap      # Height data
+images[1] = control_map    # Texture IDs (bit-packed format)
+images[2] = null           # Color map (unused)
+
+terrain.data.import_images(images, offset, 0.0, height_scale)
+```
+
+---
+
 ## Terrain3D API Reference
 
 ### Height Operations
@@ -1400,7 +1551,7 @@ After studying the official Terrain3D demo at `res://tmp/demo/`:
    ```gdscript
    # Player.gd lines 36-38
    if gravity_enabled:
-       velocity.y -= 40 * p_delta
+	   velocity.y -= 40 * p_delta
    move_and_slide()
    ```
 
@@ -1408,9 +1559,9 @@ After studying the official Terrain3D demo at `res://tmp/demo/`:
    ```gdscript
    # Enemy.gd lines 48-52
    if get_parent().terrain:
-       var height := terrain.data.get_height(global_position)
-       if not is_nan(height):
-           global_position.y = maxf(global_position.y, height)
+	   var height := terrain.data.get_height(global_position)
+	   if not is_nan(height):
+		   global_position.y = maxf(global_position.y, height)
    ```
 
 ### Our Bug:
