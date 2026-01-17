@@ -80,9 +80,9 @@ func _ready() -> void:
 	# Find AnimationPlayer in children (CaptainAnimations/AnimationPlayer)
 	animation_player = _find_animation_player(self)
 	if animation_player:
-		# Force idle animation immediately (override any autoplay setting)
-		animation_player.stop()
-		_play_animation("idle")
+		# Force idle animation after a frame to ensure scene is ready
+		# and to override any autoplay or BT-triggered animations
+		call_deferred("_force_idle_animation")
 
 	# Create 3D positional footstep audio player
 	_footstep_player = AudioStreamPlayer3D.new()
@@ -107,69 +107,58 @@ func _ready() -> void:
 	_setup_inventory()
 
 
-var _debug_physics_counter: int = 0
-
 func _physics_process(delta: float) -> void:
-	_debug_physics_counter += 1
-
-	# Skip physics entirely during locked animations (sitting, sleeping)
-	# This prevents drift from move_and_slide() during stationary poses
+	# Skip physics during locked animations (sitting, sleeping)
 	if is_animation_locked:
 		return
 
 	if not is_moving:
 		return
 
+	# Standard NavigationAgent3D pattern (from Terrain3D demo)
 	if navigation_agent.is_navigation_finished():
-		print("[Unit:%s] Navigation finished at %s" % [unit_name, global_position])
+		velocity.x = 0.0
+		velocity.z = 0.0
 		is_moving = false
-		velocity = Vector3.ZERO
 		_play_animation("idle")
 		_stop_footsteps()
 		reached_destination.emit()
-		return
+	else:
+		var next_pos: Vector3 = navigation_agent.get_next_path_position()
+		var time_scale := _get_time_scale()
+		var speed := movement_speed * time_scale
+		var velocity_xz := (next_pos - global_position).normalized() * speed
+		velocity.x = velocity_xz.x
+		velocity.z = velocity_xz.z
 
-	var next_position := navigation_agent.get_next_path_position()
-	var current_pos := global_position
+		# Rotate towards movement direction
+		var target_rotation := atan2(velocity_xz.x, velocity_xz.z)
+		rotation.y = lerp_angle(rotation.y, target_rotation, rotation_speed * delta)
 
-	# Calculate direction to next waypoint (full 3D - NavigationAgent provides correct Y from NavMesh)
-	var direction := next_position - current_pos
+		# Drain energy while walking
+		_drain_walking_energy(delta, time_scale)
 
-	var distance := direction.length()
+	# Use avoidance if enabled, otherwise move directly
+	if navigation_agent.avoidance_enabled:
+		navigation_agent.set_velocity(velocity)
+	else:
+		_on_velocity_computed(velocity)
 
-	# Debug every 60 frames while moving
-	if _debug_physics_counter % 60 == 0:
-		var path := navigation_agent.get_current_navigation_path()
-		print("[Unit:%s] Moving: pos=%s, next=%s, dist=%.2f, path_size=%d" % [
-			unit_name, current_pos, next_position, distance, path.size()])
-
-	if distance < 0.1:
-		# Very close to waypoint - wait for next one
-		return
-
-	direction = direction.normalized()
-
-	# Rotate towards movement direction
-	var target_rotation := atan2(direction.x, direction.z)
-	rotation.y = lerp_angle(rotation.y, target_rotation, rotation_speed * delta)
-
-	# Calculate DESIRED velocity (what we want to move at)
-	var time_scale := _get_time_scale()
-	var desired_velocity := direction * movement_speed * time_scale
-
-	# Set velocity on NavigationAgent - it computes safe velocity avoiding obstacles
-	# and emits velocity_computed signal which triggers _on_velocity_computed()
-	navigation_agent.velocity = desired_velocity
-
-	# Drain energy while walking (scales with time and condition)
-	_drain_walking_energy(delta, time_scale)
+	# Terrain floor check (from Terrain3D demo)
+	var terrain := _find_terrain3d()
+	if terrain and "data" in terrain and terrain.data:
+		var height: float = terrain.data.get_height(global_position)
+		if is_finite(height):
+			global_position.y = maxf(global_position.y, height)
 
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
 	# Skip movement during locked animations (sitting, sleeping, etc.)
 	if is_animation_locked:
 		return
-	velocity = safe_velocity
+	# Only apply X/Z from avoidance (demo pattern)
+	velocity.x = safe_velocity.x
+	velocity.z = safe_velocity.z
 	move_and_slide()
 
 
@@ -181,53 +170,42 @@ func _on_navigation_finished() -> void:
 	_clear_player_command()
 
 
-func _apply_terrain_floor_check() -> void:
-	## =====================================================================
-	## FLOOR CHECK - DEBUGGING HISTORY (2026-01-11)
-	## See /home/antih/.claude/plans/fizzy-coalescing-charm.md for full details
-	## =====================================================================
-	##
-	## THE CORE PROBLEM: NavMesh is baked ~0.5-0.6m ABOVE terrain surface.
-	## Captain standing on terrain (Y=13.5) is BELOW navmesh minimum (Y=13.97).
-	## Paths return 0 points because captain can't reach the navmesh.
-	##
-	## APPROACHES TRIED (ALL FAILED):
-	##
-	## 1. maxf(y, terrain_height) - Demo Enemy.gd pattern
-	##    Result: Captain stays below navmesh, paths=0
-	##    Why: maxf only prevents falling BELOW, doesn't lift UP to navmesh
-	##
-	## 2. Snap to terrain height exactly
-	##    Result: Captain on terrain but below navmesh
-	##    Why: NavMesh height != terrain height due to cell_height quantization
-	##
-	## 3. Spawn high (Y+50) + gravity
-	##    Result: Captain barely falls (0.11m instead of 0.56m expected)
-	##    Why: move_and_slide() needs collision, terrain collision may be wrong
-	##
-	## 4. Snap to navmesh height during spawn
-	##    Result: Teleported to (0,0,0)
-	##    Why: Called before navmesh was ready
-	##
-	## 5. Reduce cell_height to 0.1
-	##    Result: Partial success ~10 seconds, then stuck
-	##    Why: Gap reduced but still too large
-	##
-	## CURRENT APPROACH (NEW - Attempt #10): Snap to NAVMESH height
-	## Instead of terrain height, use navmesh closest point Y.
-	## This LIFTS the captain to navmesh level where paths can work.
-	## =====================================================================
-
-	# Use terrain height (demo pattern) - this is the reliable fallback
-	# NavMesh height snapping caused issues with pre-sync queries
-	var terrain := _find_terrain3d()
-	if terrain and "data" in terrain and terrain.data:
-		var height: float = terrain.data.get_height(global_position)
-		# Guard against NaN and Inf values (prevents "!v.is_finite()" error spam)
-		if is_finite(height):
-			if global_position.y < height:
-				global_position.y = height
-				velocity.y = 0.0  # Stop accumulating gravity when snapped to floor
+## =====================================================================
+## FLOOR CHECK - DEBUGGING HISTORY (2026-01-11)
+## See /home/antih/.claude/plans/fizzy-coalescing-charm.md for full details
+## =====================================================================
+##
+## THE CORE PROBLEM: NavMesh is baked ~0.5-0.6m ABOVE terrain surface.
+## Captain standing on terrain (Y=13.5) is BELOW navmesh minimum (Y=13.97).
+## Paths return 0 points because captain can't reach the navmesh.
+##
+## APPROACHES TRIED (ALL FAILED):
+##
+## 1. maxf(y, terrain_height) - Demo Enemy.gd pattern
+##    Result: Captain stays below navmesh, paths=0
+##    Why: maxf only prevents falling BELOW, doesn't lift UP to navmesh
+##
+## 2. Snap to terrain height exactly
+##    Result: Captain on terrain but below navmesh
+##    Why: NavMesh height != terrain height due to cell_height quantization
+##
+## 3. Spawn high (Y+50) + gravity
+##    Result: Captain barely falls (0.11m instead of 0.56m expected)
+##    Why: move_and_slide() needs collision, terrain collision may be wrong
+##
+## 4. Snap to navmesh height during spawn
+##    Result: Teleported to (0,0,0)
+##    Why: Called before navmesh was ready
+##
+## 5. Reduce cell_height to 0.1
+##    Result: Partial success ~10 seconds, then stuck
+##    Why: Gap reduced but still too large
+##
+## CURRENT APPROACH (2026-01-17): Standard Terrain3D demo pattern
+## - Use Terrain3D demo Enemy.gd pattern exactly
+## - Only set velocity.x and velocity.z from navigation
+## - Use maxf(y, terrain_height) as floor check at end of _physics_process
+## =====================================================================
 
 
 func _find_terrain3d() -> Node:
@@ -258,7 +236,6 @@ func _find_node_by_class(node: Node, class_name_str: String) -> Node:
 
 func move_to(target_position: Vector3) -> void:
 	## Navigate to target position.
-	print("[Unit:%s] move_to(%s) from %s" % [unit_name, target_position, global_position])
 	navigation_agent.target_position = target_position
 	is_moving = true
 	_play_animation("walking")
@@ -267,7 +244,6 @@ func move_to(target_position: Vector3) -> void:
 
 
 func stop() -> void:
-	print("[Unit:%s] stop() at %s" % [unit_name, global_position])
 	is_moving = false
 	velocity = Vector3.ZERO
 	# CRITICAL: Must also stop NavigationAgent to prevent drift!
@@ -307,6 +283,14 @@ func _find_animation_player(node: Node) -> AnimationPlayer:
 		if found:
 			return found
 	return null
+
+
+func _force_idle_animation() -> void:
+	## Called deferred to ensure idle animation after scene is fully ready.
+	## Prevents units spawning in walking animation.
+	if animation_player and not is_moving and not is_animation_locked:
+		animation_player.stop()
+		_play_animation("idle")
 
 
 func _play_animation(anim_name: String) -> void:
@@ -620,3 +604,73 @@ func get_current_action() -> String:
 	if ai_controller and ai_controller.has_method("get_current_action"):
 		return ai_controller.get_current_action()
 	return "Idle"
+
+
+# ============================================================================
+# STAT PROPERTY ACCESSORS (for BTCheckAgentProperty)
+# ============================================================================
+# These expose nested stats.* values as direct properties so LimboAI's
+# BTCheckAgentProperty can check them without custom tasks.
+# Example: BTCheckAgentProperty with property="warmth", check_type=CHECK_LESS_THAN, value=25.0
+
+var warmth: float:
+	get: return stats.warmth if stats else 100.0
+
+var hunger: float:
+	get: return stats.hunger if stats else 100.0
+
+var energy: float:
+	get: return stats.energy if stats else 100.0
+
+var health: float:
+	get: return stats.health if stats else 100.0
+
+var morale: float:
+	get: return stats.morale if stats else 75.0
+
+var is_dead: bool:
+	get: return stats.is_dead() if stats else false
+
+# Threshold checks (convenience for BT - can check is_warmth_critical == true)
+var is_warmth_critical: bool:
+	get: return warmth < 25.0
+
+var is_hunger_critical: bool:
+	get: return hunger < 25.0
+
+var is_energy_critical: bool:
+	get: return energy < 25.0
+
+var is_warmth_satisfied: bool:
+	get: return warmth >= 80.0
+
+var is_hunger_satisfied: bool:
+	get: return hunger >= 80.0
+
+var is_energy_satisfied: bool:
+	get: return energy >= 80.0
+
+
+# ============================================================================
+# PROXIMITY PROPERTY ACCESSORS (for BTCheckAgentProperty distance checks)
+# ============================================================================
+# Set _bt_target_position from blackboard before checking distance_to_target.
+# Use BTSetAgentProperty to copy target_position to _bt_target_position.
+
+## Internal: target position copied from blackboard for proximity checks
+var _bt_target_position: Vector3 = Vector3.INF
+
+## Distance from agent to current blackboard target position
+var distance_to_target: float:
+	get:
+		if _bt_target_position == Vector3.INF:
+			return INF
+		return global_position.distance_to(_bt_target_position)
+
+## True if within 3m of target (standard arrival distance)
+var is_at_target: bool:
+	get: return distance_to_target < 3.0
+
+## True if within 5m of target (looser proximity)
+var is_near_target: bool:
+	get: return distance_to_target < 5.0

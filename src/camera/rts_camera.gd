@@ -45,7 +45,7 @@ signal zoom_changed(zoom_level: float, zoom_ratio: float)
 # =========================
 @export_category("Bounds")
 ## Maximum distance camera can move from nearest unit. Set to 0 to disable.
-@export var max_distance_from_units: float = 300.0
+@export var max_distance_from_units: float = 75.0
 ## Group name to query for units that define camera bounds.
 @export var bounds_group: String = "selectable_units"
 

@@ -211,11 +211,21 @@ func _generate_island_mask() -> void:
 func _generate_heightmap() -> void:
 	print("[TerrainGenerator] Generating heightmap...")
 	var height_rng := _seed_manager.get_height_rng()
+
+	# Load terrain config from editor-saved file (if exists)
+	var config: Resource = null
+	if ResourceLoader.exists("res://terrain/terrain_params.tres"):
+		config = load("res://terrain/terrain_params.tres")
+		print("[TerrainGenerator] Using terrain config from res://terrain/terrain_params.tres")
+	else:
+		print("[TerrainGenerator] No terrain config found, using defaults")
+
 	_heightmap = HeightmapGenerator.generate_heightmap(
 		TERRAIN_RESOLUTION,
 		TERRAIN_RESOLUTION,
 		_island_mask,
-		height_rng
+		height_rng,
+		config
 	)
 
 	var stats := HeightmapGenerator.get_height_stats(_heightmap)

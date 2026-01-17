@@ -1,3 +1,4 @@
+@tool
 class_name IslandShape
 extends RefCounted
 ## Generates a teardrop-shaped island mask.
@@ -8,6 +9,9 @@ extends RefCounted
 ##
 ## IMPORTANT: The island fills MOST of the terrain (~9x12km).
 ## The ice wasteland is just a thin border around the edges.
+
+## World size in meters (must match TerrainGenerator.WORLD_SIZE_METERS)
+const WORLD_SIZE_METERS: float = 10240.0
 
 ## Ice border width in meters (N/E/W edges - south is ocean)
 ## North border should match east/west for consistent ice wasteland
@@ -43,8 +47,7 @@ static func generate_mask(width_px: int, height_px: int, shape_rng: RandomNumber
 	coast_noise.fractal_octaves = 2  # Fewer octaves for less jagged edges
 
 	# Calculate meters per pixel dynamically from terrain size and resolution
-	var terrain_size_meters: float = TerrainGenerator.WORLD_SIZE_METERS  # 10240m
-	var meters_per_pixel: float = terrain_size_meters / float(width_px)
+	var meters_per_pixel: float = WORLD_SIZE_METERS / float(width_px)
 
 	# Ice border in pixels (E/W sides)
 	var ice_border_px: float = ICE_BORDER_METERS / meters_per_pixel

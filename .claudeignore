@@ -1,0 +1,27 @@
+# Ignore subsystem CLAUDE.md files from auto-loading
+# These will be read on-demand when working in those directories
+src/*/CLAUDE.md
+src/*/*/CLAUDE.md
+ui/CLAUDE.md
+ai/CLAUDE.md
+docs/DESIGN.md
+
+# Ignore large generated/binary files
+*.import
+*.uid
+*.res
+*.tres
+
+# Ignore addon documentation (use web docs instead)
+addons/*/README.md
+addons/**/CHANGELOG.md
+addons/**/LICENSE*
+
+# Terrain3D demo (reference only when needed)
+Terrain3D-demo/
+
+# Large asset directories
+objects/
+characters/*/
+sounds/
+terrain/*.res

@@ -98,9 +98,7 @@ func _on_start_pressed() -> void:
 func _on_procedural_pressed() -> void:
 	## Load the procedural generation scene.
 	_stop_menu_music()
-	# Currently main.tscn is set up for procedural generation
-	# If you have a separate procedural scene, change the path here
-	get_tree().change_scene_to_file("res://main.tscn")
+	get_tree().change_scene_to_file("res://scenes/procedural_game.tscn")
 
 
 func _on_continue_pressed() -> void:

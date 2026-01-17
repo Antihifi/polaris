@@ -105,13 +105,38 @@ func _randomize_stats(unit: Node) -> void:
 
 	var stats: SurvivorStats = unit.stats
 
-	# Vary base needs (start with some variation in condition)
-	# Testing: Start at ~55% (47-63%) to trigger priority behaviors
-	stats.hunger = _vary_value(55.0, 0.15)
-	stats.warmth = _vary_value(55.0, 0.15)
+	# Critical stats: warmth, hunger, energy
+	# Two at 50-66%, one at 66-80%
+	var critical_stats: Array[String] = ["warmth", "hunger", "energy"]
+	critical_stats.shuffle()
+
+	# First two get 50-66% range
+	var low_range_stats: Array[String] = [critical_stats[0], critical_stats[1]]
+	# Third gets 66-80% range
+	var high_range_stat: String = critical_stats[2]
+
+	for stat_name in low_range_stats:
+		var value: float = _rng.randf_range(50.0, 66.0)
+		match stat_name:
+			"warmth":
+				stats.warmth = value
+			"hunger":
+				stats.hunger = value
+			"energy":
+				stats.energy = value
+
+	var high_value: float = _rng.randf_range(66.0, 80.0)
+	match high_range_stat:
+		"warmth":
+			stats.warmth = high_value
+		"hunger":
+			stats.hunger = high_value
+		"energy":
+			stats.energy = high_value
+
+	# Non-critical stats with some variation
 	stats.health = _vary_value(60.0, 0.08)
 	stats.morale = _vary_value(55.0, 0.15)
-	stats.energy = _vary_value(55.0, 0.15)
 
 	# Vary skills significantly
 	stats.hunting_skill = _vary_value(25.0, 0.5)

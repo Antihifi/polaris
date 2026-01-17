@@ -17,6 +17,16 @@ func _tick(_delta: float) -> Status:
 		print("[BTFindResource] ERROR: No agent!")
 		return FAILURE
 
+	# If agent is already moving OR locked in animation, don't interrupt with a new search
+	# This prevents BTDynamicSelector re-evaluation from causing jitter or
+	# overwriting targets during animation sequences (opening_a_lid, eating, etc.)
+	var existing_target: Vector3 = blackboard.get_var(target_position_var, Vector3.INF)
+	if existing_target != Vector3.INF:
+		if "is_moving" in agent and agent.is_moving:
+			return SUCCESS  # Already moving to target
+		if "is_animation_locked" in agent and agent.is_animation_locked:
+			return SUCCESS  # In animation phase, keep current target
+
 	var nearest: Node3D = null
 	var nearest_dist := INF
 
@@ -30,8 +40,6 @@ func _tick(_delta: float) -> Status:
 			nearest = node
 
 	if nearest:
-		print("[BTFindResource] Found %s at %s (dist=%.2f, group=%s had %d nodes)" % [
-			nearest.name, nearest.global_position, nearest_dist, resource_group, nodes.size()])
 		blackboard.set_var(target_position_var, nearest.global_position)
 		blackboard.set_var(target_node_var, nearest)
 		# Set action based on resource type
@@ -46,5 +54,4 @@ func _tick(_delta: float) -> Status:
 				blackboard.set_var(&"current_action", "Seeking " + resource_group)
 		return SUCCESS
 
-	print("[BTFindResource] No %s found (group had %d nodes)" % [resource_group, nodes.size()])
 	return FAILURE

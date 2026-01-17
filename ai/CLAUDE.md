@@ -1,396 +1,330 @@
-# Men AI System - LimboAI Behavior Tree Implementation
+# Men AI System - LimboAI Behavior Trees
+
+## Official Documentation
+
+**LimboAI Docs:** https://limboai.readthedocs.io/en/stable/
+
+Key sections:
+- [Introduction to Behavior Trees](https://limboai.readthedocs.io/en/stable/behavior-trees/introduction.html)
+- [Creating Custom Tasks](https://limboai.readthedocs.io/en/stable/behavior-trees/custom-tasks.html)
+- [Using the Blackboard](https://limboai.readthedocs.io/en/stable/behavior-trees/using-blackboard.html)
+- [Class Reference](https://limboai.readthedocs.io/en/stable/classes/featured-classes.html)
 
 ---
 
-## ✅ MAJOR BUG FIXED (2026-01-12) - NavigationAgent Drift
+## Critical Rules
 
-### The Problem (SOLVED)
-Units arrived at resources (heat sources, food), then **IMMEDIATELY floated/slid away in random directions** instead of staying in place for their 20-45 second waits. This bug persisted for DAYS across multiple debugging sessions.
+### 1. NEVER Edit .tres or Blackboard Files Programmatically
 
-### Root Cause
-**The NavigationAgent3D was STILL ACTIVE** even after `stop()` was called. The `stop()` function only set:
-- `is_moving = false`
-- `velocity = Vector3.ZERO`
+**Claude/AI agents must NEVER edit:**
+- `man_bt.tres` (behavior tree resource)
+- Any Blackboard files
+- Any LimboAI resource files
 
-But the NavigationAgent3D internally continued computing paths and velocities because:
-1. `target_position` was still set to the old destination
-2. Avoidance system was still running via `velocity_computed` signal
+**Why:** LimboAI's BBVariant sub-resources, node UIDs, and resource IDs have complex interdependencies. Editing them as text causes:
+- Broken resource references
+- Invalid node hierarchies
+- Silent failures that are hard to debug
 
-### The Fix (Applied 2026-01-12)
-In `clickable_unit.gd`, the `stop()` function now properly stops the NavigationAgent:
+**Instead:** Provide clear instructions for the user to make changes in the Godot editor.
 
+### 2. NavigationAgent3D Drift Fix
+When stopping a unit, you MUST reset the NavigationAgent:
 ```gdscript
-func stop() -> void:
-    print("[Unit:%s] stop() at %s" % [unit_name, global_position])
-    is_moving = false
-    velocity = Vector3.ZERO
-    # CRITICAL: Must also stop NavigationAgent to prevent drift!
-    # Setting target to current position stops path computation.
-    # Setting velocity to zero stops avoidance computation.
-    navigation_agent.target_position = global_position
-    navigation_agent.set_velocity(Vector3.ZERO)
-    _play_animation("idle")
-    _stop_footsteps()
+navigation_agent.target_position = global_position  # Clears path
+navigation_agent.set_velocity(Vector3.ZERO)          # Stops avoidance
 ```
+Just setting `is_moving = false` causes drift!
 
-### Why This Was Hard To Find
-| Red Herring | Why It Seemed Like The Problem |
-|-------------|-------------------------------|
-| Animation playback | Units appeared "frozen" - but was actually separate issue (wrong .res file) |
-| Physics/move_and_slide | Added `is_animation_locked` guard - didn't help |
-| BTDebugWait timing | Logs showed waits progressing correctly - BT was fine |
-| Y-height/floating | Visual symptom made it look like physics issue |
+### 3. BTDynamicSelector Performance
+Re-evaluates ALL preceding children every tick. Avoid O(n) tasks (survivor loops) in high-priority sequences.
 
-### Key Lesson
-**When stopping a NavigationAgent3D-based unit, you MUST:**
-1. Set `target_position = global_position` (clears path)
-2. Call `set_velocity(Vector3.ZERO)` (stops avoidance)
+### 4. Task Location
+Custom tasks MUST be in `res://ai/tasks/`, NOT `res://src/ai/tasks/`.
 
-Just setting `is_moving = false` is NOT enough!
+### 5. Prefer Built-in LimboAI Tasks
+
+**Always use LimboAI built-ins before creating custom tasks:**
+
+| Need | Use Built-in | NOT Custom |
+|------|--------------|------------|
+| Check agent property | `BTCheckAgentProperty` | Custom BTCondition |
+| Set agent property | `BTSetAgentProperty` | Custom BTAction |
+| Wait duration | `BTWait`, `BTRandomWait` | Custom wait task |
+| Play animation | `BTPlayAnimation` | Custom animation task |
+
+**ClickableUnit exposes computed properties** for BTCheckAgentProperty:
+- `warmth`, `hunger`, `energy`, `health`, `morale` (direct stat access)
+- `is_warmth_critical`, `is_hunger_critical`, etc. (threshold checks)
+- `distance_to_target`, `is_at_target`, `is_near_target` (proximity)
+- `is_animation_locked`, `is_moving`, `is_dead`
+
+### 6. WATCH THE LOG SPAM
+Never log ANYTHING once per frame and be strategic about your logs in general.
 
 ---
 
-## CRITICAL WARNINGS FOR FUTURE CLAUDE CODE AGENTS
-
-**READ THIS ENTIRE SECTION BEFORE WRITING ANY CODE.**
-
-### DO NOT programmatically generate .tres behavior tree files
-
-**STOP. This is the most important lesson from this implementation.**
-
-LimboAI uses complex `BBVariant` sub-resources with undocumented serialization formats. Attempting to write these programmatically WILL waste HOURS of development time.
-
-**WRONG approach (wasted 3+ hours):**
-```gdscript
-# DO NOT DO THIS - BBVariant types cannot be easily constructed in code
-var check = BTCheckVar.new()
-check.variable = &"player_command_active"
-check.value = true  # ERROR: Cannot assign bool to BBVariant
-
-# Also DO NOT try to create BBBool, BBFloat objects - the serialization is complex
-var bb_bool = BBBool.new()
-bb_bool.saved_value = true  # This still won't serialize correctly to .tres
-```
-
-**CORRECT approach (takes 2 minutes):**
-1. Open `man_bt.tres` in the Godot editor
-2. Use the LimboAI visual behavior tree editor
-3. Add/configure nodes visually - click on node, set properties in Inspector
-4. Save - the editor handles all BBVariant serialization automatically
-
-### PREFER visual trees over code complexity
-
-The LimboAI editor provides:
-- Drag-and-drop node creation
-- Visual branching that humans can read and debug
-- Automatic BBVariant type handling (this is the killer feature)
-- Built-in documentation for each node type
-- Visual debugger to see which branches are running
-
-**Do NOT create complex programmatic tree builders.** The first implementation attempt created a 200+ line `_build_behavior_tree()` function that fought the API at every turn. The .tres file approach is simpler, more maintainable, and actually works.
-
-### Keep custom tasks MINIMAL and SIMPLE
-
-Each custom BTAction should be:
-- **Under 50 lines of code**
-- **Single responsibility** - do ONE thing
-- **Leverage built-in LimboAI tasks** whenever possible
-
-Built-in tasks to use INSTEAD of custom code:
-| Task | Purpose |
-|------|---------|
-| `BTWait` / `BTRandomWait` | Waiting/delays |
-| `BTCheckVar` | Check blackboard variable |
-| `BTCheckAgentProperty` | Check agent property (e.g., `stats.energy < 60`) |
-| `BTCallMethod` | Call any method on agent |
-| `BTPlayAnimation` | Play animations |
-| `BTSequence` | Run children in order until one fails |
-| `BTSelector` | Try children until one succeeds |
-
-### DO NOT over-engineer
-
-The user explicitly requested:
-> "Keep code VERY SIMPLE, rely on built-in LimboAI classes"
-> "Highly modular and extensible for future game growth"
-> "Outsource complexity, don't build a rat's nest"
-
-If you find yourself writing more than 50 lines for a single task, STOP and reconsider.
-
----
-
-## Architecture Overview
-
-### Purpose
-
-Semi-autonomous enlisted men of a stricken icebound polar exploration vessel. Important to the player because as officers die, men are promoted to officer. Only officers can be directly controlled by the player for building, defending, exploring, trading, etc. The win condition is based on how many men are rescued.
+## Architecture
 
 ### File Structure
-
 ```
 ai/
-├── CLAUDE.md                    # This documentation (READ FIRST!)
-├── man_ai_controller.gd         # Attaches BTPlayer to units dynamically
+├── man_ai_controller.gd         # Creates BTPlayer, manages blackboard
 ├── man_bt.tres                  # Main behavior tree (EDIT IN GODOT EDITOR!)
-└── tasks/                       # Custom BT tasks (keep these SMALL!)
-    ├── bt_find_bed.gd              # ~65 lines
-    ├── bt_find_food_container.gd   # ~47 lines
-    ├── bt_find_nearest_resource.gd # ~46 lines
-    ├── bt_generate_wander_target.gd # ~28 lines
-    └── bt_move_to_blackboard.gd    # ~68 lines (includes stuck detection)
+└── tasks/
+    # === KEEP: Domain-specific tasks ===
+    ├── bt_align_with_marker.gd     # Align with Marker3D (beds, seats)
+    ├── bt_consume_food.gd          # Eat from inventory or container
+    ├── bt_find_bed.gd              # Find bed with Marker3D
+    ├── bt_find_fire_spot.gd        # Find empty spot around fire
+    ├── bt_find_food_container.gd   # Find container with food
+    ├── bt_find_nearest_resource.gd # Generic group-based finder
+    ├── bt_find_seat.gd             # Find sittable surface
+    ├── bt_move_to_blackboard.gd    # Move with stuck detection
+    ├── bt_sync_target_position.gd  # Copy blackboard to agent for proximity checks
+    │
+    # === DEPRECATED: Use built-in tasks instead ===
+    ├── bt_check_need_critical.gd   # Use BTCheckAgentProperty(warmth < 25)
+    ├── bt_check_proximity.gd       # Use BTSyncTargetPosition + BTCheckAgentProperty
+    ├── bt_face_target.gd           # Use BTRotateToFaceTarget
+    ├── bt_generate_wander_target.gd # Use BTRandomPosition
+    └── bt_set_animation_lock.gd    # Use BTSetAgentProperty(is_animation_locked)
 ```
-
-**CRITICAL:** LimboAI requires custom tasks in `res://ai/tasks/`, NOT `res://src/ai/tasks/`. This caused a "Failed to list directory" error that took time to debug.
 
 ### How It Works
-
-1. **ManAIController** is attached as a child of each ClickableUnit
-2. In `_ready()`, it creates a **BTPlayer** dynamically and assigns `man_bt.tres`
-3. The BTPlayer must be configured with:
-   - `set_scene_root_hint(_unit)` - BEFORE adding to tree
-   - `agent_node = NodePath("../..")` - points to the unit (grandparent of BTPlayer)
-4. The behavior tree ticks every physics frame
-5. Custom tasks in `ai/tasks/` extend `BTAction` and perform game-specific logic
-6. **Blackboard** variables share state between tasks
+1. **ManAIController** attaches as child of ClickableUnit
+2. Creates **BTPlayer** with `set_scene_root_hint(_unit)` BEFORE adding to tree
+3. Sets `agent_node = NodePath("../..")` (grandparent = unit)
+4. Tree ticks every physics frame
 
 ### Blackboard Variables
-
 | Variable | Type | Purpose |
 |----------|------|---------|
-| `player_command_active` | bool | True when player issued move command (pauses AI) |
-| `current_action` | String | UI display ("Wandering", "Seeking food", etc.) |
-| `target_position` | Vector3 | Movement destination (where unit walks to) |
-| `target_node` | Node | Target resource node |
-| `target_marker` | Marker3D | Alignment marker (beds, seats) |
-| `fire_position` | Vector3 | Fire location for BTFaceTarget (distinct from target_position!) |
-
-**IMPORTANT:** `target_position` vs `fire_position`:
-- `target_position` = where the unit MOVES to (the spot around the fire)
-- `fire_position` = the fire itself (what the unit should FACE)
-
-BTFaceTarget should use `fire_position` when warming by fire, NOT `target_position`!
+| `player_command_active` | bool | Pauses AI for player commands |
+| `current_action` | String | UI display text |
+| `target_position` | Vector3 | Movement destination |
+| `target_node` | Node | Resource node reference |
+| `target_marker` | Marker3D | Alignment point (beds, seats) |
+| `fire_position` | Vector3 | Fire location for facing (≠ target_position!) |
 
 ---
 
-## Current Behavior Tree Structure
+## Current Behavior Tree
 
-Open `man_bt.tres` in Godot to see the visual tree. Here's the logical structure:
+Root is **BTDynamicSelector** (re-evaluates priorities each tick):
 
 ```
-BTSelector [Root - tries each child until one succeeds]
-│
-├── 1. PlayerOverride [BTSequence]
-│   ├── BTCheckVar: player_command_active == true
-│   └── BTWait: 0.1s (yield while player controls unit)
-│
-├── 2. SeekShelter [BTSequence] - when energy < 60%
-│   ├── BTCheckAgentProperty: stats.energy < 60
-│   ├── BTFindBed (custom)
-│   ├── BTMoveToBlackboard (custom)
-│   └── BTWait: 5.0s
-│
-├── 3. SeekWarmth [BTSequence] - when warmth < 60%
-│   ├── BTCheckAgentProperty: stats.warmth < 60
-│   ├── BTFindNearestResource: heat_sources (custom)
-│   ├── BTMoveToBlackboard (custom)
-│   └── BTWait: 5.0s
-│
-├── 4. SeekFood [BTSequence] - when hunger < 60%
-│   ├── BTCheckAgentProperty: stats.hunger < 60
-│   ├── BTFindFoodContainer (custom)
-│   ├── BTMoveToBlackboard (custom)
-│   └── BTWait: 3.0s
-│
-└── 5. Wander [BTSequence] - idle behavior (fallback)
-    ├── BTGenerateWanderTarget (custom)
-    ├── BTMoveToBlackboard (custom)
-    └── BTRandomWait: 2-8s
+BTDynamicSelector [Root]
+├── 1. PlayerOverride - BTCheckVar(player_command_active) → BTWait(0.1s)
+├── 2. SeekShelter (energy < 25) - FindBed → Move → Lock → Sleep anims (45-60s) → Unlock
+├── 3. SeekWarmth (warmth < 60) - FindHeat → Move → Lock → Crouch/Stand anims (15-45s) → Unlock
+├── 4. SeekFood (hunger < 60) - FindContainer → Move → Lock → Open/Take/Eat anims → Unlock
+└── 5. IdleBehaviors [BTRandomSelector]
+    ├── Wander - GenerateTarget → Move → Wait(15-30s)
+    ├── SitOnCrate - FindSeat → Move → AlignMarker → Sit anims (20-40s)
+    └── WarmByFire - FindHeat → FindSpot → Move → Face → Crouch/Stand (15-45s)
 ```
 
----
-
-## Current Status & Known Issues
-
-### What's Working
-- Wander behavior executes correctly (units move to random positions)
-- `current_action` updates in blackboard for UI display
-- Navigation via NavigationAgent3D functions with avoidance enabled
-- Log spam has been removed from clickable_unit.gd
-- Stuck detection in BTMoveToBlackboard (gives up after 3s of no progress)
-- NavigationObstacle3D on containers with avoidance_enabled
-
-### Fixed Issues (January 2026)
-
-#### 1. Units getting stuck on crates/barrels - FIXED
-**Root cause:** Two issues:
-1. `clickable_unit.gd` was calling `move_and_slide()` directly instead of using `navigation_agent.set_velocity()` which bypassed the avoidance system
-2. `storage_crate_small.tscn` was missing `avoidance_enabled = true` on its NavigationObstacle3D
-
-**Fixes applied:**
-1. Modified `clickable_unit.gd` to use `navigation_agent.set_velocity(desired_velocity)` which triggers the `velocity_computed` callback with avoidance-safe velocity
-2. Added `avoidance_enabled = true` and `avoidance_layers = 1` to storage_crate_small.tscn
-3. Added stuck detection to `bt_move_to_blackboard.gd` - gives up after 3 seconds of no progress
-
-### Remaining Issues
-
-#### 1. Priority behaviors may not trigger
-**Symptom:** All units just wander, never seek shelter/warmth/food.
-
-**Potential causes:**
-- `stats.energy`, `stats.warmth`, `stats.hunger` might not be accessible via BTCheckAgentProperty
-- Stats might not be decaying (TimeManager not calling `update_needs`)
-- Thresholds set too low (60%) while stats start at 100%
-
-**Debug steps:**
-1. Check if stats are decaying in TimeManager
-2. Manually set a unit's stats low in Inspector before running
-3. Add debug prints to custom tasks to see if they're being reached
-
-#### 2. Missing resource groups
-**Symptom:** BTFindNearestResource returns FAILURE.
-
-**Required groups that may not exist:**
-- `heat_sources` - campfires need to be added to this group
-- `beds` - bed scenes need to be added to this group
-- `containers` - already exists (barrels/crates)
-
-### Next Steps
-
-1. **Verify resource groups exist** - add debug prints or check in editor
-2. **Test with lowered stats** - manually set energy/warmth/hunger to 50 in Inspector
-3. **Implement actual procedures** - currently just waits at location, needs:
-   - Eating animation + stat restore
-   - Sleep animation + energy restore
-   - Warming animation + warmth restore
+**Note:** Uses `BTCheckNeedCritical` (custom BTCondition) for stat checks, not `BTCheckAgentProperty`.
 
 ---
 
-## Custom Task Template
+## Custom Task Patterns
 
+### Condition (BTCondition)
+```gdscript
+@tool
+extends BTCondition
+class_name BTCheckNeedCritical
+
+@export_enum("warmth", "energy", "hunger") var need: String = "warmth"
+@export var threshold: float = 25.0
+
+func _tick(_delta: float) -> Status:
+    var agent: Node3D = get_agent()
+    if not agent or not "stats" in agent:
+        return FAILURE
+    return SUCCESS if agent.stats.get(need) < threshold else FAILURE
+```
+
+### Action (BTAction)
 ```gdscript
 @tool
 extends BTAction
 class_name BTMyTask
-## One-line description of what this task does.
-
-@export var some_param: String = "default"
 
 func _generate_name() -> String:
-    return "MyTask [%s]" % some_param
+    return "MyTask"
 
 func _tick(_delta: float) -> Status:
     var agent: Node3D = get_agent()
     if not agent:
         return FAILURE
-
-    # Your logic here (keep it SHORT)
-    # Use blackboard.get_var() and blackboard.set_var()
-
-    # IMPORTANT: Always set current_action for UI
-    blackboard.set_var(&"current_action", "Doing something")
-
+    blackboard.set_var(&"current_action", "Doing thing")
     return SUCCESS  # or FAILURE or RUNNING
 ```
 
-### Common Patterns
-
-**Finding nearest node in group:**
+### Movement (returns RUNNING)
 ```gdscript
-var nodes := agent.get_tree().get_nodes_in_group("my_group")
-var nearest: Node3D = null
-var nearest_dist := INF
-for node in nodes:
-    if not node is Node3D:
-        continue
-    var dist := agent.global_position.distance_to(node.global_position)
-    if dist < nearest_dist:
-        nearest_dist = dist
-        nearest = node
-```
-
-**Calling agent methods:**
-```gdscript
-if agent.has_method("move_to"):
-    agent.move_to(target_position)
-```
-
-**Returning RUNNING for ongoing actions:**
-```gdscript
-func _tick(_delta: float) -> Status:
-    var dist := agent.global_position.distance_to(target)
-    if dist < arrival_distance:
+func _tick(delta: float) -> Status:
+    if agent.global_position.distance_to(target) < arrival_distance:
+        agent.stop()
         return SUCCESS
-    if not agent.is_moving:
-        return SUCCESS  # Navigation gave up
-    return RUNNING  # Still moving
+    if not _moving:
+        agent.move_to(target)
+        _moving = true
+    return RUNNING
 ```
 
 ---
 
-## Integration Points
+## Integration
 
 ### ManAIController API
-
 ```gdscript
-# Get current action for UI display
-var action: String = unit.get_current_action()
-
-# Pause AI for player commands
-var ai = unit.get_node("ManAIController")
-ai.set_player_command_active(true)
-
-# Resume AI after player command completes
-ai.set_player_command_active(false)
-
-# Disable AI entirely
-ai.set_enabled(false)
+ai.set_player_command_active(true)   # Pause AI
+ai.set_player_command_active(false)  # Resume AI
+ai.set_enabled(false)                # Disable entirely
+ai.get_current_action()              # Get status string
 ```
 
 ### ClickableUnit Requirements
+- `stats: SurvivorStats` - survival stats
+- `move_to(pos: Vector3)` - start navigation
+- `stop()` - halt movement (must reset NavigationAgent!)
+- `is_moving: bool` - movement state
+- `is_animation_locked: bool` - prevents movement during animations
 
-The agent (ClickableUnit) must have:
-- `stats: SurvivorStats` - for BTCheckAgentProperty to read
-- `move_to(pos: Vector3)` - for movement tasks
-- `stop()` - to halt movement
-- `is_moving: bool` - movement state check
+**Computed Properties for BTCheckAgentProperty:**
+- `warmth`, `hunger`, `energy`, `health`, `morale` - direct stat values
+- `is_warmth_critical`, `is_hunger_critical`, `is_energy_critical` - threshold checks
+- `_bt_target_position: Vector3` - set by BTSyncTargetPosition
+- `distance_to_target: float` - distance to `_bt_target_position`
+- `is_at_target: bool` - true if distance < 3m
+- `is_near_target: bool` - true if distance < 5m
 
----
-
-## Resource Groups Required
-
-| Group | Scenes | Purpose |
-|-------|--------|---------|
-| `beds` | bed_1.tscn | Sleep targets |
-| `heat_sources` | campfire.tscn | Warmth sources |
-| `containers` | barrels, crates | Food/item storage |
-| `survivors` | All ClickableUnits | TimeManager updates |
-| `selectable_units` | All ClickableUnits | Input handling |
+### Required Groups
+| Group | Purpose |
+|-------|---------|
+| `beds` | Sleep targets |
+| `heat_sources` | Fire/warmth |
+| `containers` | Food storage |
+| `survivors` | TimeManager updates |
 
 ---
 
 ## Debugging
 
-### Check the log
 ```bash
-cat "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.log" | tail -200
-```
-
-### Filter for errors
-```bash
+tail -200 "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.log"
 grep -i "error\|fail" "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.log" | tail -50
 ```
 
-### LimboAI Visual Debugger
-Enable in the editor to see which tree branches are executing in real-time.
+Enable **LimboAI Visual Debugger** in editor to see active branches.
 
 ---
 
-## Lessons Learned (The Hard Way)
+## Key Rules
 
-1. **Use the visual editor** - It handles BBVariant serialization automatically
-2. **Don't fight the API** - If something feels hacky, there's probably a built-in way
-3. **Keep tasks under 50 lines** - Complex tasks = complex bugs
-4. **Test incrementally** - Get one behavior working before adding more
-5. **Check logs first** - Most issues are visible in the output
-6. **Files must be in `ai/tasks/`** - Not `src/ai/tasks/` - LimboAI won't find them otherwise
-7. **Set `current_action`** - Every task that changes state should update this for UI
-8. **The simplest solution that works is the best solution** - Don't over-engineer
+1. **Use the visual editor** - BBVariant serialization is complex
+2. **Keep tasks under 50 lines** - single responsibility
+3. **Always set `current_action`** - UI feedback
+4. **Test incrementally** - one behavior at a time
+5. **Prefer built-in tasks** - BTWait, BTPlayAnimation, BTRandomSelector, etc.
+
+---
+
+## Known Issues & Editor Fixes
+
+### Issue: Units Crouch/Sleep Without Reaching Resource
+
+**Symptom:** Units start sleeping/crouching animations even though they're far from the bed/fire.
+
+**Root Cause:** The behavior tree sequences proceed to "at-resource" animations even when MoveTo fails.
+
+**Fix in Godot Editor (RECOMMENDED PATTERN):**
+
+Use built-in tasks with ClickableUnit's computed properties:
+
+```
+1. BTCheckAgentProperty                     ← Check need
+   - property: "warmth"
+   - check_type: CHECK_LESS_THAN (1)
+   - value: 25.0
+
+2. BTFindNearestResource                    ← Find target
+
+3. BTMoveToBlackboard                       ← Move to target
+
+4. BTSyncTargetPosition                     ← Copy blackboard to agent
+   - source_var: "target_position"
+
+5. BTCheckAgentProperty                     ← Verify arrival
+   - property: "distance_to_target"
+   - check_type: CHECK_LESS_THAN (1)
+   - value: 3.0
+
+6. BTSetAgentProperty                       ← Lock animations
+   - property: "is_animation_locked"
+   - value: true
+
+7. [Animation tasks]
+
+8. BTSetAgentProperty                       ← Unlock
+   - property: "is_animation_locked"
+   - value: false
+```
+
+### Issue: Animation Lock Before Movement
+
+**Symptom:** Units don't move because they're animation-locked before the move starts.
+
+**Fix:** Only lock animations AFTER movement AND proximity check complete.
+
+### BTCheckAgentProperty CheckType Values
+
+| Value | Name | Description |
+|-------|------|-------------|
+| 0 | CHECK_EQUAL | `==` |
+| 1 | CHECK_LESS_THAN | `<` |
+| 2 | CHECK_LESS_THAN_OR_EQUAL | `<=` |
+| 3 | CHECK_GREATER_THAN | `>` |
+| 4 | CHECK_GREATER_THAN_OR_EQUAL | `>=` |
+| 5 | CHECK_NOT_EQUAL | `!=` |
+
+---
+
+## LimboAI Core Concepts
+
+### Task Return Values
+| Value | Meaning |
+|-------|---------|
+| `SUCCESS` | Task completed successfully, move to next in sequence |
+| `FAILURE` | Task failed, sequence stops (or selector tries next) |
+| `RUNNING` | Task still in progress, will be ticked again |
+
+### Composite Nodes
+| Node | Behavior |
+|------|----------|
+| `BTSequence` | Runs children in order until one fails |
+| `BTSelector` | Runs children until one succeeds |
+| `BTDynamicSelector` | Like selector but re-evaluates earlier children each tick |
+| `BTRandomSelector` | Picks random child each time |
+
+### Important: BTDynamicSelector Behavior
+
+**The root uses BTDynamicSelector** which means:
+- Every tick, it checks if a higher-priority sequence should run
+- If `SeekShelter` (energy < 25) becomes valid, it interrupts `WanderSequence`
+- Tasks in higher-priority sequences run EVERY TICK until they fail
+
+This is why log spam can occur - tasks like `BTSetAnimationLock` run every tick when their sequence is active.
+
+### Blackboard Variable Naming Convention
+
+Variables ending in `_var` are **configuration** - they specify which blackboard key to use:
+```gdscript
+@export var target_var: StringName = &"target_position"  # Reads/writes to "target_position" key
+```
+
+This is NOT the variable name in the BlackboardPlan - it's which key the task operates on.

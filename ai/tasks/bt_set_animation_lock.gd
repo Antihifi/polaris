@@ -13,9 +13,9 @@ func _generate_name() -> String:
 func _tick(_delta: float) -> Status:
 	var agent: Node3D = get_agent()
 	if not agent or not "is_animation_locked" in agent:
-		print("[BTAnimLock] FAILURE - agent=%s, has_prop=%s" % [agent, "is_animation_locked" in agent if agent else false])
 		return FAILURE
 
-	agent.is_animation_locked = lock
-	print("[BTAnimLock] Set lock=%s for %s" % [lock, agent.name])
+	# Only update if the value actually changes
+	if agent.is_animation_locked != lock:
+		agent.is_animation_locked = lock
 	return SUCCESS

@@ -9,7 +9,10 @@ var _camera_scene: PackedScene = preload("res://src/camera/rts_camera.tscn")
 var _hud_scene: PackedScene = preload("res://ui/game_hud.tscn")
 var _inventory_hud_scene: PackedScene = preload("res://ui/inventory_hud.tscn")
 var _ship_scene: PackedScene = preload("res://objects/ship1/ship_1.tscn")
+var _sky3d_scene: PackedScene = preload("res://sky_3d.tscn")
+var _snow_controller: PackedScene = preload("res://src/systems/weather/snow_controller.tscn")
 
+	
 ## Load terrain texture configuration (dedicated scene for procedural generation)
 ## Contains Terrain3DAssets with 4 textures: snow (0), rock (1), gravel (2), ice (3)
 var _terrain_config_scene: PackedScene = preload("res://terrain/procedural_terrain_config.tscn")
@@ -27,6 +30,7 @@ var captain: Node3D = null
 var ship: Node3D = null  # The frozen ship
 var rts_camera: Camera3D = null
 var _seed_manager = null  # SeedManager instance
+var character_spawner: Node
 
 ## Generated data
 var _heightmap: Image = null
@@ -37,14 +41,13 @@ var _pois: Dictionary = {}
 var _loading_label: Label = null
 var _loading_detail_label: Label = null  # Shows current step details
 var _loading_canvas: CanvasLayer = null
-var _ellipsis_timer: Timer = null
-var _ellipsis_count: int = 0
-var _current_loading_text: String = ""
+var _progress_bar: ProgressBar = null
 
 ## Spawn configuration
 @export var spawn_radius: float = 30.0
 @export var barrel_count: int = 6
 @export var crate_count: int = 6
+@export var fire_count: int = 2
 
 
 var _temp_camera: Camera3D = null  # Temp camera to prevent Terrain3D errors during generation
@@ -60,7 +63,7 @@ func _ready() -> void:
 	_create_basic_lighting()
 
 	_create_loading_ui()
-	_update_loading("Initializing...")
+	_update_loading("Initializing", "", 0)
 
 	# Initialize seed using global class (defined in seed_manager.gd)
 	_seed_manager = SeedManager.new()
@@ -75,46 +78,46 @@ func _generate_game() -> void:
 	var start_time := Time.get_ticks_msec()
 
 	# Stage 1: Generate terrain data
-	_update_loading("Generating Island", "Creating landmass shape (4096x4096)")
+	_update_loading("Generating Island", "Creating landmass shape (4096x4096)", 5)
 	await get_tree().process_frame
 	_generate_island_mask()
 	_update_loading_detail("Adding fjords and coastal features")
 	await get_tree().process_frame
 
-	_update_loading("Generating Heightmap", "Creating terrain elevations")
+	_update_loading("Generating Heightmap", "Creating terrain elevations", 15)
 	await get_tree().process_frame
 	_generate_heightmap()
 	_update_loading_detail("Mountains, valleys, and coastline complete")
 	await get_tree().process_frame
 
-	_update_loading("Carving Inlet", "Creating ship harbor")
+	_update_loading("Carving Inlet", "Creating ship harbor", 25)
 	await get_tree().process_frame
 	var inlet_info := _carve_inlet()
 
 	# Stage 2: Create Terrain3D dynamically (like CodeGenerated.gd)
-	_update_loading("Creating Terrain", "Initializing Terrain3D node")
+	_update_loading("Creating Terrain", "Initializing Terrain3D node", 35)
 	await get_tree().process_frame
 	await _create_terrain()
 	_update_loading_detail("Terrain node configured with 4 textures")
 	await get_tree().process_frame
 
 	# Stage 3: Import terrain data
-	_update_loading("Importing Terrain Data", "Generating control map (textures)")
+	_update_loading("Importing Terrain Data", "Generating control map (textures)", 45)
 	await get_tree().process_frame
 	await _import_terrain()
 
 	# Stage 4: Setup navigation
-	_update_loading("Setting Up Navigation", "Preparing navigation system")
+	_update_loading("Setting Up Navigation", "Preparing navigation system", 55)
 	await get_tree().process_frame
 	_setup_navigation()
 
 	# Stage 5: Place POIs
-	_update_loading("Placing Points of Interest", "Determining key locations")
+	_update_loading("Placing Points of Interest", "Determining key locations", 60)
 	await get_tree().process_frame
 	_place_pois(inlet_info.position)
 
 	# Stage 6: Find navigable spawn location and bake NavMesh there
-	_update_loading("Finding Spawn Location", "Searching for gentle terrain")
+	_update_loading("Finding Spawn Location", "Searching for gentle terrain", 65)
 	var ship_pos: Vector3 = _pois.get("ship", Vector3.ZERO)
 
 	# Find a navigable spawn position (inlet center has steep slopes)
@@ -129,9 +132,7 @@ func _generate_game() -> void:
 
 	# Bake NavMesh at the spawn location (not ship center)
 	# DISCOVERY #2 FIX (2026-01-12): Must enable region BEFORE bake, not after!
-	# See src/terrain/CLAUDE.md "DISCOVERY #2" - region was disabled during bake,
-	# causing NavigationServer to ignore the mesh despite having 218 polygons.
-	_update_loading("Baking Navigation Mesh", "This may take a minute")
+	_update_loading("Baking Navigation Mesh", "This may take a minute", 70)
 	runtime_nav_baker.enabled = true  # Enable BEFORE bake so region is active when mesh assigned
 	runtime_nav_baker.force_bake_at(spawn_pos)
 	await runtime_nav_baker.bake_finished
@@ -139,16 +140,18 @@ func _generate_game() -> void:
 	await get_tree().process_frame
 
 	# Stage 7: NOW spawn entities (after terrain + NavMesh ready)
-	_update_loading("Spawning Entities", "Creating captain and supplies")
+	_update_loading("Spawning Entities", "Creating captain and supplies", 90)
 	await get_tree().process_frame
 	_spawn_entities_at(spawn_pos, ship_pos)
 
 	# Stage 8: Setup camera and UI
-	_update_loading("Setting Up UI", "Configuring game interface")
+	_update_loading("Setting Up UI", "Configuring game interface", 95)
 	await get_tree().process_frame
 	_setup_game_ui()
 
 	# Done!
+	if _progress_bar:
+		_progress_bar.value = 100
 	var elapsed := (Time.get_ticks_msec() - start_time) / 1000.0
 	print("[ProceduralGame] Generation complete in %.1fs" % elapsed)
 	print("[ProceduralGame] Seed: %s" % _seed_manager.get_seed_string())
@@ -193,23 +196,25 @@ func _create_loading_ui() -> void:
 	_loading_detail_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1.0))
 	vbox.add_child(_loading_detail_label)
 
-	# Create timer for animated ellipsis
-	_ellipsis_timer = Timer.new()
-	_ellipsis_timer.wait_time = 0.4
-	_ellipsis_timer.autostart = true
-	_ellipsis_timer.timeout.connect(_on_ellipsis_tick)
-	add_child(_ellipsis_timer)
+	# Progress bar
+	_progress_bar = ProgressBar.new()
+	_progress_bar.min_value = 0
+	_progress_bar.max_value = 100
+	_progress_bar.value = 0
+	_progress_bar.custom_minimum_size = Vector2(300, 20)
+	_progress_bar.show_percentage = false
+	vbox.add_child(_progress_bar)
 
 
-func _update_loading(text: String, detail: String = "") -> void:
-	_current_loading_text = text
-	_ellipsis_count = 0  # Reset ellipsis animation
-
+func _update_loading(text: String, detail: String = "", progress: float = -1.0) -> void:
 	if _loading_label:
 		_loading_label.text = text + "..."
 
 	if _loading_detail_label:
 		_loading_detail_label.text = detail
+
+	if _progress_bar and progress >= 0:
+		_progress_bar.value = progress
 
 	print("[ProceduralGame] %s" % text + ((" - " + detail) if detail else ""))
 
@@ -221,28 +226,14 @@ func _update_loading_detail(detail: String) -> void:
 	print("[ProceduralGame]   %s" % detail)
 
 
-func _on_ellipsis_tick() -> void:
-	## Animate the ellipsis: . -> .. -> ... -> (repeat)
-	_ellipsis_count = (_ellipsis_count + 1) % 4
-	if _loading_label and _current_loading_text:
-		var dots := ".".repeat(_ellipsis_count) if _ellipsis_count > 0 else ""
-		# Pad to 3 chars so text doesn't jump around
-		var padded_dots := dots + " ".repeat(3 - _ellipsis_count)
-		_loading_label.text = _current_loading_text + padded_dots
-
-
 func _hide_loading() -> void:
-	if _ellipsis_timer:
-		_ellipsis_timer.stop()
-		_ellipsis_timer.queue_free()
-		_ellipsis_timer = null
-
 	if _loading_canvas:
 		_loading_canvas.queue_free()
 		_loading_canvas = null
 
 	_loading_label = null
 	_loading_detail_label = null
+	_progress_bar = null
 
 
 func _generate_island_mask() -> void:
@@ -442,6 +433,12 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	## spawn_pos is pre-calculated to be on gentle terrain where NavMesh works.
 	## ship_pos comes from POI placement (inlet center).
 
+	# Create character spawner
+	character_spawner = preload("res://src/systems/character_spawner.gd").new()
+	character_spawner.name = "CharacterSpawner"
+	character_spawner.spawn_radius = spawn_radius
+	add_child(character_spawner)
+
 	# Spawn captain
 	captain = _captain_scene.instantiate()
 	captain.name = "Captain"
@@ -475,7 +472,6 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 
 	# Tell RuntimeNavBaker to track captain for auto-rebaking as they move
 	runtime_nav_baker.player = captain
-	# Note: enabled was already set to true before bake (see DISCOVERY #2 fix above)
 
 	# Spawn containers around ship (they don't need navigation)
 	_spawn_containers(ship_pos)
@@ -595,7 +591,7 @@ func _spawn_containers(center: Vector3) -> void:
 	object_spawner.spawn_radius = spawn_radius
 	add_child(object_spawner)
 
-	object_spawner.spawn_containers(barrel_count, crate_count, center)
+	object_spawner.spawn_containers(barrel_count, crate_count, fire_count, center)
 
 
 func _setup_game_ui() -> void:
@@ -607,9 +603,9 @@ func _setup_game_ui() -> void:
 	add_child(rts_camera)
 
 	# Configure camera for larger procedural terrain
-	rts_camera.camera_zoom_max = 200.0  # Allow zooming out further
-	rts_camera.max_distance_from_units = 500.0  # Larger movement bounds
-	rts_camera.terrain_collision_enabled = true  # Enable terrain collision for procedural terrain
+	rts_camera.camera_zoom_max = 100.0  # Allow zooming out further
+	rts_camera.max_distance_from_units = 50.0  # Larger movement bounds
+	rts_camera.terrain_collision_enabled = true  # Enable terrain collision for proceduwral terrain
 
 	# Tell Terrain3D about the camera (fixes "Cannot find the active camera" error)
 	if terrain and terrain.has_method("set_camera"):
@@ -661,41 +657,17 @@ func _add_ai_controller(unit: Node) -> void:
 
 
 func _create_basic_lighting() -> void:
-	## Create basic lighting for the procedural scene.
-	## This provides fallback lighting if Sky3D isn't available.
+	## Create Sky3D and SnowController for the procedural scene.
+	## Sky3D provides sun/moon lighting, day/night cycle, and atmosphere.
+	## SnowController provides weather particle effects.
 
-	# Create a DirectionalLight3D for sun-like lighting
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.light_color = Color(1.0, 0.95, 0.9)  # Slightly warm white
-	sun.light_energy = 1.2
-	sun.shadow_enabled = true
-	sun.rotation_degrees = Vector3(-45, -30, 0)  # Angled like morning sun
-	add_child(sun)
+	var sky3d_node = _sky3d_scene.instantiate()
+	add_child(sky3d_node)
 
-	# Create a basic WorldEnvironment for ambient lighting and fog
-	var env_node := WorldEnvironment.new()
-	env_node.name = "WorldEnvironment"
+	var snow_ctrl = _snow_controller.instantiate()
+	add_child(snow_ctrl)
 
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.6, 0.7, 0.8)  # Arctic sky blue-gray
-
-	# Ambient lighting
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.5, 0.55, 0.65)  # Cool ambient
-	env.ambient_light_energy = 0.4
-
-	# Add some fog for atmosphere
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.7, 0.75, 0.8)
-	env.fog_density = 0.001
-	env.fog_aerial_perspective = 0.5
-
-	env_node.environment = env
-	add_child(env_node)
-
-	print("[ProceduralGame] Basic lighting created")
+	print("[ProceduralGame] Sky3D and SnowController added to scene")
 
 
 func _find_navigable_spawn(center: Vector3) -> Vector3:
@@ -752,3 +724,29 @@ func _find_navigable_spawn(center: Vector3) -> Vector3:
 		print("[ProceduralGame] WARNING: Could not find gentle slope, using center (slope=%.1f)" % best_slope)
 
 	return best_pos
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Debug key bindings
+	if event is InputEventKey and event.pressed:
+		var key := event as InputEventKey
+
+		# F5: Spawn 10 more survivors
+		if key.keycode == KEY_F5:
+			var spawn_center := captain.global_position if captain else Vector3.ZERO
+			character_spawner.spawn_survivors(10, spawn_center)
+			print("[MainController] Spawned 10 more survivors (F5)")
+
+		# F6: Spawn 30 more survivors
+		elif key.keycode == KEY_F6:
+			var spawn_center := captain.global_position if captain else Vector3.ZERO
+			character_spawner.spawn_survivors(30, spawn_center)
+			print("[MainController] Spawned 30 more survivors (F6)")
+
+		# F7: Print survivor summary
+		elif key.keycode == KEY_F7:
+			character_spawner.print_survivor_summary()
+
+		# F8: Despawn all spawned survivors
+		elif key.keycode == KEY_F8:
+			character_spawner.despawn_all()
+			print("[MainController] Despawned all survivors (F8)")

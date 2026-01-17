@@ -17,17 +17,35 @@ class_name BTMoveToBlackboard
 var _moving: bool = false
 var _last_position: Vector3 = Vector3.INF
 var _stuck_timer: float = 0.0
+var _frames_since_move_called: int = 0
 
 
 func _generate_name() -> String:
 	return "MoveTo [%s] (%.1fm)" % [target_var, arrival_distance]
 
 
+var _current_target: Vector3 = Vector3.INF  # Track what target we're moving to
+
 func _enter() -> void:
-	# Reset state when task starts - but DON'T call move_to here!
+	# Check if agent is already moving/animating to the same target (re-entry from BTDynamicSelector)
+	var agent: Node3D = get_agent()
+	var target: Vector3 = blackboard.get_var(target_var, Vector3.INF)
+
+	# Don't reset state if we're already working on this target
+	if agent and _current_target != Vector3.INF and _current_target.distance_to(target) < 1.0:
+		# Already moving to this target
+		if "is_moving" in agent and agent.is_moving:
+			return
+		# Or in animation phase (already arrived, playing animations)
+		if "is_animation_locked" in agent and agent.is_animation_locked:
+			return
+
+	# Fresh start - reset state
 	_moving = false
 	_stuck_timer = 0.0
 	_last_position = Vector3.INF
+	_frames_since_move_called = 0
+	_current_target = Vector3.INF
 
 
 func _tick(delta: float) -> Status:
@@ -44,15 +62,6 @@ func _tick(delta: float) -> Status:
 	# Check arrival FIRST - before calling move_to
 	var dist: float = agent.global_position.distance_to(target)
 	if dist < arrival_distance:
-		print("[BTMoveTo] Arrived at target (dist=%.2f < %.2f)" % [dist, arrival_distance])
-		if agent.has_method("stop"):
-			agent.stop()
-		_moving = false
-		return SUCCESS
-
-	# Check if navigation gave up (is_moving became false externally)
-	if _moving and "is_moving" in agent and not agent.is_moving:
-		print("[BTMoveTo] Navigation gave up (is_moving=false)")
 		if agent.has_method("stop"):
 			agent.stop()
 		_moving = false
@@ -60,11 +69,28 @@ func _tick(delta: float) -> Status:
 
 	# Only call move_to ONCE
 	if not _moving and agent.has_method("move_to"):
-		print("[BTMoveTo] Starting move to %s (dist=%.2f)" % [target, dist])
 		agent.move_to(target)
 		_moving = true
+		_current_target = target  # Track what we're moving to
+		_frames_since_move_called = 0
 		_last_position = agent.global_position
 		return RUNNING
+
+	# Increment frame counter while moving
+	_frames_since_move_called += 1
+
+	# Check if navigation gave up - but ONLY after giving physics time to start!
+	# We wait 3+ frames so the physics engine can process the move_to() call.
+	if _moving and _frames_since_move_called > 3:
+		if "is_moving" in agent and not agent.is_moving:
+			if agent.has_method("stop"):
+				agent.stop()
+			_moving = false
+			# Check if we actually arrived at the target
+			if dist < arrival_distance:
+				return SUCCESS
+			else:
+				return FAILURE  # Navigation gave up but we're not at target
 
 	# Stuck detection: check if we've moved enough since last tick
 	if _last_position != Vector3.INF:
@@ -74,11 +100,14 @@ func _tick(delta: float) -> Status:
 		if moved < expected_movement:
 			_stuck_timer += delta
 			if _stuck_timer >= stuck_timeout:
-				# We're stuck - stop and return success to try a new behavior
 				if agent.has_method("stop"):
 					agent.stop()
 				_moving = false
-				return SUCCESS
+				# Check if we actually arrived at the target
+				if dist < arrival_distance:
+					return SUCCESS
+				else:
+					return FAILURE  # Stuck and not at target
 		else:
 			# Making progress, reset timer
 			_stuck_timer = 0.0

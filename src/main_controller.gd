@@ -16,6 +16,9 @@ extends Node
 @export var barrel_count: int = 6
 @export var crate_count: int = 6
 
+## Number of fires to spawn 
+@export var fire_count: int = 2
+
 var input_handler: Node
 var game_hud: CanvasLayer
 var character_spawner: Node
@@ -130,7 +133,7 @@ func _spawn_initial_objects() -> void:
 	var spawn_center := captain.global_position if captain else Vector3.ZERO
 	print("[MainController] Spawning %d barrels and %d crates around %s" % [barrel_count, crate_count, spawn_center])
 
-	object_spawner.spawn_containers(barrel_count, crate_count, spawn_center)
+	object_spawner.spawn_containers(barrel_count, crate_count, fire_count, spawn_center)
 
 
 func _on_container_clicked(container: StorageContainer) -> void:

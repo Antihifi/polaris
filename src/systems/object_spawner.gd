@@ -9,6 +9,7 @@ signal ship_spawned(ship: Node3D)
 var barrel_scene: PackedScene
 var crate_scene: PackedScene
 var ship_scene: PackedScene
+var fire_scene: PackedScene
 
 ## Spawned ship reference
 var spawned_ship: Node3D = null
@@ -31,11 +32,12 @@ func _ready() -> void:
 	barrel_scene = preload("res://objects/storage_barrel.tscn")
 	crate_scene = preload("res://objects/storage_crate_small.tscn")
 	ship_scene = preload("res://objects/ship1/ship_1.tscn")
+	fire_scene = preload("res://objects/campfire_1.tscn")
 
 
-func spawn_containers(barrel_count: int, crate_count: int, center: Vector3) -> Array[Node]:
+func spawn_containers(barrel_count: int, crate_count: int, fire_count: int, center: Vector3) -> Array[Node]:
 	## Spawn barrels and crates around a center point.
-	var total := barrel_count + crate_count
+	var total := barrel_count + crate_count + fire_count
 	var positions := _generate_spawn_positions(total, center)
 	var spawned: Array[Node] = []
 	var pos_idx := 0
@@ -51,6 +53,14 @@ func spawn_containers(barrel_count: int, crate_count: int, center: Vector3) -> A
 	# Then crates
 	for i in range(crate_count):
 		var container := _spawn_container(crate_scene, positions[pos_idx], false)
+		if container:
+			spawned.append(container)
+			_spawned_containers.append(container)
+		pos_idx += 1
+		
+	# Then fires
+	for i in range(fire_count):
+		var container := _spawn_container(fire_scene, positions[pos_idx], false)
 		if container:
 			spawned.append(container)
 			_spawned_containers.append(container)

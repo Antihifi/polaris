@@ -161,8 +161,9 @@ static func generate_control_map_for_import(
 			# For ice (base) with snow (overlay), high blend = mostly snow visible
 			var blend_amount := 0
 
-			# Check if this is an inlet/harbor zone (low, flat, not south coast)
-			var is_inlet_zone := h < 5.0 and slope < 15.0 and ny < 0.85
+			# Check if this is an inlet/harbor zone (low elevation, gentle slope, not south coast)
+			# Must match the thresholds in _determine_texture() for consistency
+			var is_inlet_zone := h < 20.0 and slope < 25.0 and ny < 0.85
 
 			# FROZEN SEA/COASTLINE/INLET: Heavy snow coverage over ice (85-95% snow visible)
 			# This creates the natural arctic look of snow drifts over frozen sea
@@ -309,19 +310,27 @@ static func _determine_texture(height_m: float, slope_deg: float, mask: float, v
 		return TEXTURE_ICE  # Pure frozen sea surface
 
 	# === INLET/HARBOR ZONE - ICE AND SNOW ONLY! ===
-	# The inlet is carved into the island at sea level (height < 5m).
+	# The inlet is carved from frozen sea level (-2m) through a ramp up to ~20m.
 	# This is where the ship is frozen - MUST be ice/snow, NOT rock/gravel!
 	# A ship cannot get stuck in stone and gravel.
+	# Extended height threshold (20m) covers the entire inlet + ramp transition.
+	# Allow slopes up to 25 deg (ramp is ~20 deg max slope).
 	# SAME RULE AS FROZEN SEA: Predominantly SNOW (85-95%) with occasional ice patches
-	if height_m < 5.0 and slope_deg < 15.0:
-		# Low, flat areas = frozen water (inlet, harbor, coastal ice)
+	if height_m < 20.0 and slope_deg < 25.0:
+		# Low, gentle-slope areas = frozen water or snow-covered ramp
 		# Only exception: south coast (ny > 0.85) which is ice-free
 		if ny < 0.85:
-			# ICE base with SNOW overlay - matches frozen sea appearance
-			# Only show ice where variation is very high (rare patches)
-			if variation > 0.7:
-				return TEXTURE_ICE  # Rare ice patches peeking through snow
-			return TEXTURE_ICE  # ICE base - the overlay system adds 85-95% snow on top
+			# Gradient: more ice at lower elevations, transition to snow higher up
+			# Below 5m = frozen channel floor (more ice visible)
+			# 5-20m = ramp transition (snow dominant, blending with surroundings)
+			if height_m < 5.0:
+				return TEXTURE_ICE  # Frozen channel floor - ice with snow overlay
+			else:
+				# Ramp area: mostly snow with occasional ice patches at lower end
+				var snow_probability := clampf((height_m - 5.0) / 15.0, 0.0, 1.0)
+				if variation > snow_probability:
+					return TEXTURE_ICE  # Ice patches, less common as height increases
+				return TEXTURE_SNOW  # Snow-covered ramp
 
 	# === COASTLINE TRANSITION ZONE ===
 	if mask < 0.3:

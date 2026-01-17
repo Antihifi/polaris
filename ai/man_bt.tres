@@ -1,12 +1,8 @@
-[gd_resource type="BehaviorTree" load_steps=111 format=3 uid="uid://b12icb31evg1h"]
+[gd_resource type="BehaviorTree" load_steps=113 format=3 uid="uid://b12icb31evg1h"]
 
-[ext_resource type="Script" uid="uid://sqio3xelte7" path="res://ai/tasks/bt_check_need_critical.gd" id="1_n2iu8"]
 [ext_resource type="Script" uid="uid://bh616mm1sxk16" path="res://ai/tasks/bt_generate_wander_target.gd" id="1_wander"]
 [ext_resource type="Script" uid="uid://5cieec4vq4ck" path="res://ai/tasks/bt_move_to_blackboard.gd" id="2_move"]
 [ext_resource type="Script" uid="uid://w162bukdvt4w" path="res://ai/tasks/bt_find_nearest_resource.gd" id="3_resource"]
-[ext_resource type="Script" uid="uid://m4jkxs0hlfat" path="res://ai/tasks/bt_find_bed.gd" id="4_bed"]
-[ext_resource type="Script" uid="uid://bo5vn3dbnes1y" path="res://ai/tasks/bt_find_food_container.gd" id="5_food"]
-[ext_resource type="Script" uid="uid://bykl1y5nfrf7x" path="res://ai/tasks/bt_find_seat.gd" id="6_3jy6i"]
 [ext_resource type="Script" uid="uid://b8uhoin5thywl" path="res://ai/tasks/bt_align_with_marker.gd" id="7_ihniq"]
 [ext_resource type="Script" uid="uid://dxvrqd5dn6pml" path="res://ai/tasks/bt_consume_food.gd" id="8_hs587"]
 [ext_resource type="Script" uid="uid://dsy6mbaichwoq" path="res://ai/tasks/bt_find_fire_spot.gd" id="8_rdl7w"]
@@ -46,19 +42,31 @@ duration = 0.1
 custom_name = "PlayerOverride"
 children = [SubResource("BTCheckVar_asu1a"), SubResource("BTWait_aa4xd")]
 
-[sub_resource type="BTCondition" id="BTCondition_brwnp"]
-script = ExtResource("1_n2iu8")
-need = "energy"
+[sub_resource type="BBVariant" id="BBVariant_bxk66"]
+type = 3
+saved_value = 55.0
+resource_name = "55.0"
 
-[sub_resource type="BTAction" id="BTFindBed_1"]
-script = ExtResource("4_bed")
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_mslhm"]
+property = &"energy"
+check_type = 1
+value = SubResource("BBVariant_bxk66")
+
+[sub_resource type="BTAction" id="BTAction_n2iu8"]
+script = ExtResource("3_resource")
 
 [sub_resource type="BTAction" id="BTMoveToBlackboard_shelter"]
 script = ExtResource("2_move")
 arrival_distance = 0.5
 
-[sub_resource type="BTAction" id="BTAction_e4b4v"]
-script = ExtResource("9_brwnp")
+[sub_resource type="BBVariant" id="BBVariant_d5ls8"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_aul44"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_d5ls8")
 
 [sub_resource type="BBNode" id="BBNode_sbexb"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -77,7 +85,6 @@ resource_name = "UnitModel/AnimationPlayer"
 [sub_resource type="BTPlayAnimation" id="BTPlayAnimation_l2yjk"]
 animation_player = SubResource("BBNode_m228g")
 animation_name = &"sleeping_idle"
-blend = 2.0
 
 [sub_resource type="BTRandomWait" id="BTRandomWait_bxk66"]
 min_duration = 45.0
@@ -90,19 +97,30 @@ resource_name = "UnitModel/AnimationPlayer"
 [sub_resource type="BTPlayAnimation" id="BTPlayAnimation_j1a7u"]
 animation_player = SubResource("BBNode_0m3en")
 animation_name = &"stand_up_from_laying_down"
-blend = 2.0
 
-[sub_resource type="BTAction" id="BTAction_8jgo4"]
-script = ExtResource("9_brwnp")
-lock = false
+[sub_resource type="BBVariant" id="BBVariant_kd5rg"]
+type = 1
+saved_value = false
+resource_name = "false"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_e4b4v"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_kd5rg")
 
 [sub_resource type="BTSequence" id="BTSequence_ql6da"]
 custom_name = "SeekShelter"
-children = [SubResource("BTCondition_brwnp"), SubResource("BTFindBed_1"), SubResource("BTMoveToBlackboard_shelter"), SubResource("BTAction_e4b4v"), SubResource("BTPlayAnimation_k7wm5"), SubResource("BTPlayAnimation_l2yjk"), SubResource("BTRandomWait_bxk66"), SubResource("BTPlayAnimation_j1a7u"), SubResource("BTAction_8jgo4")]
+children = [SubResource("BTCheckAgentProperty_mslhm"), SubResource("BTAction_n2iu8"), SubResource("BTMoveToBlackboard_shelter"), SubResource("BTSetAgentProperty_aul44"), SubResource("BTPlayAnimation_k7wm5"), SubResource("BTPlayAnimation_l2yjk"), SubResource("BTRandomWait_bxk66"), SubResource("BTPlayAnimation_j1a7u"), SubResource("BTSetAgentProperty_e4b4v")]
+_enabled = false
 
-[sub_resource type="BTCondition" id="BTCondition_8wn8u"]
-script = ExtResource("1_n2iu8")
-threshold = 60.0
+[sub_resource type="BBVariant" id="BBVariant_y63l3"]
+type = 3
+saved_value = 65.0
+resource_name = "65.0"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_bxk66"]
+property = &"warmth"
+check_type = 1
+value = SubResource("BBVariant_y63l3")
 
 [sub_resource type="BTAction" id="BTFindNearestResource_heat"]
 script = ExtResource("3_resource")
@@ -111,8 +129,15 @@ resource_group = "heat_sources"
 [sub_resource type="BTAction" id="BTMoveToBlackboard_warmth"]
 script = ExtResource("2_move")
 
-[sub_resource type="BTAction" id="BTAction_m228g"]
-script = ExtResource("9_brwnp")
+[sub_resource type="BBVariant" id="BBVariant_m228g"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_l2yjk"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_m228g")
+_enabled = false
 
 [sub_resource type="BBNode" id="BBNode_8wn8u"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -132,9 +157,6 @@ resource_name = "UnitModel/AnimationPlayer"
 animation_player = SubResource("BBNode_bxk66")
 animation_name = &"crouching_idle"
 
-[sub_resource type="BTAction" id="BTAction_k7wm5"]
-script = ExtResource("9_brwnp")
-
 [sub_resource type="BTRandomWait" id="BTRandomWait_ullfr"]
 min_duration = 15.0
 max_duration = 45.0
@@ -147,13 +169,19 @@ resource_name = "UnitModel/AnimationPlayer"
 animation_player = SubResource("BBNode_l2yjk")
 animation_name = &"crouch_to_stand"
 
-[sub_resource type="BTAction" id="BTAction_4ieae"]
-script = ExtResource("9_brwnp")
-lock = false
+[sub_resource type="BBVariant" id="BBVariant_ohlgy"]
+type = 1
+saved_value = false
+resource_name = "false"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_8jgo4"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_ohlgy")
+_enabled = false
 
 [sub_resource type="BTSequence" id="BTSequence_l8car"]
 custom_name = "CrouchByFire"
-children = [SubResource("BTPlayAnimation_hs587"), SubResource("BTPlayAnimation_mslhm"), SubResource("BTAction_k7wm5"), SubResource("BTRandomWait_ullfr"), SubResource("BTPlayAnimation_ohlgy"), SubResource("BTAction_4ieae")]
+children = [SubResource("BTPlayAnimation_hs587"), SubResource("BTPlayAnimation_mslhm"), SubResource("BTRandomWait_ullfr"), SubResource("BTPlayAnimation_ohlgy"), SubResource("BTSetAgentProperty_8jgo4")]
 
 [sub_resource type="BBNode" id="BBNode_s7c4l"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -163,20 +191,23 @@ resource_name = "UnitModel/AnimationPlayer"
 animation_player = SubResource("BBNode_s7c4l")
 animation_name = &"idle"
 
-[sub_resource type="BTAction" id="BTAction_poor0"]
-script = ExtResource("9_brwnp")
-
 [sub_resource type="BTRandomWait" id="BTRandomWait_dt4te"]
 min_duration = 15.0
 max_duration = 45.0
 
-[sub_resource type="BTAction" id="BTAction_ne3jb"]
-script = ExtResource("9_brwnp")
-lock = false
+[sub_resource type="BBVariant" id="BBVariant_0m3en"]
+type = 1
+saved_value = false
+resource_name = "false"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_j1a7u"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_0m3en")
+_enabled = false
 
 [sub_resource type="BTSequence" id="BTSequence_yica2"]
 custom_name = "StandByFire"
-children = [SubResource("BTPlayAnimation_dfl70"), SubResource("BTAction_poor0"), SubResource("BTRandomWait_dt4te"), SubResource("BTAction_ne3jb")]
+children = [SubResource("BTPlayAnimation_dfl70"), SubResource("BTRandomWait_dt4te"), SubResource("BTSetAgentProperty_j1a7u")]
 
 [sub_resource type="BTRandomSelector" id="BTRandomSelector_3r3ns"]
 custom_name = "CrouchOrStand"
@@ -184,22 +215,34 @@ children = [SubResource("BTSequence_l8car"), SubResource("BTSequence_yica2")]
 
 [sub_resource type="BTSequence" id="BTSequence_3jy6i"]
 custom_name = "SeekWarmth"
-children = [SubResource("BTCondition_8wn8u"), SubResource("BTFindNearestResource_heat"), SubResource("BTMoveToBlackboard_warmth"), SubResource("BTAction_m228g"), SubResource("BTRandomSelector_3r3ns")]
+children = [SubResource("BTCheckAgentProperty_bxk66"), SubResource("BTFindNearestResource_heat"), SubResource("BTMoveToBlackboard_warmth"), SubResource("BTSetAgentProperty_l2yjk"), SubResource("BTRandomSelector_3r3ns")]
 
-[sub_resource type="BTCondition" id="BTCondition_hs587"]
-script = ExtResource("1_n2iu8")
-need = "hunger"
-threshold = 60.0
+[sub_resource type="BBVariant" id="BBVariant_sbexb"]
+type = 3
+saved_value = 55.0
+resource_name = "55.0"
 
-[sub_resource type="BTAction" id="BTFindFoodContainer_1"]
-script = ExtResource("5_food")
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_k7wm5"]
+property = &"hunger"
+check_type = 1
+value = SubResource("BBVariant_sbexb")
+
+[sub_resource type="BTAction" id="BTAction_m228g"]
+script = ExtResource("3_resource")
+resource_group = "containers"
 
 [sub_resource type="BTAction" id="BTMoveToBlackboard_food"]
 script = ExtResource("2_move")
 arrival_distance = 1.5
 
-[sub_resource type="BTAction" id="BTAction_ohlgy"]
-script = ExtResource("9_brwnp")
+[sub_resource type="BBVariant" id="BBVariant_k7wm5"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_ullfr"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_k7wm5")
 
 [sub_resource type="BBNode" id="BBNode_hs587"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -210,9 +253,6 @@ animation_player = SubResource("BBNode_hs587")
 animation_name = &"opening_a_lid"
 blend = 1.0
 
-[sub_resource type="BTRandomWait" id="BTRandomWait_8wn8u"]
-max_duration = 3.0
-
 [sub_resource type="BBNode" id="BBNode_d5ls8"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
 resource_name = "UnitModel/AnimationPlayer"
@@ -220,12 +260,10 @@ resource_name = "UnitModel/AnimationPlayer"
 [sub_resource type="BTPlayAnimation" id="BTPlayAnimation_aul44"]
 animation_player = SubResource("BBNode_d5ls8")
 animation_name = &"taking_item"
-blend = 1.0
 speed = 0.3
 
 [sub_resource type="BTAction" id="BTAction_sbexb"]
 script = ExtResource("8_hs587")
-container_proximity = 2.0
 
 [sub_resource type="BBNode" id="BBNode_kd5rg"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -234,7 +272,6 @@ resource_name = "UnitModel/AnimationPlayer"
 [sub_resource type="BTPlayAnimation" id="BTPlayAnimation_e4b4v"]
 animation_player = SubResource("BBNode_kd5rg")
 animation_name = &"closing_a_lid"
-blend = 1.0
 
 [sub_resource type="BBNode" id="BBNode_4ieae"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -243,19 +280,28 @@ resource_name = "UnitModel/AnimationPlayer"
 [sub_resource type="BTPlayAnimation" id="BTPlayAnimation_l8car"]
 animation_player = SubResource("BBNode_4ieae")
 animation_name = &"idle"
-blend = 1.0
 
 [sub_resource type="BTRandomWait" id="BTRandomWait_k7wm5"]
 min_duration = 10.0
 max_duration = 20.0
 
-[sub_resource type="BTAction" id="BTAction_0m3en"]
-script = ExtResource("9_brwnp")
-lock = false
+[sub_resource type="BBVariant" id="BBVariant_l2yjk"]
+type = 1
+saved_value = false
+resource_name = "false"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_ohlgy"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_l2yjk")
 
 [sub_resource type="BTSequence" id="BTSequence_rdl7w"]
 custom_name = "SeekFood"
-children = [SubResource("BTCondition_hs587"), SubResource("BTFindFoodContainer_1"), SubResource("BTMoveToBlackboard_food"), SubResource("BTAction_ohlgy"), SubResource("BTPlayAnimation_y63l3"), SubResource("BTRandomWait_8wn8u"), SubResource("BTPlayAnimation_aul44"), SubResource("BTAction_sbexb"), SubResource("BTPlayAnimation_e4b4v"), SubResource("BTPlayAnimation_l8car"), SubResource("BTRandomWait_k7wm5"), SubResource("BTAction_0m3en")]
+children = [SubResource("BTCheckAgentProperty_k7wm5"), SubResource("BTAction_m228g"), SubResource("BTMoveToBlackboard_food"), SubResource("BTSetAgentProperty_ullfr"), SubResource("BTPlayAnimation_y63l3"), SubResource("BTPlayAnimation_aul44"), SubResource("BTAction_sbexb"), SubResource("BTPlayAnimation_e4b4v"), SubResource("BTPlayAnimation_l8car"), SubResource("BTRandomWait_k7wm5"), SubResource("BTSetAgentProperty_ohlgy")]
+
+[sub_resource type="BTCooldown" id="BTCooldown_ihniq"]
+duration = 5.0
+trigger_on_failure = true
+children = [SubResource("BTSequence_rdl7w")]
 
 [sub_resource type="BTAction" id="BTAction_rdl7w"]
 script = ExtResource("1_wander")
@@ -271,8 +317,9 @@ max_duration = 30.0
 custom_name = "WanderSequence"
 children = [SubResource("BTAction_rdl7w"), SubResource("BTMoveToBlackboard_wander"), SubResource("BTRandomWait_n2iu8")]
 
-[sub_resource type="BTAction" id="BTAction_brwnp"]
-script = ExtResource("6_3jy6i")
+[sub_resource type="BTAction" id="BTAction_ihniq"]
+script = ExtResource("3_resource")
+resource_group = "containers"
 
 [sub_resource type="BTAction" id="BTAction_8wn8u"]
 script = ExtResource("2_move")
@@ -281,9 +328,6 @@ arrival_distance = 1.5
 [sub_resource type="BTAction" id="BTAction_hs587"]
 script = ExtResource("7_ihniq")
 face_away = true
-
-[sub_resource type="BTAction" id="BTAction_aul44"]
-script = ExtResource("9_brwnp")
 
 [sub_resource type="BBNode" id="BBNode_y63l3"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
@@ -305,10 +349,6 @@ animation_name = &"sitting_depressed"
 min_duration = 20.0
 max_duration = 40.0
 
-[sub_resource type="BTAction" id="BTAction_kd5rg"]
-script = ExtResource("9_brwnp")
-lock = false
-
 [sub_resource type="BBNode" id="BBNode_aul44"]
 saved_value = NodePath("UnitModel/AnimationPlayer")
 resource_name = "UnitModel/AnimationPlayer"
@@ -321,7 +361,7 @@ from_end = true
 
 [sub_resource type="BTSequence" id="BTSequence_bxk66"]
 custom_name = "SitOnCrateSequence"
-children = [SubResource("BTAction_brwnp"), SubResource("BTAction_8wn8u"), SubResource("BTAction_hs587"), SubResource("BTAction_aul44"), SubResource("BTPlayAnimation_bxk66"), SubResource("BTPlayAnimation_d5ls8"), SubResource("BTRandomWait_y63l3"), SubResource("BTAction_kd5rg"), SubResource("BTPlayAnimation_kd5rg")]
+children = [SubResource("BTAction_ihniq"), SubResource("BTAction_8wn8u"), SubResource("BTAction_hs587"), SubResource("BTPlayAnimation_bxk66"), SubResource("BTPlayAnimation_d5ls8"), SubResource("BTRandomWait_y63l3"), SubResource("BTPlayAnimation_kd5rg")]
 
 [sub_resource type="BTAction" id="BTAction_y63l3"]
 script = ExtResource("3_resource")
@@ -410,12 +450,13 @@ children = [SubResource("BTSequence_k7wm5"), SubResource("BTSequence_ohlgy")]
 [sub_resource type="BTSequence" id="BTSequence_kd5rg"]
 custom_name = "WarmByFire"
 children = [SubResource("BTAction_y63l3"), SubResource("BTAction_bxk66"), SubResource("BTAction_mslhm"), SubResource("BTAction_d5ls8"), SubResource("BTRandomSelector_y63l3")]
+_enabled = false
 
 [sub_resource type="BTRandomSelector" id="BTRandomSelector_mslhm"]
 children = [SubResource("BTSequence_n2iu8"), SubResource("BTSequence_bxk66"), SubResource("BTSequence_kd5rg")]
 
 [sub_resource type="BTDynamicSelector" id="BTSelector_brwnp"]
-children = [SubResource("BTSequence_iaxgs"), SubResource("BTSequence_ql6da"), SubResource("BTSequence_3jy6i"), SubResource("BTSequence_rdl7w"), SubResource("BTRandomSelector_mslhm")]
+children = [SubResource("BTSequence_iaxgs"), SubResource("BTSequence_ql6da"), SubResource("BTSequence_3jy6i"), SubResource("BTCooldown_ihniq"), SubResource("BTRandomSelector_mslhm")]
 
 [resource]
 blackboard_plan = SubResource("BlackboardPlan_bo4pt")
