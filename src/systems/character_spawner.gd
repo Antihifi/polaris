@@ -95,6 +95,10 @@ func _spawn_single_unit(position: Vector3, index: int) -> Node:
 	# Randomize initial rotation so they face different directions
 	unit.rotation.y = _rng.randf() * TAU
 
+	# Register with RuntimeNavBaker for multi-group navigation
+	# Note: Multi-unit NavMesh tracking removed - simpler single-region approach now used
+	# RuntimeNavBaker only tracks the player/captain for rebaking
+
 	return unit
 
 

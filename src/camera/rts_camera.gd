@@ -57,6 +57,10 @@ signal zoom_changed(zoom_level: float, zoom_ratio: float)
 @export var min_height_above_terrain: float = 3.0
 ## Enable terrain collision checking. Only needed for procedurally generated terrain.
 @export var terrain_collision_enabled: bool = false
+## Enable orbit center to follow terrain height (keeps camera looking at ground level).
+@export var terrain_follow_enabled: bool = true
+## How quickly orbit center adjusts to terrain height changes.
+@export var terrain_follow_speed: float = 8.0
 
 # =========================
 # Runtime state
@@ -233,6 +237,16 @@ func _constrain_to_units(pos: Vector3) -> Vector3:
 
 
 func _update_camera_position() -> void:
+	# Adjust orbit center Y to follow terrain height (smooth interpolation)
+	if terrain_follow_enabled:
+		var target_terrain_height := _get_terrain_height(orbit_center)
+		if target_terrain_height > -1000.0:  # Valid terrain height
+			var delta := get_process_delta_time()
+			if delta > 0.0:
+				orbit_center.y = lerpf(orbit_center.y, target_terrain_height, terrain_follow_speed * delta)
+			else:
+				orbit_center.y = target_terrain_height  # Instant on first frame
+
 	# Spherical direction from yaw/pitch
 	var dir := Vector3(
 		sin(_yaw) * cos(_pitch),

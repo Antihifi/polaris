@@ -5,15 +5,15 @@
 **Title:** Polaris
 **Genre:** Arctic Survival RTS / Colony Sim
 **Engine:** Godot 4.5
-**Inspirations:** The Terror (AMC), Franklin & Scott Expeditions, Rimworld, Kenshi, Project Zomboid
+**Inspirations:** The Terror, Franklin & Scott Expeditions, Rimworld, Kenshi, Project Zomboid
 
 ### Elevator Pitch
-A brutal arctic survival RTS where 10-16 shipwreck survivors must endure a year of polar hell until rescue arrives. Manage dwindling resources, deteriorating mental states, and impossible choices. Death is all but certain.
+A brutal arctic survival RTS where 30-45 icebound survivors must endure a year of polar hell until rescue arrives. Manage dwindling resources, deteriorating mental states, and impossible choices. Death is all but certain.
 
 ### Core Pillars
 1. **Desperate Survival** - Resources are scarce, weather is lethal, rescue is distant
 2. **Human Drama** - Personalities clash, mental states break, cannibalism beckons
-3. **Impossible Choices** - Leave the weak behind, trade with or exploit natives, sacrifice few to save many
+3. **Impossible Choices** - Leave the weak behind, trade with -- or exploit natives -- sacrifice few to save many
 4. **Historical Authenticity** - Period-accurate equipment, realistic polar conditions, exploration-era atmosphere
 
 ---
@@ -21,21 +21,21 @@ A brutal arctic survival RTS where 10-16 shipwreck survivors must endure a year 
 ## Game Flow
 
 ### Start Condition (MVP)
-Game begins with survivors already on shore with randomized salvage from their crushed/sunken ship. No interactive ship-sinking sequence for MVP.
+Game begins with survivors already on shore with randomized salvage from their crushed/partially sunken ship. No interactive ship-sinking sequence for MVP.
 
 ### Win Condition
 Survive until rescue ship arrives. At least one survivor must be alive.
 - **Rescue Timer:** 365 days + random(30-180) days
-- **Score Based On:** Survivors alive, resources stockpiled, average morale
+- **Score Based On:** Survivors alive, resources stockpiled, average of morale
 
 ### Lose Condition
 All survivors dead.
 
 ### Core Gameplay Loop
 1. **Survive** - Manage hunger, cold, health, morale for all survivors
-2. **Build** - Construct shelters, fire pits, workshops to improve survival odds
-3. **Gather** - Hunt seals/birds, scavenge, trade with natives
-4. **Explore** - Send expeditions to find whaling bases, native camps, set rescue signals
+2. **Build** - Construct rudimentary shelters, fire pits, workshops to improve survival odds
+3. **Gather** - Hunt seals/birds, scavenge, trade with natives, find cairns of previous expeditions, salvage other previously icebound ships
+4. **Explore** - Send expeditions to find Hudson's Bay Company whaling bases, native camps, set rescue signals
 5. **Endure** - Weather mental breaks, animal attacks, illness, interpersonal conflict
 
 ---
@@ -43,7 +43,7 @@ All survivors dead.
 ## Characters
 
 ### Survivor Count
-10-16 survivors per game (randomized)
+30-45 survivors per game (randomized)
 
 ### Needs (0-100 scale, lower = worse)
 | Need | Description | Consequences at Low |
@@ -58,7 +58,7 @@ All survivors dead.
 
 | Type | Count | Control | Behavior |
 |------|-------|---------|----------|
-| **Officers** | Up to 12 | Player-controlled | Active tasks: hunting, exploring, building, cooking |
+| **Officers** | Up to 11 | Player-controlled | Active tasks: hunting, exploring, building, cooking |
 | **The Men** | Remaining | AI-controlled | Survival tasks: eat, sleep, warm, fuel fires |
 | **Captain** | 1 | Player-controlled | Provides morale aura, can promote Men to Officers |
 
@@ -68,8 +68,8 @@ When an Officer dies, Captain promotes a random Man to Officer status.
 
 **Hierarchy Limits:**
 - Maximum 1 Captain
-- Maximum 11 Officers (including Captain)
-- Unlimited Enlisted Men
+- Maximum 11 Officers (plus Captain)
+- Unlimited Enlisted Men (usually 30-35 to start)
 
 **Officer Promotion:**
 When an officer dies, the player can select a new officer from the pool of enlisted men. Promotion considerations:
@@ -650,11 +650,11 @@ Requires: Sled (crafted at Workshop)
 ### MVP (2 Weeks)
 - [x] Arctic terrain
 - [x] RTS camera
-- [ ] 10-16 survivors with needs
-- [ ] Selection and commands
-- [ ] Time/season system
-- [ ] Basic needs AI
-- [ ] Inventory and stockpiles
+- [x] 30-35 survivors with needs
+- [x] Selection and commands
+- [x] Time/season system
+- [ ] Basic needs AI (I'm close)
+- [x] Inventory and stockpiles
 - [ ] 5 building types
 - [ ] Workshop crafting
 - [ ] Combat with wolves/bears
@@ -666,7 +666,7 @@ Requires: Sled (crafted at Workshop)
 - Interactive ship sinking intro
 - Mental break system (psychotic breaks, binge eating, violence)
 - Multiple native camps with different dispositions
-- Weather variety (blizzards, fog, aurora)
+- Weather variety (blizzards, fog, aurora) (this is already partially implemented)
 - Snow blindness mechanic
 - Whale hunting mini-game
 - Multiple ending types

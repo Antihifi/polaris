@@ -38,6 +38,12 @@ func _ready() -> void:
 	if parent:
 		parent.add_to_group("containers")
 		parent.add_to_group("interactable")
+		# Add to specific group based on storage type for AI targeting
+		match storage_type:
+			StorageType.FOOD:
+				parent.add_to_group("barrels")
+			StorageType.GENERAL:
+				parent.add_to_group("crates")
 
 	# Load protoset
 	_protoset = load("res://data/items_protoset.json")

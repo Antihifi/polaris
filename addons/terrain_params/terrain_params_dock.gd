@@ -544,7 +544,7 @@ func _on_toggle_3d_preview() -> void:
 
 ## Update camera position based on orbit parameters
 func _update_camera_position() -> void:
-	if not _camera:
+	if not _camera or not _camera.is_inside_tree():
 		return
 	# Orbit around center using spherical coordinates
 	var center := Vector3(0, 0, 0)

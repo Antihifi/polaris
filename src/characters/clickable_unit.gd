@@ -125,9 +125,8 @@ func _physics_process(delta: float) -> void:
 		reached_destination.emit()
 	else:
 		var next_pos: Vector3 = navigation_agent.get_next_path_position()
-		var time_scale := _get_time_scale()
-		var speed := movement_speed * time_scale
-		var velocity_xz := (next_pos - global_position).normalized() * speed
+		# Note: Engine.time_scale handles speed scaling via move_and_slide() delta
+		var velocity_xz := (next_pos - global_position).normalized() * movement_speed
 		velocity.x = velocity_xz.x
 		velocity.z = velocity_xz.z
 
@@ -135,8 +134,8 @@ func _physics_process(delta: float) -> void:
 		var target_rotation := atan2(velocity_xz.x, velocity_xz.z)
 		rotation.y = lerp_angle(rotation.y, target_rotation, rotation_speed * delta)
 
-		# Drain energy while walking
-		_drain_walking_energy(delta, time_scale)
+		# Drain energy while walking (delta is already scaled by Engine.time_scale)
+		_drain_walking_energy(delta)
 
 	# Use avoidance if enabled, otherwise move directly
 	if navigation_agent.avoidance_enabled:
@@ -144,12 +143,20 @@ func _physics_process(delta: float) -> void:
 	else:
 		_on_velocity_computed(velocity)
 
-	# Terrain floor check (from Terrain3D demo)
+	# Terrain floor check - improved for slopes
+	# On slopes, NavMesh height can diverge from terrain height, causing drift.
+	# Actively snap to terrain when height mismatch exceeds threshold.
 	var terrain := _find_terrain3d()
 	if terrain and "data" in terrain and terrain.data:
 		var height: float = terrain.data.get_height(global_position)
 		if is_finite(height):
-			global_position.y = maxf(global_position.y, height)
+			var height_delta := global_position.y - height
+			if absf(height_delta) > 0.3:
+				# Large mismatch on slopes - snap to terrain with small offset
+				global_position.y = height + 0.05
+			else:
+				# Normal floor check - prevent falling below terrain
+				global_position.y = maxf(global_position.y, height)
 
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
@@ -370,16 +377,16 @@ func _update_speed_scale() -> void:
 
 ## Energy drain per real second of walking at 1x time scale and perfect condition.
 ## Walking for 1 real minute at 1x = 0.5 energy. 1 hour real time = 30 energy.
-## At 4x speed, that's 2 energy per real second, so 1 minute = 120 energy (but time passes faster).
+## At 4x speed, delta is scaled by Engine.time_scale, so drain is automatically 4x faster.
 const BASE_WALKING_ENERGY_DRAIN: float = 0.5
 
-func _drain_walking_energy(delta: float, time_scale: float) -> void:
-	## Drain energy while walking. Amount depends on condition and time scale.
-	if not stats or time_scale <= 0.0:
+func _drain_walking_energy(delta: float) -> void:
+	## Drain energy while walking. Delta is already scaled by Engine.time_scale.
+	if not stats or delta <= 0.0:
 		return
 
-	# Base drain per second, scaled by game time
-	var drain := BASE_WALKING_ENERGY_DRAIN * delta * time_scale
+	# Base drain per second (delta is already scaled by Engine.time_scale)
+	var drain := BASE_WALKING_ENERGY_DRAIN * delta
 
 	# Multiply by condition-based drain modifier
 	drain *= stats.get_energy_drain_multiplier()

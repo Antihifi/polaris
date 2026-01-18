@@ -90,7 +90,10 @@ func _tick(delta: float) -> Status:
 			if dist < arrival_distance:
 				return SUCCESS
 			else:
-				return FAILURE  # Navigation gave up but we're not at target
+				# One-time log when navigation finishes but unit didn't reach target
+				var unit_name: String = agent.unit_name if "unit_name" in agent else "unit"
+				print("[BTMoveTo] %s: Nav finished %.1fm from target (need < %.1fm)" % [unit_name, dist, arrival_distance])
+				return FAILURE
 
 	# Stuck detection: check if we've moved enough since last tick
 	if _last_position != Vector3.INF:
@@ -107,7 +110,10 @@ func _tick(delta: float) -> Status:
 				if dist < arrival_distance:
 					return SUCCESS
 				else:
-					return FAILURE  # Stuck and not at target
+					# One-time log when stuck timeout triggers
+					var unit_name: String = agent.unit_name if "unit_name" in agent else "unit"
+					print("[BTMoveTo] %s: Stuck %.1fm from target after %.1fs" % [unit_name, dist, stuck_timeout])
+					return FAILURE
 		else:
 			# Making progress, reset timer
 			_stuck_timer = 0.0

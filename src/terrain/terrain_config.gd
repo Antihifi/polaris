@@ -78,6 +78,15 @@ extends Resource
 @export_range(100.0, 400.0, 10.0) var peak_3_height: float = 320.0
 @export_range(0.05, 0.3, 0.01) var peak_3_radius: float = 0.10
 
+## ============== NAVIGATION PARAMETERS ==============
+@export_group("Navigation")
+@export_range(0.1, 2.0, 0.1) var nav_cell_size: float = 0.5  ## Horizontal voxel size
+@export_range(0.05, 0.5, 0.05) var nav_cell_height: float = 0.15  ## Vertical voxel size (finer = less height mismatch)
+@export_range(0.3, 1.0, 0.1) var nav_agent_radius: float = 0.5
+@export_range(1.5, 3.0, 0.5) var nav_agent_height: float = 2.0
+@export_range(20.0, 45.0, 5.0) var nav_agent_max_slope: float = 35.0
+@export_range(0.1, 1.0, 0.1) var nav_agent_max_climb: float = 0.3  ## Max step height
+
 
 ## Get peak positions as array (for HeightmapGenerator compatibility)
 func get_peak_positions() -> Array:
@@ -171,3 +180,10 @@ func reset_to_defaults() -> void:
 	peak_3_y = 0.25
 	peak_3_height = 320.0
 	peak_3_radius = 0.10
+
+	nav_cell_size = 0.5
+	nav_cell_height = 0.15
+	nav_agent_radius = 0.5
+	nav_agent_height = 2.0
+	nav_agent_max_slope = 35.0
+	nav_agent_max_climb = 0.3

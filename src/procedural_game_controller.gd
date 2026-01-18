@@ -710,8 +710,8 @@ func _find_navigable_spawn(center: Vector3) -> Vector3:
 			var max_gradient := maxf(dh_ns, dh_ew)
 			var slope_deg := rad_to_deg(atan(max_gradient))
 
-			# Accept if slope is under NavMesh limit (30 deg) with some margin
-			if slope_deg < 25.0 and slope_deg < best_slope:
+			# Accept if slope is under NavMesh limit (35 deg) with some margin
+			if slope_deg < 30.0 and slope_deg < best_slope:
 				best_slope = slope_deg
 				best_pos = test_pos
 				print("[ProceduralGame] Found navigable spawn at radius %.0f, angle %d, slope %.1f deg" % [radius, angle_deg, slope_deg])
@@ -720,7 +720,7 @@ func _find_navigable_spawn(center: Vector3) -> Vector3:
 				if slope_deg < 15.0:
 					return best_pos
 
-	if best_slope >= 25.0:
+	if best_slope >= 30.0:
 		print("[ProceduralGame] WARNING: Could not find gentle slope, using center (slope=%.1f)" % best_slope)
 
 	return best_pos

@@ -303,6 +303,7 @@ func _update_survivor_needs() -> void:
 func pause() -> void:
 	is_paused = true
 	time_scale = 0.0
+	Engine.time_scale = 0.0
 	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 
@@ -310,6 +311,7 @@ func pause() -> void:
 func unpause() -> void:
 	is_paused = false
 	time_scale = 1.0
+	Engine.time_scale = 1.0
 	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 
@@ -325,6 +327,7 @@ func set_time_scale(scale: float) -> void:
 	## Set time scale. 0 = paused, 1 = normal, 2 = fast, 4 = faster.
 	time_scale = clampf(scale, 0.0, 4.0)
 	is_paused = time_scale <= 0.0
+	Engine.time_scale = time_scale
 	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 

@@ -522,21 +522,18 @@ func _bake_navigation_mesh() -> void:
 		Vector3(half_size * 2 + 1000, 500, half_size * 2 + 1000)
 	)
 
-	# Agent settings - match cell units
-	nav_mesh.agent_radius = 4.0  # Must be >= cell_size for proper voxelization
-	nav_mesh.agent_height = 4.0  # Must be >= cell_height
-	nav_mesh.agent_max_climb = 2.0
-	nav_mesh.agent_max_slope = 45.0
+	# Agent and cell settings - MUST match RuntimeNavBaker for consistency!
+	# Finer cell_height (0.15) reduces height mismatch between NavMesh and terrain on slopes
+	nav_mesh.cell_size = 0.5         # Consistent with RuntimeNavBaker
+	nav_mesh.cell_height = 0.15      # Finer = less terrain/navmesh height gap
+	nav_mesh.agent_radius = 0.5      # Standard agent size
+	nav_mesh.agent_height = 2.0      # Human height
+	nav_mesh.agent_max_climb = 0.3   # Small step height
+	nav_mesh.agent_max_slope = 35.0  # Balanced slope limit
 
-	# Cell settings - balance between detail and performance
-	# With 80m grid (step=8), we need cells that fit the triangle size
-	# cell_size=4.0 means 20 cells per 80m triangle edge = reasonable
-	nav_mesh.cell_size = 4.0
-	nav_mesh.cell_height = 2.0
-
-	# Region settings - smaller to preserve detail
-	nav_mesh.region_min_size = 4.0
-	nav_mesh.region_merge_size = 16.0
+	# Region settings
+	nav_mesh.region_min_size = 2.0
+	nav_mesh.region_merge_size = 8.0
 
 	# Apply to region
 	_nav_region.navigation_mesh = nav_mesh
@@ -592,6 +589,10 @@ func _bake_navigation_mesh() -> void:
 		terrain_width, nav_mesh.cell_size, estimated_cells
 	])
 	NavigationServer3D.bake_from_source_geometry_data(nav_mesh, source_geometry)
+
+	# Post-process NavMesh to fix Godot issue #85548
+	# This prevents degenerate polygons and edge misalignments
+	_postprocess_nav_mesh(nav_mesh)
 
 	# Verify NavMesh has polygons
 	var polygon_count := nav_mesh.get_polygon_count()
@@ -968,3 +969,118 @@ func _export_debug_heightmap(heightmap: Image, suffix: String) -> void:
 	print("[TerrainGenerator] Height stats [%s]: min=%.1f, max=%.1f, avg=%.1f meters" % [
 		suffix, stats.min, stats.max, stats.average
 	])
+
+
+# ============================================================================
+# NAVMESH POST-PROCESSING FUNCTIONS
+# Fix for Godot issue #85548 where NavMesh shows polygons but navigation fails
+# Copied from RuntimeNavBaker / addons/terrain_3d/menu/baker.gd
+# ============================================================================
+
+func _postprocess_nav_mesh(p_nav_mesh: NavigationMesh) -> void:
+	## Post-process the nav mesh to work around Godot issue #85548
+
+	# Round all vertices to nearest cell_size/cell_height so mesh doesn't
+	# contain edges shorter than cell_size/cell_height (one cause of #85548)
+	var vertices: PackedVector3Array = _postprocess_round_vertices(p_nav_mesh)
+
+	# Rounding can collapse edges to 0 length. Remove empty polygons.
+	var polygons: Array[PackedInt32Array] = _postprocess_remove_empty_polygons(p_nav_mesh, vertices)
+
+	# Another cause of #85548 is overlapping polygons. Remove these.
+	_postprocess_remove_overlapping_polygons(p_nav_mesh, vertices, polygons)
+
+	var removed := p_nav_mesh.get_polygon_count() - polygons.size()
+	p_nav_mesh.clear_polygons()
+	p_nav_mesh.set_vertices(vertices)
+	for polygon in polygons:
+		p_nav_mesh.add_polygon(polygon)
+
+	if removed > 0:
+		print("[TerrainGenerator] NavMesh post-processing removed %d degenerate polygons" % removed)
+
+
+func _postprocess_round_vertices(p_nav_mesh: NavigationMesh) -> PackedVector3Array:
+	## Round vertices to cell_size/cell_height grid
+	assert(p_nav_mesh != null)
+	assert(p_nav_mesh.cell_size > 0.0)
+	assert(p_nav_mesh.cell_height > 0.0)
+
+	var cell_size: Vector3 = Vector3(p_nav_mesh.cell_size, p_nav_mesh.cell_height, p_nav_mesh.cell_size)
+
+	# Round harder to avoid floating point errors with non-power-of-two cell sizes
+	var round_factor := cell_size * 1.001
+
+	var vertices: PackedVector3Array = p_nav_mesh.get_vertices()
+	for i in range(vertices.size()):
+		vertices[i] = (vertices[i] / round_factor).floor() * round_factor
+	return vertices
+
+
+func _postprocess_remove_empty_polygons(p_nav_mesh: NavigationMesh, p_vertices: PackedVector3Array) -> Array[PackedInt32Array]:
+	## Remove polygons that became empty after vertex rounding
+	var polygons: Array[PackedInt32Array] = []
+
+	for i in range(p_nav_mesh.get_polygon_count()):
+		var old_polygon: PackedInt32Array = p_nav_mesh.get_polygon(i)
+		var new_polygon: PackedInt32Array = []
+
+		# Remove duplicate vertices (from rounding) from polygon
+		var polygon_vertices: PackedVector3Array = []
+		for index in old_polygon:
+			var vertex: Vector3 = p_vertices[index]
+			if polygon_vertices.has(vertex):
+				continue
+			polygon_vertices.push_back(vertex)
+			new_polygon.push_back(index)
+
+		# If we removed vertices, polygon might be degenerate
+		if new_polygon.size() <= 2:
+			continue
+		polygons.push_back(new_polygon)
+
+	return polygons
+
+
+func _postprocess_remove_overlapping_polygons(p_nav_mesh: NavigationMesh, p_vertices: PackedVector3Array, p_polygons: Array[PackedInt32Array]) -> void:
+	## Remove overlapping polygons that cause navigation failures
+	## Detects and removes overlapping polygons:
+	## - 'overlap' = edge shared by 3+ polygons
+	## - 'bad polygon' = polygon with 2+ overlaps
+	## Removing bad polygons fixes navigation without creating holes.
+
+	var cell_size: Vector3 = Vector3(p_nav_mesh.cell_size, p_nav_mesh.cell_height, p_nav_mesh.cell_size)
+
+	# Map edges (vertex pairs) to polygons containing that edge
+	var edges: Dictionary = {}
+
+	for polygon_index in range(p_polygons.size()):
+		var polygon: PackedInt32Array = p_polygons[polygon_index]
+		for j in range(polygon.size()):
+			var vertex: Vector3 = p_vertices[polygon[j]]
+			var next_vertex: Vector3 = p_vertices[polygon[(j + 1) % polygon.size()]]
+
+			# Use cell coords (Vector3i) as key to avoid float errors
+			# Sort because shared edges can have vertices in different order
+			var edge_key: Array = [Vector3i(vertex / cell_size), Vector3i(next_vertex / cell_size)]
+			edge_key.sort()
+
+			if not edges.has(edge_key):
+				edges[edge_key] = []
+			edges[edge_key].push_back(polygon_index)
+
+	var overlap_count: Dictionary = {}
+	for connections in edges.values():
+		if connections.size() <= 2:
+			continue
+		for polygon_index in connections:
+			overlap_count[polygon_index] = overlap_count.get(polygon_index, 0) + 1
+
+	var bad_polygons: Array = []
+	for polygon_index in overlap_count.keys():
+		if overlap_count[polygon_index] >= 2:
+			bad_polygons.push_back(polygon_index)
+
+	bad_polygons.sort()
+	for i in range(bad_polygons.size() - 1, -1, -1):
+		p_polygons.remove_at(bad_polygons[i])

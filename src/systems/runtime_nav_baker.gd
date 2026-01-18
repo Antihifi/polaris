@@ -15,15 +15,7 @@ signal bake_finished
 var terrain: Node = null
 
 ## Node to track for NavMesh baking (usually the captain/player)
-@export var player: Node3D : set = set_player
-
-func set_player(p_value: Node3D) -> void:
-	player = p_value
-	if player:
-		print("[RuntimeNavBaker] Player tracking set to: %s at %s" % [player.name, player.global_position])
-		print("[RuntimeNavBaker] Current bake center: %s, distance: %.1f" % [_current_center, player.global_position.distance_to(_current_center)])
-	else:
-		print("[RuntimeNavBaker] Player tracking CLEARED")
+@export var player: Node3D
 
 ## Size of NavMesh chunk to bake (256x512x256 = 256m wide, 512m tall, 256m deep)
 @export var mesh_size := Vector3(256, 512, 256)
@@ -44,9 +36,6 @@ var _bake_task_id: int = -1
 var _bake_task_timer: float = 0.0
 var _bake_cooldown_timer: float = 0.0
 var _nav_region: NavigationRegion3D
-
-## When true, disables dynamic rebaking (used after full terrain bake)
-var _full_bake_mode: bool = false
 
 
 func _ready() -> void:
@@ -118,14 +107,6 @@ func parse_scene() -> void:
 	NavigationServer3D.parse_source_geometry_data(template, _scene_geometry, self)
 
 
-## Re-parse scene geometry - DEPRECATED, causes errors with complex scenes.
-## Ship/containers should use NavigationObstacle3D for avoidance instead.
-func refresh_scene_geometry() -> void:
-	print("[RuntimeNavBaker] refresh_scene_geometry() - SKIPPED (use NavigationObstacle3D for obstacles)")
-	# DO NOT parse scene - it causes "vertices.size() < p_indices.size()" errors
-	# The terrain faces alone provide the walkable surface
-
-
 func _update_map_cell_size() -> void:
 	# Match demo: just set cell size/height, nothing else
 	if get_viewport() and template:
@@ -134,24 +115,9 @@ func _update_map_cell_size() -> void:
 		NavigationServer3D.map_set_cell_height(map, template.cell_height)
 
 
-var _debug_timer: float = 0.0
-
 func _process(p_delta: float) -> void:
 	if _bake_task_id != -1:
 		_bake_task_timer += p_delta
-
-	# Debug: Log status every 5 seconds
-	_debug_timer += p_delta
-	if _debug_timer > 5.0:
-		_debug_timer = 0.0
-		if not player:
-			print("[RuntimeNavBaker] _process: NO PLAYER SET!")
-		elif _bake_task_id != -1:
-			print("[RuntimeNavBaker] _process: Bake in progress (task_id=%d)" % _bake_task_id)
-		else:
-			var dist := player.global_position.distance_to(_current_center)
-			print("[RuntimeNavBaker] _process: player at %s, center at %s, dist=%.1f (threshold=%.1f)" % [
-				player.global_position, _current_center, dist, min_rebake_distance])
 
 	if not player or _bake_task_id != -1:
 		return
@@ -165,10 +131,7 @@ func _process(p_delta: float) -> void:
 		# Center on where the player is likely _going to be_:
 		track_pos += player.velocity * bake_cooldown
 
-	var dist_sq := track_pos.distance_squared_to(_current_center)
-	var threshold_sq := min_rebake_distance * min_rebake_distance
-	if dist_sq >= threshold_sq:
-		print("[RuntimeNavBaker] Player moved %.1fm from bake center, triggering rebake" % sqrt(dist_sq))
+	if track_pos.distance_squared_to(_current_center) >= min_rebake_distance * min_rebake_distance:
 		_current_center = track_pos
 		_rebake(_current_center)
 
@@ -186,9 +149,11 @@ func _task_bake(p_center: Vector3) -> void:
 	var nav_mesh: NavigationMesh = template.duplicate()
 	nav_mesh.filter_baking_aabb = AABB(-mesh_size * 0.5, mesh_size)
 	nav_mesh.filter_baking_aabb_offset = p_center
-
-	# Use only terrain faces - scene geometry parsing causes errors with complex objects
-	var source_geometry := NavigationMeshSourceGeometryData3D.new()
+	var source_geometry: NavigationMeshSourceGeometryData3D
+	if _scene_geometry:
+		source_geometry = _scene_geometry.duplicate()
+	else:
+		source_geometry = NavigationMeshSourceGeometryData3D.new()
 
 	var faces_added := 0
 	if terrain and terrain.has_method("generate_nav_mesh_source_geometry"):
@@ -280,65 +245,10 @@ func _bake_finished(p_nav_mesh: NavigationMesh) -> void:
 	bake_finished.emit()
 
 
-## Force an immediate bake at the given position (uses mesh_size chunk)
+## Force an immediate bake at the given position
 func force_bake_at(position: Vector3) -> void:
 	_current_center = position
 	_rebake(position)
-
-
-## Force a FULL terrain bake (covers entire playable area, not just a chunk)
-## Use this at game start to bake the whole map once.
-## This is slower but ensures units can navigate everywhere from the start.
-## IMPORTANT: This disables dynamic rebaking - the full terrain NavMesh persists.
-func force_full_bake(_center: Vector3) -> void:
-	print("[RuntimeNavBaker] Starting FULL TERRAIN bake (dynamic rebaking will be disabled)")
-	# Enable full bake mode - disables _process rebaking
-	_full_bake_mode = true
-	# Center at origin for full terrain coverage (terrain is centered at 0,0,0)
-	_current_center = Vector3.ZERO
-	# Use a very large AABB to cover the full terrain (10km x 10km)
-	# Terrain3D is 10240m x 10240m, so 10500 covers it with margin
-	var full_size := Vector3(10500, 512, 10500)
-	_rebake_with_size(Vector3.ZERO, full_size)
-
-
-func _rebake_with_size(p_center: Vector3, p_size: Vector3) -> void:
-	if not template:
-		push_error("[RuntimeNavBaker] No template NavigationMesh!")
-		return
-	_bake_task_id = WorkerThreadPool.add_task(_task_bake_with_size.bind(p_center, p_size), false, "RuntimeNavBaker")
-	_bake_task_timer = 0.0
-	_bake_cooldown_timer = bake_cooldown
-
-
-func _task_bake_with_size(p_center: Vector3, p_size: Vector3) -> void:
-	var nav_mesh: NavigationMesh = template.duplicate()
-	nav_mesh.filter_baking_aabb = AABB(-p_size * 0.5, p_size)
-	nav_mesh.filter_baking_aabb_offset = p_center
-
-	# For full bake, use ONLY terrain faces - no scene geometry
-	# Scene geometry parsing can cause errors with complex objects
-	var source_geometry := NavigationMeshSourceGeometryData3D.new()
-
-	var faces_added := 0
-	if terrain and terrain.has_method("generate_nav_mesh_source_geometry"):
-		var aabb: AABB = nav_mesh.filter_baking_aabb
-		aabb.position += nav_mesh.filter_baking_aabb_offset
-		print("[RuntimeNavBaker] FULL BAKE - Requesting faces for AABB: pos=%s, size=%s" % [aabb.position, aabb.size])
-		var faces: PackedVector3Array = terrain.generate_nav_mesh_source_geometry(aabb, false)
-		faces_added = faces.size()
-		source_geometry.add_faces(faces, Transform3D.IDENTITY)
-		print("[RuntimeNavBaker] FULL BAKE - Added %d terrain faces" % faces_added)
-	else:
-		print("[RuntimeNavBaker] WARNING: No terrain or missing generate_nav_mesh_source_geometry method!")
-
-	if source_geometry.has_data():
-		print("[RuntimeNavBaker] FULL BAKE - Starting bake...")
-		NavigationServer3D.bake_from_source_geometry_data(nav_mesh, source_geometry)
-		_bake_finished.call_deferred(nav_mesh)
-	else:
-		print("[RuntimeNavBaker] WARNING: No source geometry data!")
-		_bake_finished.call_deferred(null)
 
 
 ## Get the NavigationRegion3D for agents to use

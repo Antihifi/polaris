@@ -208,7 +208,9 @@ ai.get_current_action()              # Get status string
 |-------|---------|
 | `beds` | Sleep targets |
 | `heat_sources` | Fire/warmth |
-| `containers` | Food storage |
+| `containers` | All storage (generic) |
+| `barrels` | Food storage (StorageType.FOOD) |
+| `crates` | Equipment storage (StorageType.GENERAL) |
 | `survivors` | TimeManager updates |
 
 ---
@@ -328,3 +330,84 @@ Variables ending in `_var` are **configuration** - they specify which blackboard
 ```
 
 This is NOT the variable name in the BlackboardPlan - it's which key the task operates on.
+
+---
+
+## CRITICAL: BTPlayAnimation Sequential Behavior
+
+### The Problem
+
+**BTPlayAnimation with `await_completion = 0` (default) returns SUCCESS immediately.**
+
+This means in a BTSequence, back-to-back BTPlayAnimation nodes **ALL FIRE ON THE SAME TICK**:
+
+```
+BTSequence:
+├── BTPlayAnimation("stand_up_from_laying_down")  ← tick N, returns SUCCESS
+├── BTPlayAnimation("sleeping_idle")               ← tick N, returns SUCCESS (OVERWRITES!)
+├── BTRandomWait(45s)                              ← tick N, returns RUNNING (pauses here)
+```
+
+The first animation is **immediately overwritten** by the second because both start on the same frame.
+
+### The Solution: Use `await_completion`
+
+Set `await_completion` to the animation duration (in seconds) for animations that must complete before the next:
+
+| Animation | Duration | await_completion |
+|-----------|----------|------------------|
+| stand_up_from_laying_down | ~2s | 2.0 |
+| crouch_to_stand | ~1.5s | 1.5 |
+| opening_a_lid | ~1s | 1.5 |
+| taking_item | ~1s | 1.0 |
+| closing_a_lid | ~1s | 1.5 |
+| sitting_from_standing | ~1s | 1.5 |
+
+**Looping animations (sleeping_idle, crouching_idle, sitting_depressed) should NOT have await_completion** - they loop indefinitely.
+
+### Blend Parameter
+
+`blend` = crossfade duration in seconds between animations:
+- `-1.0` (default): No custom blend, instant cut
+- `0.2-0.3`: Quick, snappy transitions
+- `0.5`: Smooth natural transitions
+- `1.0`: Very slow, deliberate blends (good for survival actions)
+
+BTPlayAnimation uses Godot's AnimationPlayer.play() directly - **NO AnimationTree required**.
+
+---
+
+## Pending Editor Fixes (man_bt.tres)
+
+### 1. Enable Disabled Animation Locks
+
+The following BTSetAgentProperty nodes are DISABLED (`_enabled = false`) and must be enabled:
+
+**SeekWarmth sequence:**
+- Line ~235-238: `BTSetAgentProperty_l2yjk` (is_animation_locked = true)
+- Line ~275-278: `BTSetAgentProperty_8jgo4` (is_animation_locked = false)
+
+**SeekFood sequence (if exists):**
+- Line ~141-144: `BTSetAgentProperty_sbexb` (is_animation_locked = true)
+- Line ~193-196: `BTSetAgentProperty_s7c4l` (is_animation_locked = false)
+
+**How to enable:** Select node in BT editor → Inspector → uncheck "Disabled"
+
+### 2. Set await_completion on Transition Animations
+
+**SeekShelter:**
+- `BTPlayAnimation("stand_up_from_laying_down", speed=-1)` → `await_completion = 2.0`
+- `BTPlayAnimation("stand_up_from_laying_down")` (after wait) → `await_completion = 2.0`
+
+**SeekWarmth/CrouchByFire:**
+- `BTPlayAnimation("crouch_to_stand", speed=-1)` → `await_completion = 1.5`
+- `BTPlayAnimation("crouch_to_stand")` (after wait) → `await_completion = 1.5`
+
+**SeekFood:**
+- `BTPlayAnimation("opening_a_lid")` → `await_completion = 1.5`
+- `BTPlayAnimation("taking_item")` → `await_completion = 1.0`
+- `BTPlayAnimation("closing_a_lid")` → `await_completion = 1.5`
+
+**SitOnCrate:**
+- `BTPlayAnimation("sitting_from_standing")` → `await_completion = 1.5`
+- `BTPlayAnimation("sitting_from_standing", speed=-1)` (stand up) → `await_completion = 1.5`
