@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://xkk5gmwmxjuw"
 path.s3tc="res://.godot/imported/Facial_Hair_Cards_normal.png-e050c9b78875b79f3916ad0c4578985c.s3tc.ctex"
+path.etc2="res://.godot/imported/Facial_Hair_Cards_normal.png-e050c9b78875b79f3916ad0c4578985c.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/Facial_Hair_Cards_normal.png"
-dest_files=["res://.godot/imported/Facial_Hair_Cards_normal.png-e050c9b78875b79f3916ad0c4578985c.s3tc.ctex"]
+dest_files=["res://.godot/imported/Facial_Hair_Cards_normal.png-e050c9b78875b79f3916ad0c4578985c.s3tc.ctex", "res://.godot/imported/Facial_Hair_Cards_normal.png-e050c9b78875b79f3916ad0c4578985c.etc2.ctex"]
 
 [params]
 

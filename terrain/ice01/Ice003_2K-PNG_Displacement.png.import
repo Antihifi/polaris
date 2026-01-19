@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bubq1eei7a5u6"
 path.s3tc="res://.godot/imported/Ice003_2K-PNG_Displacement.png-a17714885f7e8de55d2ae8e80215a60d.s3tc.ctex"
+path.etc2="res://.godot/imported/Ice003_2K-PNG_Displacement.png-a17714885f7e8de55d2ae8e80215a60d.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://terrain/ice01/Ice003_2K-PNG_Displacement.png"
-dest_files=["res://.godot/imported/Ice003_2K-PNG_Displacement.png-a17714885f7e8de55d2ae8e80215a60d.s3tc.ctex"]
+dest_files=["res://.godot/imported/Ice003_2K-PNG_Displacement.png-a17714885f7e8de55d2ae8e80215a60d.s3tc.ctex", "res://.godot/imported/Ice003_2K-PNG_Displacement.png-a17714885f7e8de55d2ae8e80215a60d.etc2.ctex"]
 
 [params]
 

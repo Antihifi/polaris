@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dkb01wiaf4mbj"
 path.s3tc="res://.godot/imported/Crates1_crates_diffuse.png-860cb5da51016addf9a0b93adc3fb755.s3tc.ctex"
+path.etc2="res://.godot/imported/Crates1_crates_diffuse.png-860cb5da51016addf9a0b93adc3fb755.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/crates1/Crates1_crates_diffuse.png"
-dest_files=["res://.godot/imported/Crates1_crates_diffuse.png-860cb5da51016addf9a0b93adc3fb755.s3tc.ctex"]
+dest_files=["res://.godot/imported/Crates1_crates_diffuse.png-860cb5da51016addf9a0b93adc3fb755.s3tc.ctex", "res://.godot/imported/Crates1_crates_diffuse.png-860cb5da51016addf9a0b93adc3fb755.etc2.ctex"]
 
 [params]
 

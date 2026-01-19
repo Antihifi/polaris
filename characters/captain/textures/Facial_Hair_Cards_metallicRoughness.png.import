@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://duun7ug2u6ve7"
 path.s3tc="res://.godot/imported/Facial_Hair_Cards_metallicRoughness.png-da63943a98f2c8bec9e6796c8ebbfb5c.s3tc.ctex"
+path.etc2="res://.godot/imported/Facial_Hair_Cards_metallicRoughness.png-da63943a98f2c8bec9e6796c8ebbfb5c.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/Facial_Hair_Cards_metallicRoughness.png"
-dest_files=["res://.godot/imported/Facial_Hair_Cards_metallicRoughness.png-da63943a98f2c8bec9e6796c8ebbfb5c.s3tc.ctex"]
+dest_files=["res://.godot/imported/Facial_Hair_Cards_metallicRoughness.png-da63943a98f2c8bec9e6796c8ebbfb5c.s3tc.ctex", "res://.godot/imported/Facial_Hair_Cards_metallicRoughness.png-da63943a98f2c8bec9e6796c8ebbfb5c.etc2.ctex"]
 
 [params]
 

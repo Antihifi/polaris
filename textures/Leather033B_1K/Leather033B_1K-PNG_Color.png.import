@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://k4o3bsv6au7l"
 path.s3tc="res://.godot/imported/Leather033B_1K-PNG_Color.png-e8ff1cee4dc74f1f9035cfc289404611.s3tc.ctex"
+path.etc2="res://.godot/imported/Leather033B_1K-PNG_Color.png-e8ff1cee4dc74f1f9035cfc289404611.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/Leather033B_1K/Leather033B_1K-PNG_Color.png"
-dest_files=["res://.godot/imported/Leather033B_1K-PNG_Color.png-e8ff1cee4dc74f1f9035cfc289404611.s3tc.ctex"]
+dest_files=["res://.godot/imported/Leather033B_1K-PNG_Color.png-e8ff1cee4dc74f1f9035cfc289404611.s3tc.ctex", "res://.godot/imported/Leather033B_1K-PNG_Color.png-e8ff1cee4dc74f1f9035cfc289404611.etc2.ctex"]
 
 [params]
 

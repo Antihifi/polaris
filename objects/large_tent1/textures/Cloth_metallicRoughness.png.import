@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://brekcvwl2sbyj"
 path.s3tc="res://.godot/imported/Cloth_metallicRoughness.png-f68b1ce8d8fcbbce657fabafcab3fcf2.s3tc.ctex"
+path.etc2="res://.godot/imported/Cloth_metallicRoughness.png-f68b1ce8d8fcbbce657fabafcab3fcf2.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://objects/large_tent1/textures/Cloth_metallicRoughness.png"
-dest_files=["res://.godot/imported/Cloth_metallicRoughness.png-f68b1ce8d8fcbbce657fabafcab3fcf2.s3tc.ctex"]
+dest_files=["res://.godot/imported/Cloth_metallicRoughness.png-f68b1ce8d8fcbbce657fabafcab3fcf2.s3tc.ctex", "res://.godot/imported/Cloth_metallicRoughness.png-f68b1ce8d8fcbbce657fabafcab3fcf2.etc2.ctex"]
 
 [params]
 

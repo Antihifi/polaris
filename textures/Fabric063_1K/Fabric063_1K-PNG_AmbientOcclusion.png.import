@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://4rkqoj0tw2cg"
 path.s3tc="res://.godot/imported/Fabric063_1K-PNG_AmbientOcclusion.png-c00707f6964ece23fcaadd5cb90b11ee.s3tc.ctex"
+path.etc2="res://.godot/imported/Fabric063_1K-PNG_AmbientOcclusion.png-c00707f6964ece23fcaadd5cb90b11ee.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/Fabric063_1K/Fabric063_1K-PNG_AmbientOcclusion.png"
-dest_files=["res://.godot/imported/Fabric063_1K-PNG_AmbientOcclusion.png-c00707f6964ece23fcaadd5cb90b11ee.s3tc.ctex"]
+dest_files=["res://.godot/imported/Fabric063_1K-PNG_AmbientOcclusion.png-c00707f6964ece23fcaadd5cb90b11ee.s3tc.ctex", "res://.godot/imported/Fabric063_1K-PNG_AmbientOcclusion.png-c00707f6964ece23fcaadd5cb90b11ee.etc2.ctex"]
 
 [params]
 

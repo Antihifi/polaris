@@ -411,3 +411,15 @@ The following BTSetAgentProperty nodes are DISABLED (`_enabled = false`) and mus
 **SitOnCrate:**
 - `BTPlayAnimation("sitting_from_standing")` → `await_completion = 1.5`
 - `BTPlayAnimation("sitting_from_standing", speed=-1)` (stand up) → `await_completion = 1.5`
+
+### 3. Fix SeekShelter to Navigate to Beds (Not Shelter Areas)
+
+**Issue:** Units navigate to shelter Area3D centers, then sleep NEAR shelters instead of IN beds.
+
+**Fix:** In SeekShelter sequence, change `BTFindNearestResource`:
+- **Current:** `resource_group = "shelters"` (navigates to ShelterArea center)
+- **Change to:** `resource_group = "beds"` (navigates to actual beds)
+
+Beds are already in the `"beds"` group and have `foot_of__bed` / `head_of_bed` Marker3D nodes.
+
+**In editor:** Select the `BTFindNearestResource` node in SeekShelter → Inspector → change `Resource Group` dropdown to `beds`

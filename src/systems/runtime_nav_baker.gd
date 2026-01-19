@@ -39,6 +39,8 @@ var _nav_region: NavigationRegion3D
 
 
 func _ready() -> void:
+	add_to_group("nav_baker")  # For clickable_unit to find us
+
 	_nav_region = NavigationRegion3D.new()
 	_nav_region.name = "DynamicNavRegion"
 	_nav_region.navigation_layers = navigation_layers
@@ -261,6 +263,22 @@ func get_navigation_map() -> RID:
 	if _nav_region:
 		return _nav_region.get_navigation_map()
 	return RID()
+
+
+## Ensure NavMesh coverage at target position (called by units on move command)
+## Triggers rebake if target is significantly outside current NavMesh coverage.
+func ensure_coverage(target_position: Vector3) -> void:
+	var nav_map := get_navigation_map()
+	if not nav_map.is_valid():
+		return
+	# Skip if a bake is already in progress
+	if _bake_task_id != -1:
+		return
+	var closest := NavigationServer3D.map_get_closest_point(nav_map, target_position)
+	var snap_dist := target_position.distance_to(closest)
+	if snap_dist > 10.0:  # More than 10m outside NavMesh
+		print("[RuntimeNavBaker] Target %.1fm outside coverage at %s, rebaking..." % [snap_dist, target_position])
+		force_bake_at(target_position)
 
 
 # ============================================================================

@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://c248psgg82tvy"
 path.s3tc="res://.godot/imported/CfWood_occlusion.png-f49740cbc755ba8923c22ebf498628e8.s3tc.ctex"
+path.etc2="res://.godot/imported/CfWood_occlusion.png-f49740cbc755ba8923c22ebf498628e8.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://objects/campfire1/textures/CfWood_occlusion.png"
-dest_files=["res://.godot/imported/CfWood_occlusion.png-f49740cbc755ba8923c22ebf498628e8.s3tc.ctex"]
+dest_files=["res://.godot/imported/CfWood_occlusion.png-f49740cbc755ba8923c22ebf498628e8.s3tc.ctex", "res://.godot/imported/CfWood_occlusion.png-f49740cbc755ba8923c22ebf498628e8.etc2.ctex"]
 
 [params]
 

@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://6mtqjvyianfp"
 path.s3tc="res://.godot/imported/NewFur_normal.png-af93f0f7270a00991223cf5283e25809.s3tc.ctex"
+path.etc2="res://.godot/imported/NewFur_normal.png-af93f0f7270a00991223cf5283e25809.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/NewFur_normal.png"
-dest_files=["res://.godot/imported/NewFur_normal.png-af93f0f7270a00991223cf5283e25809.s3tc.ctex"]
+dest_files=["res://.godot/imported/NewFur_normal.png-af93f0f7270a00991223cf5283e25809.s3tc.ctex", "res://.godot/imported/NewFur_normal.png-af93f0f7270a00991223cf5283e25809.etc2.ctex"]
 
 [params]
 

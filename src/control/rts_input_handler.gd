@@ -7,6 +7,7 @@ extends Node
 @export var terrain_collision_mask: int = 1  # Layer for terrain/ground
 @export var unit_collision_mask: int = 2     # Layer for selectable units
 @export var container_collision_mask: int = 8  # Layer 4 for containers (1 << 3)
+@export var sled_collision_mask: int = 16     # Layer 5 for vehicles/sleds
 
 ## Enable multi-selection with shift-click and box select
 @export var multi_select_enabled: bool = true
@@ -14,6 +15,7 @@ extends Node
 signal unit_double_clicked(unit: Node)
 signal selection_changed(units: Array)
 signal container_clicked(container: StorageContainer)
+signal sled_clicked(sled: Node)
 
 # Single selection (legacy support)
 var selected_unit: ClickableUnit = null
@@ -191,6 +193,33 @@ func _raycast_for_container(screen_position: Vector2) -> StorageContainer:
 	return null
 
 
+func _raycast_for_sled(screen_position: Vector2) -> Node:
+	## Raycast to find a sled at screen position. Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+	var sled_query := PhysicsRayQueryParameters3D.create(from, to, sled_collision_mask)
+	var sled_result := space_state.intersect_ray(sled_query)
+
+	if sled_result.is_empty():
+		return null
+
+	var hit: Object = sled_result.collider
+
+	# Check if it's a SledController directly
+	if hit is RigidBody3D and hit.is_in_group("sleds"):
+		return hit as Node
+
+	# Check parent in case we hit a child collider
+	if hit is Node:
+		var parent: Node = (hit as Node).get_parent()
+		if parent is RigidBody3D and parent.is_in_group("sleds"):
+			return parent
+
+	return null
+
+
 func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 	## Handle clicking on a unit - single or additive selection.
 	# Check for double-click
@@ -231,6 +260,16 @@ func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 
 func _handle_right_click(screen_position: Vector2) -> void:
 	## Move selected unit(s) to clicked position on terrain.
+	## If clicking on a sled with units selected, emit sled_clicked signal.
+	## Non-lead sled pullers are filtered out - they follow their leader automatically.
+
+	# Check if right-clicking on a sled (only if we have units selected)
+	if has_selection():
+		var clicked_sled := _raycast_for_sled(screen_position)
+		if clicked_sled:
+			sled_clicked.emit(clicked_sled)
+			return
+
 	if selected_units.is_empty() and not selected_unit:
 		print("[RTSInput] No units selected, ignoring right-click")
 		return
@@ -240,19 +279,32 @@ func _handle_right_click(screen_position: Vector2) -> void:
 		print("[RTSInput] Could not find valid terrain position")
 		return
 
-	print("[RTSInput] Moving %d units to: %s" % [selected_units.size(), target_position])
+	# Filter out units that can't receive movement commands (non-lead sled pullers)
+	var movable_units: Array[Node] = []
+	for unit in selected_units:
+		if unit.has_method("can_receive_move_command") and unit.can_receive_move_command():
+			movable_units.append(unit)
+		elif not unit.has_method("can_receive_move_command"):
+			# Legacy units without the method can always move
+			movable_units.append(unit)
 
-	# Move all selected units in formation
-	if selected_units.size() > 1:
-		_move_units_in_formation(selected_units, target_position)
+	if movable_units.is_empty():
+		print("[RTSInput] No movable units selected (non-lead sled pullers cannot be commanded)")
+		return
+
+	print("[RTSInput] Moving %d units to: %s" % [movable_units.size(), target_position])
+
+	# Move all movable units in formation
+	if movable_units.size() > 1:
+		_move_units_in_formation(movable_units, target_position)
 		# Set player command active for all units
-		for unit in selected_units:
+		for unit in movable_units:
 			_set_player_command_active(unit, true)
-	elif selected_units.size() == 1:
-		selected_units[0].move_to(target_position)
-		_set_player_command_active(selected_units[0], true)
-	elif selected_unit:
-		# Legacy single selection
+	elif movable_units.size() == 1:
+		movable_units[0].move_to(target_position)
+		_set_player_command_active(movable_units[0], true)
+	elif selected_unit and (not selected_unit.has_method("can_receive_move_command") or selected_unit.can_receive_move_command()):
+		# Legacy single selection (only if can receive commands)
 		selected_unit.move_to(target_position)
 		_set_player_command_active(selected_unit, true)
 
@@ -485,9 +537,13 @@ func _select_all_units() -> void:
 
 
 func _show_move_indicator(position: Vector3) -> void:
-	## Visual feedback for move command (optional).
-	# TODO: Add a visual indicator (particle, decal, etc.)
-	pass
+	## Show destination indicator on all selected units.
+	for unit in selected_units:
+		if unit.has_method("show_destination_indicator"):
+			unit.show_destination_indicator(position)
+	# Legacy single selection
+	if selected_unit and selected_unit.has_method("show_destination_indicator"):
+		selected_unit.show_destination_indicator(position)
 
 
 ## --- Public API ---

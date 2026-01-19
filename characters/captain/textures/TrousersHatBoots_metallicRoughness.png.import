@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cfq8spgxue8ob"
 path.s3tc="res://.godot/imported/TrousersHatBoots_metallicRoughness.png-4c9ff3e5d17744eba206c90c6ecc26cc.s3tc.ctex"
+path.etc2="res://.godot/imported/TrousersHatBoots_metallicRoughness.png-4c9ff3e5d17744eba206c90c6ecc26cc.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/TrousersHatBoots_metallicRoughness.png"
-dest_files=["res://.godot/imported/TrousersHatBoots_metallicRoughness.png-4c9ff3e5d17744eba206c90c6ecc26cc.s3tc.ctex"]
+dest_files=["res://.godot/imported/TrousersHatBoots_metallicRoughness.png-4c9ff3e5d17744eba206c90c6ecc26cc.s3tc.ctex", "res://.godot/imported/TrousersHatBoots_metallicRoughness.png-4c9ff3e5d17744eba206c90c6ecc26cc.etc2.ctex"]
 
 [params]
 

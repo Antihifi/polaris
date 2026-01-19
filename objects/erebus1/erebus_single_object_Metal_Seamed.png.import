@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://jtrjqoi8i6tt"
 path.s3tc="res://.godot/imported/erebus_single_object_Metal_Seamed.png-c3c27fdde20242b82a60214e8811ea26.s3tc.ctex"
+path.etc2="res://.godot/imported/erebus_single_object_Metal_Seamed.png-c3c27fdde20242b82a60214e8811ea26.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/erebus1/erebus_single_object_Metal_Seamed.png"
-dest_files=["res://.godot/imported/erebus_single_object_Metal_Seamed.png-c3c27fdde20242b82a60214e8811ea26.s3tc.ctex"]
+dest_files=["res://.godot/imported/erebus_single_object_Metal_Seamed.png-c3c27fdde20242b82a60214e8811ea26.s3tc.ctex", "res://.godot/imported/erebus_single_object_Metal_Seamed.png-c3c27fdde20242b82a60214e8811ea26.etc2.ctex"]
 
 [params]
 

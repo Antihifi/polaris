@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dyml5tlo6m5mi"
 path.s3tc="res://.godot/imported/Fabric029_1K-PNG_NormalGL.png-8b445ce31f3c347d89b1363e251334dc.s3tc.ctex"
+path.etc2="res://.godot/imported/Fabric029_1K-PNG_NormalGL.png-8b445ce31f3c347d89b1363e251334dc.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/JacketFabric029_1K/Fabric029_1K-PNG_NormalGL.png"
-dest_files=["res://.godot/imported/Fabric029_1K-PNG_NormalGL.png-8b445ce31f3c347d89b1363e251334dc.s3tc.ctex"]
+dest_files=["res://.godot/imported/Fabric029_1K-PNG_NormalGL.png-8b445ce31f3c347d89b1363e251334dc.s3tc.ctex", "res://.godot/imported/Fabric029_1K-PNG_NormalGL.png-8b445ce31f3c347d89b1363e251334dc.etc2.ctex"]
 
 [params]
 

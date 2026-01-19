@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://c0ypc2hxfkb0g"
 path.s3tc="res://.godot/imported/ice01_packed_normal_roughness.png-c6e13b24636f1e92360edc27e9689bb8.s3tc.ctex"
+path.etc2="res://.godot/imported/ice01_packed_normal_roughness.png-c6e13b24636f1e92360edc27e9689bb8.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://terrain/ice01/ice01_packed_normal_roughness.png"
-dest_files=["res://.godot/imported/ice01_packed_normal_roughness.png-c6e13b24636f1e92360edc27e9689bb8.s3tc.ctex"]
+dest_files=["res://.godot/imported/ice01_packed_normal_roughness.png-c6e13b24636f1e92360edc27e9689bb8.s3tc.ctex", "res://.godot/imported/ice01_packed_normal_roughness.png-c6e13b24636f1e92360edc27e9689bb8.etc2.ctex"]
 
 [params]
 

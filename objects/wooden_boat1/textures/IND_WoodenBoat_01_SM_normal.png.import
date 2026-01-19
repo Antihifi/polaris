@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bcjqori5g3k5o"
 path.s3tc="res://.godot/imported/IND_WoodenBoat_01_SM_normal.png-6c51d8eba8ed69206ffda2ce2fbd527a.s3tc.ctex"
+path.etc2="res://.godot/imported/IND_WoodenBoat_01_SM_normal.png-6c51d8eba8ed69206ffda2ce2fbd527a.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://objects/wooden_boat1/textures/IND_WoodenBoat_01_SM_normal.png"
-dest_files=["res://.godot/imported/IND_WoodenBoat_01_SM_normal.png-6c51d8eba8ed69206ffda2ce2fbd527a.s3tc.ctex"]
+dest_files=["res://.godot/imported/IND_WoodenBoat_01_SM_normal.png-6c51d8eba8ed69206ffda2ce2fbd527a.s3tc.ctex", "res://.godot/imported/IND_WoodenBoat_01_SM_normal.png-6c51d8eba8ed69206ffda2ce2fbd527a.etc2.ctex"]
 
 [params]
 

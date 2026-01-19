@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dvndnmumn4xp5"
 path.s3tc="res://.godot/imported/Face_normal.png-12301dbcfb1996ffc6fb26951bc49548.s3tc.ctex"
+path.etc2="res://.godot/imported/Face_normal.png-12301dbcfb1996ffc6fb26951bc49548.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/Face_normal.png"
-dest_files=["res://.godot/imported/Face_normal.png-12301dbcfb1996ffc6fb26951bc49548.s3tc.ctex"]
+dest_files=["res://.godot/imported/Face_normal.png-12301dbcfb1996ffc6fb26951bc49548.s3tc.ctex", "res://.godot/imported/Face_normal.png-12301dbcfb1996ffc6fb26951bc49548.etc2.ctex"]
 
 [params]
 

@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://c266k123h1pt4"
 path.s3tc="res://.godot/imported/HBC_station_dock_house_VoodoHut_BackIn_baseColor.jpg-a00ac426ff628d91a1ff99c8eaccc770.s3tc.ctex"
+path.etc2="res://.godot/imported/HBC_station_dock_house_VoodoHut_BackIn_baseColor.jpg-a00ac426ff628d91a1ff99c8eaccc770.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/dockhouse1/HBC_station_dock_house_VoodoHut_BackIn_baseColor.jpg"
-dest_files=["res://.godot/imported/HBC_station_dock_house_VoodoHut_BackIn_baseColor.jpg-a00ac426ff628d91a1ff99c8eaccc770.s3tc.ctex"]
+dest_files=["res://.godot/imported/HBC_station_dock_house_VoodoHut_BackIn_baseColor.jpg-a00ac426ff628d91a1ff99c8eaccc770.s3tc.ctex", "res://.godot/imported/HBC_station_dock_house_VoodoHut_BackIn_baseColor.jpg-a00ac426ff628d91a1ff99c8eaccc770.etc2.ctex"]
 
 [params]
 

@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dte0r28rmkkbc"
 path.s3tc="res://.godot/imported/gravel01_normal_roughness.png-242aafe27394edc19d3a0a5e3925d64f.s3tc.ctex"
+path.etc2="res://.godot/imported/gravel01_normal_roughness.png-242aafe27394edc19d3a0a5e3925d64f.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://terrain/gravel01/gravel01_normal_roughness.png"
-dest_files=["res://.godot/imported/gravel01_normal_roughness.png-242aafe27394edc19d3a0a5e3925d64f.s3tc.ctex"]
+dest_files=["res://.godot/imported/gravel01_normal_roughness.png-242aafe27394edc19d3a0a5e3925d64f.s3tc.ctex", "res://.godot/imported/gravel01_normal_roughness.png-242aafe27394edc19d3a0a5e3925d64f.etc2.ctex"]
 
 [params]
 

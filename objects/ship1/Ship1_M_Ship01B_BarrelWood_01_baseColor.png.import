@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bqerweeg6p8an"
 path.s3tc="res://.godot/imported/Ship1_M_Ship01B_BarrelWood_01_baseColor.png-42c0007bf56506c94fdf991e2bb6c22b.s3tc.ctex"
+path.etc2="res://.godot/imported/Ship1_M_Ship01B_BarrelWood_01_baseColor.png-42c0007bf56506c94fdf991e2bb6c22b.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/ship1/Ship1_M_Ship01B_BarrelWood_01_baseColor.png"
-dest_files=["res://.godot/imported/Ship1_M_Ship01B_BarrelWood_01_baseColor.png-42c0007bf56506c94fdf991e2bb6c22b.s3tc.ctex"]
+dest_files=["res://.godot/imported/Ship1_M_Ship01B_BarrelWood_01_baseColor.png-42c0007bf56506c94fdf991e2bb6c22b.s3tc.ctex", "res://.godot/imported/Ship1_M_Ship01B_BarrelWood_01_baseColor.png-42c0007bf56506c94fdf991e2bb6c22b.etc2.ctex"]
 
 [params]
 

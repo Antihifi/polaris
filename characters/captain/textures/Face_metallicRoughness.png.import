@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://c5re2moc7cjdh"
 path.s3tc="res://.godot/imported/Face_metallicRoughness.png-af3ef030b5aaf917238ef954dacad47e.s3tc.ctex"
+path.etc2="res://.godot/imported/Face_metallicRoughness.png-af3ef030b5aaf917238ef954dacad47e.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/Face_metallicRoughness.png"
-dest_files=["res://.godot/imported/Face_metallicRoughness.png-af3ef030b5aaf917238ef954dacad47e.s3tc.ctex"]
+dest_files=["res://.godot/imported/Face_metallicRoughness.png-af3ef030b5aaf917238ef954dacad47e.s3tc.ctex", "res://.godot/imported/Face_metallicRoughness.png-af3ef030b5aaf917238ef954dacad47e.etc2.ctex"]
 
 [params]
 

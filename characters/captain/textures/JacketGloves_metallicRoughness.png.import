@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://b18j8pm7bjugr"
 path.s3tc="res://.godot/imported/JacketGloves_metallicRoughness.png-1abfba696d7f69c005f4c3947dbf322a.s3tc.ctex"
+path.etc2="res://.godot/imported/JacketGloves_metallicRoughness.png-1abfba696d7f69c005f4c3947dbf322a.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/JacketGloves_metallicRoughness.png"
-dest_files=["res://.godot/imported/JacketGloves_metallicRoughness.png-1abfba696d7f69c005f4c3947dbf322a.s3tc.ctex"]
+dest_files=["res://.godot/imported/JacketGloves_metallicRoughness.png-1abfba696d7f69c005f4c3947dbf322a.s3tc.ctex", "res://.godot/imported/JacketGloves_metallicRoughness.png-1abfba696d7f69c005f4c3947dbf322a.etc2.ctex"]
 
 [params]
 

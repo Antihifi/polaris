@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://ev3q8cnp86i5"
 path.s3tc="res://.godot/imported/Ship1_M_Ship01B_Spyglass_baseColor.png-755d4ea89ec0163d34711cb0c5496bb6.s3tc.ctex"
+path.etc2="res://.godot/imported/Ship1_M_Ship01B_Spyglass_baseColor.png-755d4ea89ec0163d34711cb0c5496bb6.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/ship1/Ship1_M_Ship01B_Spyglass_baseColor.png"
-dest_files=["res://.godot/imported/Ship1_M_Ship01B_Spyglass_baseColor.png-755d4ea89ec0163d34711cb0c5496bb6.s3tc.ctex"]
+dest_files=["res://.godot/imported/Ship1_M_Ship01B_Spyglass_baseColor.png-755d4ea89ec0163d34711cb0c5496bb6.s3tc.ctex", "res://.godot/imported/Ship1_M_Ship01B_Spyglass_baseColor.png-755d4ea89ec0163d34711cb0c5496bb6.etc2.ctex"]
 
 [params]
 

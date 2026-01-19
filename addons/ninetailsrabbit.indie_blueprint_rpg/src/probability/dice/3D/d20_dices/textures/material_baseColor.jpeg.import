@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://d01higojw7opp"
 path.s3tc="res://.godot/imported/material_baseColor.jpeg-125fb5b577ec608ad70df72ef5bc813e.s3tc.ctex"
+path.etc2="res://.godot/imported/material_baseColor.jpeg-125fb5b577ec608ad70df72ef5bc813e.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://addons/ninetailsrabbit.indie_blueprint_rpg/src/probability/dice/3D/d20_dices/textures/material_baseColor.jpeg"
-dest_files=["res://.godot/imported/material_baseColor.jpeg-125fb5b577ec608ad70df72ef5bc813e.s3tc.ctex"]
+dest_files=["res://.godot/imported/material_baseColor.jpeg-125fb5b577ec608ad70df72ef5bc813e.s3tc.ctex", "res://.godot/imported/material_baseColor.jpeg-125fb5b577ec608ad70df72ef5bc813e.etc2.ctex"]
 
 [params]
 

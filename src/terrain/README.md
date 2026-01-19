@@ -357,18 +357,18 @@ extends RefCounted
 
 # Generate heightmap with optional config
 static func generate_heightmap(
-    width_px: int,
-    height_px: int,
-    island_mask: Image,
-    height_rng: RandomNumberGenerator,
-    config: Resource = null  # TerrainConfig or null for defaults
+	width_px: int,
+	height_px: int,
+	island_mask: Image,
+	height_rng: RandomNumberGenerator,
+	config: Resource = null  # TerrainConfig or null for defaults
 ) -> Image
 
 # Carve inlet cove
 static func carve_inlet(
-    heightmap: Image,
-    island_mask: Image,
-    inlet_rng: RandomNumberGenerator
+	heightmap: Image,
+	island_mask: Image,
+	inlet_rng: RandomNumberGenerator
 ) -> Dictionary
 
 # Get height statistics

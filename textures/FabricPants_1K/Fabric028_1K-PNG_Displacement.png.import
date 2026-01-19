@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dkldx35spjsd2"
 path.s3tc="res://.godot/imported/Fabric028_1K-PNG_Displacement.png-4c419434c74b2da7bfdf960671280e3a.s3tc.ctex"
+path.etc2="res://.godot/imported/Fabric028_1K-PNG_Displacement.png-4c419434c74b2da7bfdf960671280e3a.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/FabricPants_1K/Fabric028_1K-PNG_Displacement.png"
-dest_files=["res://.godot/imported/Fabric028_1K-PNG_Displacement.png-4c419434c74b2da7bfdf960671280e3a.s3tc.ctex"]
+dest_files=["res://.godot/imported/Fabric028_1K-PNG_Displacement.png-4c419434c74b2da7bfdf960671280e3a.s3tc.ctex", "res://.godot/imported/Fabric028_1K-PNG_Displacement.png-4c419434c74b2da7bfdf960671280e3a.etc2.ctex"]
 
 [params]
 

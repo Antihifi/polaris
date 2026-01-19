@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3 uid="uid://c2qk8vxnpmjy7"]
+
+[ext_resource type="Shader" path="res://shaders/rope_catenary.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://ddpakdcf3tidx" path="res://objects/ship1/Ship1_M_Ship01B_Rope_01_baseColor.png" id="2_texture"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/rope_radius = 0.03
+shader_parameter/texture_scale = 2.0
+shader_parameter/wind_strength = 0.02
+shader_parameter/wind_speed = 1.5
+shader_parameter/strain_color = Vector3(0.6, 0.3, 0.2)
+shader_parameter/strain_threshold = 1.0
+shader_parameter/rope_texture = ExtResource("2_texture")

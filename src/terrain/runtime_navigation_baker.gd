@@ -5,7 +5,7 @@ extends Node
 ## Source: https://github.com/TokisanGames/Terrain3D/blob/main/project/demo/src/RuntimeNavigationBaker.gd
 ##
 ## Instead of baking the entire terrain at once (which is slow and may crash),
-## this bakes small chunks (256x256m by default) around the player as they move.
+## this bakes small chunks (256x256m by default) around the unit as it moves.
 
 signal bake_finished
 

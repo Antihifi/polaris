@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://c7pqltqnu35y0"
 path.s3tc="res://.godot/imported/Ship1_M_Ship01B_Plank_05_normal.png-7140dc956ad760c0d3c2d7de3336a157.s3tc.ctex"
+path.etc2="res://.godot/imported/Ship1_M_Ship01B_Plank_05_normal.png-7140dc956ad760c0d3c2d7de3336a157.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/ship1/Ship1_M_Ship01B_Plank_05_normal.png"
-dest_files=["res://.godot/imported/Ship1_M_Ship01B_Plank_05_normal.png-7140dc956ad760c0d3c2d7de3336a157.s3tc.ctex"]
+dest_files=["res://.godot/imported/Ship1_M_Ship01B_Plank_05_normal.png-7140dc956ad760c0d3c2d7de3336a157.s3tc.ctex", "res://.godot/imported/Ship1_M_Ship01B_Plank_05_normal.png-7140dc956ad760c0d3c2d7de3336a157.etc2.ctex"]
 
 [params]
 

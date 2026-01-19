@@ -24,6 +24,7 @@ var game_hud: CanvasLayer
 var character_spawner: Node
 var object_spawner: Node
 var inventory_hud: CanvasLayer
+var sled_panel: Control
 
 
 func _ready() -> void:
@@ -58,6 +59,14 @@ func _ready() -> void:
 	# Connect container click to inventory HUD
 	input_handler.container_clicked.connect(_on_container_clicked)
 
+	# Create sled interaction panel
+	var sled_panel_scene := preload("res://ui/sled_panel.tscn")
+	sled_panel = sled_panel_scene.instantiate()
+	add_child(sled_panel)
+
+	# Connect sled click to sled panel
+	input_handler.sled_clicked.connect(_on_sled_clicked)
+
 	# Captain is player-controlled only - no AI controller
 
 	# Focus camera on captain initially
@@ -89,10 +98,19 @@ func _spawn_test_survivors() -> void:
 	character_spawner.print_survivor_summary()
 
 
+## Officer scene for F4 spawning
+var officer_scene: PackedScene = preload("res://src/characters/officers.tscn")
+var spawned_officer_count: int = 0
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Debug key bindings
 	if event is InputEventKey and event.pressed:
 		var key := event as InputEventKey
+
+		# F4: Spawn one officer at camera focus
+		if key.keycode == KEY_F4:
+			_spawn_test_officer()
 
 		# F5: Spawn 10 more survivors
 		if key.keycode == KEY_F5:
@@ -142,6 +160,17 @@ func _on_container_clicked(container: StorageContainer) -> void:
 	inventory_hud.open_container(container)
 
 
+func _on_sled_clicked(sled: Node) -> void:
+	## Handle sled right-click - show sled interaction panel.
+	if not sled or not sled_panel:
+		return
+	# Get currently selected units from input handler
+	var selected: Array[Node] = input_handler.get_selected_units()
+	if selected.is_empty():
+		return
+	sled_panel.show_for_sled(sled, selected, rts_camera)
+
+
 func _add_ai_controller(unit: Node) -> void:
 	## Add ManAIController component to a unit for behavior tree AI.
 	if not unit:
@@ -152,3 +181,40 @@ func _add_ai_controller(unit: Node) -> void:
 	# Load the behavior tree
 	ai_controller.behavior_tree = preload("res://ai/man_bt.tres")
 	unit.add_child(ai_controller)
+
+
+func _spawn_test_officer() -> void:
+	## Spawn a single officer near the captain for testing (F4).
+	## Officers have no AI - fully player controlled like the captain.
+	var spawn_center := captain.global_position if captain else Vector3.ZERO
+
+	# Offset spawn position slightly from captain
+	var offset := Vector3(randf_range(-5.0, 5.0), 0, randf_range(-5.0, 5.0))
+	var spawn_pos := spawn_center + offset
+
+	# Get terrain height at spawn position
+	var terrain: Node = _find_terrain3d()
+	if terrain and "data" in terrain and terrain.data:
+		var height: float = terrain.data.get_height(spawn_pos)
+		if not is_nan(height):
+			spawn_pos.y = height
+
+	# Instantiate officer
+	var officer: Node = officer_scene.instantiate()
+	spawned_officer_count += 1
+	officer.unit_name = "Officer %d" % spawned_officer_count
+	officer.movement_speed = 5.0  # Match Men speed (CharacterSpawner sets 5.0)
+
+	# Add to scene tree FIRST (before setting global_position)
+	add_child(officer)
+	officer.global_position = spawn_pos
+
+	print("[MainController] Spawned %s at %s (F4)" % [officer.unit_name, spawn_pos])
+
+
+func _find_terrain3d() -> Node:
+	## Find the Terrain3D node in the scene.
+	var nodes := get_tree().get_nodes_in_group("terrain")
+	if nodes.size() > 0:
+		return nodes[0]
+	return null

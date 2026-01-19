@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bwyhk62aeym6n"
 path.s3tc="res://.godot/imported/Gravel040_2K-PNG_NormalGL.png-c04d3b9236ac6a2b68ed1bb31c9cb958.s3tc.ctex"
+path.etc2="res://.godot/imported/Gravel040_2K-PNG_NormalGL.png-c04d3b9236ac6a2b68ed1bb31c9cb958.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://terrain/rock_dark01/gravel01/Gravel040_2K-PNG_NormalGL.png"
-dest_files=["res://.godot/imported/Gravel040_2K-PNG_NormalGL.png-c04d3b9236ac6a2b68ed1bb31c9cb958.s3tc.ctex"]
+dest_files=["res://.godot/imported/Gravel040_2K-PNG_NormalGL.png-c04d3b9236ac6a2b68ed1bb31c9cb958.s3tc.ctex", "res://.godot/imported/Gravel040_2K-PNG_NormalGL.png-c04d3b9236ac6a2b68ed1bb31c9cb958.etc2.ctex"]
 
 [params]
 

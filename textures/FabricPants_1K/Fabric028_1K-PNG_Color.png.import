@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://beqxolt5n6xuw"
 path.s3tc="res://.godot/imported/Fabric028_1K-PNG_Color.png-ee7586c9ae1953e755fe4d7e849e7fde.s3tc.ctex"
+path.etc2="res://.godot/imported/Fabric028_1K-PNG_Color.png-ee7586c9ae1953e755fe4d7e849e7fde.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/FabricPants_1K/Fabric028_1K-PNG_Color.png"
-dest_files=["res://.godot/imported/Fabric028_1K-PNG_Color.png-ee7586c9ae1953e755fe4d7e849e7fde.s3tc.ctex"]
+dest_files=["res://.godot/imported/Fabric028_1K-PNG_Color.png-ee7586c9ae1953e755fe4d7e849e7fde.s3tc.ctex", "res://.godot/imported/Fabric028_1K-PNG_Color.png-ee7586c9ae1953e755fe4d7e849e7fde.etc2.ctex"]
 
 [params]
 

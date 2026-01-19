@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cx7bdix5e88s6"
 path.s3tc="res://.godot/imported/TrousersHatBoots_normal.png-3b60e8e137fda33188e7a6cad04ec8d5.s3tc.ctex"
+path.etc2="res://.godot/imported/TrousersHatBoots_normal.png-3b60e8e137fda33188e7a6cad04ec8d5.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://characters/captain/textures/TrousersHatBoots_normal.png"
-dest_files=["res://.godot/imported/TrousersHatBoots_normal.png-3b60e8e137fda33188e7a6cad04ec8d5.s3tc.ctex"]
+dest_files=["res://.godot/imported/TrousersHatBoots_normal.png-3b60e8e137fda33188e7a6cad04ec8d5.s3tc.ctex", "res://.godot/imported/TrousersHatBoots_normal.png-3b60e8e137fda33188e7a6cad04ec8d5.etc2.ctex"]
 
 [params]
 

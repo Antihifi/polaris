@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dm8krywvpkaqc"
 path.s3tc="res://.godot/imported/Metal048C_1K-PNG_Color.png-ce8d9f1773b2312d83308b5a448bd0f5.s3tc.ctex"
+path.etc2="res://.godot/imported/Metal048C_1K-PNG_Color.png-ce8d9f1773b2312d83308b5a448bd0f5.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/MetalEyelets_1K/Metal048C_1K-PNG_Color.png"
-dest_files=["res://.godot/imported/Metal048C_1K-PNG_Color.png-ce8d9f1773b2312d83308b5a448bd0f5.s3tc.ctex"]
+dest_files=["res://.godot/imported/Metal048C_1K-PNG_Color.png-ce8d9f1773b2312d83308b5a448bd0f5.s3tc.ctex", "res://.godot/imported/Metal048C_1K-PNG_Color.png-ce8d9f1773b2312d83308b5a448bd0f5.etc2.ctex"]
 
 [params]
 

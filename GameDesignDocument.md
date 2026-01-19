@@ -23,6 +23,48 @@ A brutal arctic survival RTS where 30-45 icebound survivors must endure a year o
 ### Start Condition (MVP)
 Game begins with survivors already on shore with randomized salvage from their crushed/partially sunken ship. No interactive ship-sinking sequence for MVP.
 
+### Initial Spawn & Early Game Progression
+
+**Base Camp Spawn:**
+- **Captain:** 1 (always)
+- **Officers:** 2-4 (randomized)
+- **Men:** 15-20 (randomized)
+- **Location:** Near the trapped ship on the north coast
+
+**Phase 1: Find the Missing Men**
+
+During the chaos of escaping the ship being crushed (and the ensuing snowstorm), several groups of men became separated and are now scattered along the north coast. These "errant groups" represent a critical early-game objective.
+
+| Group Count | Men Per Group | Officers Per Group | Supplies |
+|-------------|---------------|-------------------|----------|
+| 2-3 groups | 3-5 men each | 0-1 (often none) | Small cache of supplies |
+
+**Errant Group Placement:**
+- Spawned along the north coast biome
+- Each group has a very small supply cache (food, fuel, minor materials)
+- Groups are stationary, waiting to be found
+
+**Time Pressure - Attrition:**
+If the player does not find these groups quickly enough:
+- Men will begin dying from exposure and starvation
+- Survivors may resort to cannibalism, killing and eating each other
+- The player may arrive to find only corpses and the grim aftermath
+- **Remaining bodies can be used as food/resources** (with standard negative morale penalties for cannibalism)
+
+**Strategic Implications:**
+
+This design intentionally prevents a "speed run" south strategy:
+1. **Insufficient Officers:** Starting with only 2-4 officers means the player cannot directly control enough units to execute a long march
+2. **Insufficient Men:** 15-20 men cannot establish the necessary supply chain (leap-frogging caches) while pulling sleds
+3. **No Full Complement:** The player must build up their force before attempting the southern journey
+
+**Incentivized Behavior:**
+- Stay near the north coast initially
+- Prioritize scouting for errant groups
+- Build up base camp infrastructure
+- Accumulate supplies and grow the roster
+- **Promote enough officers (goal: 11)** before attempting the dash south to the HBC whaling station
+
 ### Win Condition
 Survive until rescue ship arrives. At least one survivor must be alive.
 - **Rescue Timer:** 365 days + random(30-180) days
@@ -460,6 +502,7 @@ At new game start:
 | Polar Bear Meat | High | Risky to eat raw, dangerous to obtain |
 | Whale Meat | Very High | Trade with natives or rare whale kill |
 | Human Meat | High | Massive morale penalty, mental break risk |
+| Tripe de Roche | Very Low | Rock lichen, foraged in flatlands near HBC, last-resort sustenance |
 
 **Fuel:**
 | Item | Burn Time | Source |
@@ -547,6 +590,64 @@ Uses existing IndieBlueprintRecipeManager system.
 - Near-guaranteed survival if successful
 - Requires almost all tools and materials
 - Very high risk of failure/death
+
+---
+
+## Sleds & Transport
+
+### Sled Construction
+Building a sled requires:
+1. Designate an officer as **Carpenter**
+2. Construct a **Carpentry Station** (requires wood, nails, tools)
+3. Salvage sufficient **wood** from small boats or the ship itself
+4. Craft the sled at the carpentry station
+
+### Sled Composition
+Each sled must contain at least one small boat. Additional cargo loads via physics-based stacking:
+
+| Component | Required | Quantity | Weight (kg) |
+|-----------|----------|----------|-------------|
+| Small Boat | Yes | 1 | ~50 (base) |
+| Crates | Optional | As fits in boat | +20-40 each |
+| Barrels | Optional | As fits in boat | +30-60 each |
+| Sick/Recovering Men | Optional | As fits | +70-90 each |
+
+Items physically rest in the boat via collision. Total weight affects pull difficulty.
+
+### Terrain Friction
+Different terrain surfaces affect sled movement:
+
+| Surface | Friction | Pull Difficulty | Notes |
+|---------|----------|-----------------|-------|
+| Ice | 0.3-0.4 | Easy | Frozen sea, inlet |
+| Snow | 0.6-0.7 | Moderate | Primary island surface |
+| Gravel | 0.8-0.9 | Hard | Low elevation, beaches |
+| Rock | 0.95+ | Very Hard | Steep slopes, cliffs |
+
+Slope also affects difficulty: uphill requires more force, downhill provides momentum assistance.
+
+### Man-Hauling Mechanics
+Men (or dogs when available) pull sleds using rope harnesses:
+
+**Physics:**
+- Sleds respond realistically to physics (gravity, momentum, friction)
+- PinJoint3D simulates rope attachment between pullers and sled
+- Multiple pullers share the load, reducing individual strain
+
+**Puller Coordination:**
+- One designated **lead puller** navigates the path
+- Additional pullers follow in formation behind the leader
+- All pullers must be attached before movement begins
+
+**Costs:**
+- Energy drain: -3.0/hr per puller
+- Morale drain: -0.25/hr per puller ("Man-hauling sleds" penalty)
+- Heavier loads = slower movement speed
+
+**Dogs (Future):**
+- More efficient pulling (less energy per unit of force)
+- No morale penalty
+- Must be acquired through trade with natives
 
 ---
 

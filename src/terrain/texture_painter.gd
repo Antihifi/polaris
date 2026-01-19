@@ -254,8 +254,8 @@ static func _int_to_float_bits(i: int) -> float:
 
 
 ## Determine overlay texture for blending transitions
-## Returns a complementary texture ID for smooth transitions
-## IMPORTANT: Frozen sea and inlet MUST be ice/snow blend ONLY (no rock!)
+## Returns a complimentary texture ID for smooth transitions
+## Frozen sea and inlet MUST be ice/snow blend ONLY (no rock!)
 static func _determine_overlay_texture(base_id: int, height_m: float, slope_deg: float, mask: float) -> int:
 	# === FROZEN SEA/COASTLINE - Always ice/snow blend, NEVER rock ===
 	if mask < 0.3:
@@ -266,7 +266,6 @@ static func _determine_overlay_texture(base_id: int, height_m: float, slope_deg:
 
 	# === INLET/HARBOR ZONE - ICE/SNOW blend ONLY ===
 	# Low, flat areas within the island are frozen water (inlet, harbor)
-	# Ships get stuck in ice, not rock/gravel!
 	if height_m < 5.0 and slope_deg < 15.0:
 		if base_id == TEXTURE_ICE:
 			return TEXTURE_SNOW

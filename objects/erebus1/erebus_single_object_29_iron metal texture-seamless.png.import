@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dv6sg70iusq6j"
 path.s3tc="res://.godot/imported/erebus_single_object_29_iron metal texture-seamless.png-ca7e8aaf6b3f5c2a5ff6776db70d82ac.s3tc.ctex"
+path.etc2="res://.godot/imported/erebus_single_object_29_iron metal texture-seamless.png-ca7e8aaf6b3f5c2a5ff6776db70d82ac.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://objects/erebus1/erebus_single_object_29_iron metal texture-seamless.png"
-dest_files=["res://.godot/imported/erebus_single_object_29_iron metal texture-seamless.png-ca7e8aaf6b3f5c2a5ff6776db70d82ac.s3tc.ctex"]
+dest_files=["res://.godot/imported/erebus_single_object_29_iron metal texture-seamless.png-ca7e8aaf6b3f5c2a5ff6776db70d82ac.s3tc.ctex", "res://.godot/imported/erebus_single_object_29_iron metal texture-seamless.png-ca7e8aaf6b3f5c2a5ff6776db70d82ac.etc2.ctex"]
 
 [params]
 

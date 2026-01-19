@@ -418,3 +418,34 @@ func stop() -> void:
 ```
 
 **Key insight:** NavigationAgent3D continues working independently until explicitly stopped. Just setting `is_moving = false` on the CharacterBody3D is NOT enough!
+
+### ⚠️ NavMesh Y-Offset Causing Units to Get Stuck (Fixed 2026-01-19) - MAJOR BUG
+
+**Problem:** Units would get stuck immediately after spawning or at random points, oscillating at exactly 0.5m from their next waypoint. The unit would try to move but never advance to the next path point.
+
+**Diagnosis Method:** Added F9 debug mode that bypasses NavigationAgent3D entirely and walks in facing direction using pure physics. When stuck unit pressed F9, it INSTANTLY unstuck and walked perfectly - proving issue was NAVIGATION not PHYSICS.
+
+**Root Cause:** NavMesh is baked 0.5m ABOVE terrain surface due to `cell_height` quantization:
+```
+[ProceduralGame] Captain Y=-2.00, closest_start Y=-1.50, delta=0.50
+[Francis Crozier] NAV: path_points=7 next_pos=(1343.822, -1.5015, -4421.307) dist=0.50
+```
+
+The unit is at Y=-2.0, waypoint is at Y=-1.5015. The 0.5m distance is almost entirely the Y difference!
+
+With `path_desired_distance = 0.5`, the NavigationAgent considers waypoints "reached" at 0.5m 3D distance. But the Y gap alone is 0.5m, so even when the unit is directly below the waypoint in XZ, the 3D distance never drops below ~0.5m.
+
+**Solution:** Increase `path_desired_distance` from 0.5 to 1.0 in both:
+- `captain.tscn` NavigationAgent3D
+- `men.tscn` NavigationAgent3D
+
+This gives enough margin to account for NavMesh height variance.
+
+```gdscript
+# In .tscn files, NavigationAgent3D node:
+path_desired_distance = 1.0  # Was 0.5, too tight for NavMesh Y-offset
+```
+
+**Alternative fix (code-based):** Use XZ distance for waypoint proximity check instead of 3D distance, then fall back to moving toward final target when close in XZ but stuck due to Y mismatch. This is more robust but adds code complexity.
+
+**Key insight:** Terrain3D NavMesh baking creates a mesh at quantized heights that may not match actual terrain surface. The `path_desired_distance` must be larger than the maximum expected height variance between NavMesh and terrain.

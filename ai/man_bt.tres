@@ -54,6 +54,7 @@ value = SubResource("BBVariant_bxk66")
 
 [sub_resource type="BTAction" id="BTAction_n2iu8"]
 script = ExtResource("3_resource")
+resource_group = "beds"
 
 [sub_resource type="BTAction" id="BTMoveToBlackboard_shelter"]
 script = ExtResource("2_move")
@@ -280,7 +281,7 @@ saved_value = NodePath("UnitModel/AnimationPlayer")
 resource_name = "UnitModel/AnimationPlayer"
 
 [sub_resource type="BTPlayAnimation" id="BTPlayAnimation_aul44"]
-await_completion = 2.0
+await_completion = 3.0
 animation_player = SubResource("BBNode_d5ls8")
 animation_name = &"taking_item"
 blend = 1.0
