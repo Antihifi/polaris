@@ -8,9 +8,17 @@ signal deselected
 signal reached_destination
 signal stats_changed  # Emitted when stats are updated
 signal inventory_changed  # Emitted when unit inventory contents change
+signal discovered(unit: Node)  # Emitted when errant unit is recruited
+
+## Unit ranks - determines control mode and UI display
+enum UnitRank { MAN, OFFICER, CAPTAIN }
 
 @export_category("Identity")
 @export var unit_name: String = "Survivor"
+@export var rank: UnitRank = UnitRank.MAN
+
+## Discovery state - errant units start undiscovered (not in roster)
+@export var is_discovered: bool = true
 
 @export_category("Movement")
 ## Movement speed in units/second. Also controls animation and footstep sound speed.
@@ -42,6 +50,8 @@ signal inventory_changed  # Emitted when unit inventory contents change
 
 @onready var navigation_agent: NavigationAgent3D = $NavigationAgent3D
 @onready var animation_player: AnimationPlayer = null
+## Sled pulling component (optional child node)
+var sled_puller: Node = null  # SledPullerComponent
 
 # Footstep audio (3D positional)
 var footstep_sound: AudioStream = preload("res://sounds/snow-walk-1.mp3")
@@ -67,6 +77,10 @@ const INVENTORY_GRID_SIZE := Vector2i(3, 3)
 ## Warmth/shelter tracking (populated by Area3D enter/exit signals)
 var _active_heat_sources: Array[Node] = []  # WarmthArea nodes currently in range
 var _current_shelter: Node = null  # ShelterArea node if inside shelter
+
+## Leash system - restricts AI movement to area around camp (for errant groups)
+@export var leash_center: Vector3 = Vector3.INF
+@export var leash_radius: float = 20.0
 
 
 func _ready() -> void:
@@ -100,8 +114,14 @@ func _ready() -> void:
 	_footstep_player.finished.connect(_on_footstep_finished)
 
 	# Add to groups for easy querying
-	add_to_group("selectable_units")
-	add_to_group("survivors")  # For TimeManager needs updates
+	# Only discovered units appear in roster - errant groups must be found first
+	if is_discovered:
+		add_to_group("selectable_units")
+	add_to_group("survivors")  # For TimeManager needs updates (even undiscovered)
+
+	# Captain and discovered officers can discover errant units
+	if rank == UnitRank.CAPTAIN or (rank == UnitRank.OFFICER and is_discovered):
+		_setup_discovery_area()
 
 	# Get TimeManager reference for time scale
 	_time_manager = get_node_or_null("/root/TimeManager")
@@ -110,6 +130,9 @@ func _ready() -> void:
 
 	# Setup inventory
 	_setup_inventory()
+
+	# Get sled puller component if present
+	sled_puller = get_node_or_null("SledPullerComponent")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -125,8 +148,13 @@ func _physics_process(delta: float) -> void:
 	if is_animation_locked:
 		return
 
-	# Non-lead sled pullers automatically follow the leader
-	_update_sled_follower()
+	# =========================================================================
+	# SLED PULLING BEHAVIOR (delegated to component)
+	# Support pullers follow the leader in formation (skip normal movement)
+	# =========================================================================
+	if sled_puller and sled_puller.should_follow_leader():
+		sled_puller.follow_leader(delta)
+		return  # Support pullers don't use normal navigation
 
 	if not is_moving:
 		return
@@ -183,13 +211,6 @@ func _physics_process(delta: float) -> void:
 			var velocity_xz := (next_pos - global_position).normalized() * movement_speed
 			velocity.x = velocity_xz.x
 			velocity.z = velocity_xz.z
-
-			# Apply sled pulling constraints - SIMPLIFIED
-			# Only slow down based on weight, let sled physics handle rope tension
-			if is_pulling_sled():
-				var speed_mod: float = _get_sled_speed_modifier()
-				velocity.x *= speed_mod
-				velocity.z *= speed_mod
 
 			# Rotate towards movement direction
 			var target_rotation := atan2(velocity_xz.x, velocity_xz.z)
@@ -512,14 +533,14 @@ func _drain_walking_energy(delta: float) -> void:
 		stats_changed.emit()
 
 
-func update_needs(delta_hours: float, in_shelter: bool, near_fire: bool, ambient_temp: float, in_sunlight: bool = true) -> void:
+func update_needs(delta_hours: float, in_shelter: bool, near_fire: bool, ambient_temp: float, in_sunlight: bool = true, is_blizzard: bool = false) -> void:
 	## Called by TimeManager each in-game hour to update survival needs.
 	if not stats:
 		return
 
 	var is_working := is_moving  # For now, moving counts as working
 	var in_bed := is_in_bed()  # Check if sleeping in actual bed for 2X bonus
-	stats.apply_hourly_decay(is_working, in_shelter, in_bed, near_fire, ambient_temp, in_sunlight)
+	stats.apply_hourly_decay(is_working, in_shelter, in_bed, near_fire, ambient_temp, in_sunlight, is_blizzard)
 	stats_changed.emit()
 
 	# Check for death
@@ -729,6 +750,81 @@ func get_morale_aura_radius() -> float:
 	return 0.0
 
 
+# --- Discovery System (Errant Groups) ---
+
+func _setup_discovery_area() -> void:
+	## Add DiscoveryArea to captain/officers for recruiting errant units.
+	var discovery_area := DiscoveryArea.new()
+	discovery_area.name = "DiscoveryArea"
+	discovery_area.discovery_radius = 15.0  # GDD: 10-15m recruitment range
+	add_child(discovery_area)
+
+
+func discover() -> void:
+	## Called when a captain/officer comes within recruitment range.
+	## Adds unit to selectable_units group and UI roster.
+	if is_discovered:
+		return
+
+	is_discovered = true
+	add_to_group("selectable_units")
+	clear_leash()  # Free unit from camp restriction
+
+	# If this is an officer, transition from AI to player control
+	if rank == UnitRank.OFFICER:
+		_transition_to_player_control()
+		# Officers can now discover other errant units
+		_setup_discovery_area()
+
+	discovered.emit(self)
+	print("[ClickableUnit] %s has been discovered and recruited!" % unit_name)
+
+
+func _transition_to_player_control() -> void:
+	## Remove AI controller from officer when discovered.
+	## Officers become directly controllable like captain.
+	var ai_controller := get_node_or_null("ManAIController")
+	if ai_controller:
+		ai_controller.queue_free()
+		print("[ClickableUnit] %s transitioned to player control" % unit_name)
+
+
+# --- Leash System (Errant Groups) ---
+
+func is_leashed() -> bool:
+	## Returns true if unit is restricted to a camp area.
+	return leash_center != Vector3.INF
+
+
+func clear_leash() -> void:
+	## Remove camp restriction.
+	leash_center = Vector3.INF
+
+
+func is_within_leash(target_pos: Vector3) -> bool:
+	## Check if target position is within leash radius.
+	## Returns true if not leashed or if target is within bounds.
+	if not is_leashed():
+		return true
+	return leash_center.distance_to(target_pos) <= leash_radius
+
+
+func get_leash_constrained_position(target_pos: Vector3) -> Vector3:
+	## Return position clamped to leash boundary.
+	## If target is outside leash, returns closest point on boundary.
+	if not is_leashed():
+		return target_pos
+
+	var to_target := target_pos - leash_center
+	var distance := to_target.length()
+
+	if distance <= leash_radius:
+		return target_pos
+
+	# Clamp to boundary
+	return leash_center + to_target.normalized() * leash_radius
+
+
 # --- AI Integration ---
 
 func _clear_player_command() -> void:
@@ -817,231 +913,69 @@ var is_near_target: bool:
 
 
 # ============================================================================
-# SLED PULLING SYSTEM
+# SLED ATTACHMENT SYSTEM (delegated to SledPullerComponent)
 # ============================================================================
-# Units can attach to and pull sleds. The sled controller handles physics.
-# Non-lead pullers automatically follow the lead puller.
+# Sled pulling is handled by optional SledPullerComponent child node.
+# These methods delegate to the component for backwards compatibility.
 
-## Reference to the sled this unit is currently pulling (null if not pulling)
-var attached_sled: Node = null
+## Formation offset when pulling as support (set by SledController)
+var sled_formation_offset: Vector3 = Vector3.ZERO:
+	get:
+		return sled_puller.sled_formation_offset if sled_puller else Vector3.ZERO
+	set(value):
+		if sled_puller:
+			sled_puller.sled_formation_offset = value
 
-## Whether this unit is the lead puller (determines navigation)
-var is_lead_puller: bool = false
 
-## Lateral offset from leader when in formation (side-by-side pulling)
-const SLED_FOLLOW_LATERAL_OFFSET: float = 1.5
-## How close follower needs to be to target position before stopping
-const SLED_FOLLOW_ARRIVAL: float = 1.0
+var attached_sled: Node:
+	get:
+		return sled_puller.attached_sled if sled_puller else null
 
 
 func attach_to_sled(sled: Node) -> bool:
 	## Attach this unit to a sled as a puller.
-	## Returns true if successfully attached.
-	if attached_sled != null:
-		push_warning("[%s] Already attached to a sled" % unit_name)
-		return false
-
-	if not sled.has_method("attach_puller"):
-		push_warning("[%s] Target is not a valid sled" % unit_name)
-		return false
-
-	if sled.attach_puller(self):
-		attached_sled = sled
-		# Check if we became the lead puller
-		if "lead_puller" in sled and sled.lead_puller == self:
-			is_lead_puller = true
-		print("[%s] Attached to sled as %s" % [unit_name, "lead" if is_lead_puller else "support"])
-		return true
-
+	if sled_puller:
+		return sled_puller.attach_to_sled(sled)
+	push_warning("[%s] No SledPullerComponent - cannot attach to sled" % unit_name)
 	return false
 
 
 func detach_from_sled() -> void:
 	## Detach this unit from its current sled.
-	if attached_sled == null:
-		return
-
-	if attached_sled.has_method("detach_puller"):
-		attached_sled.detach_puller(self)
-
-	print("[%s] Detached from sled" % unit_name)
-	attached_sled = null
-	is_lead_puller = false
+	if sled_puller:
+		sled_puller.detach_from_sled()
 
 
 func is_pulling_sled() -> bool:
 	## Returns true if this unit is currently attached to and pulling a sled.
-	return attached_sled != null
+	return sled_puller != null and sled_puller.is_pulling()
 
 
 func can_receive_move_command() -> bool:
 	## Returns true if this unit can receive direct movement commands.
 	## Non-lead sled pullers cannot be commanded directly - they follow the leader.
-	if is_pulling_sled() and not is_lead_puller:
+	if sled_puller and sled_puller.is_support_puller():
 		return false
 	return true
 
 
-func _update_sled_follower() -> void:
-	## Called each frame for non-lead pullers to follow the lead puller.
-	## Positions follower NEXT TO the leader (side-by-side formation), not behind.
-	if not is_pulling_sled() or is_lead_puller:
-		return
-
-	if attached_sled == null or not "lead_puller" in attached_sled:
-		return
-
-	var leader: Node3D = attached_sled.lead_puller
-	if leader == null or leader == self:
-		return
-
-	# Get leader's forward direction (where they're facing/moving)
-	var leader_forward: Vector3 = -leader.global_transform.basis.z.normalized()
-	leader_forward.y = 0.0
-	if leader_forward.length_squared() < 0.01:
-		leader_forward = Vector3.FORWARD
-	leader_forward = leader_forward.normalized()
-
-	# Calculate lateral offset direction (perpendicular to leader's facing)
-	var lateral_dir: Vector3 = leader_forward.cross(Vector3.UP).normalized()
-
-	# Determine which side this follower should be on based on puller index
-	var puller_index: int = 1
-	if "pullers" in attached_sled:
-		puller_index = attached_sled.pullers.find(self)
-		if puller_index < 1:
-			puller_index = 1  # Safety: ensure non-zero index for followers
-
-	# Alternate sides: index 1 goes right, index 2 goes left, etc.
-	var side: float = 1.0 if (puller_index % 2 == 1) else -1.0
-	# Stack further out for more pullers (row 1, 1, 2, 2, 3, 3...)
-	var row: int = (puller_index - 1) / 2 + 1
-	var lateral_offset: float = SLED_FOLLOW_LATERAL_OFFSET * row * side
-
-	# Slight stagger behind - followers slightly behind leader per row
-	var behind_offset: float = 0.3 * row
-
-	# Target position: NEXT TO leader (not at rope distance from harness)
-	var follow_pos: Vector3 = leader.global_position + lateral_dir * lateral_offset - leader_forward * behind_offset
-
-	# Check distance to follow position
-	var dist_to_follow: float = global_position.distance_to(follow_pos)
-
-	# More aggressive re-triggering with tighter threshold
-	if dist_to_follow > 0.5:
-		# Always update nav target to track leader movement
-		navigation_agent.target_position = follow_pos
-		if not is_moving:
-			is_moving = true
-			_play_animation("walking")
-			_start_footsteps()
-		_sync_animation_to_leader()
-	elif dist_to_follow < 0.3 and is_moving:
-		# Very close to target, can stop
-		is_moving = false
-		velocity = Vector3.ZERO
-		_play_animation("idle")
-		_stop_footsteps()
-
-	# Always sync animation speed to leader when moving
-	if is_moving:
-		_sync_animation_to_leader()
-
-
 func get_nearest_sled(max_distance: float = 10.0) -> Node:
 	## Find the nearest sled within max_distance.
+	if sled_puller:
+		return sled_puller.get_nearest_sled(max_distance)
+	# Fallback if no component
 	var nearest: Node = null
 	var nearest_dist: float = max_distance
-
 	for sled in get_tree().get_nodes_in_group("sleds"):
 		var dist: float = global_position.distance_to(sled.global_position)
 		if dist < nearest_dist:
 			nearest_dist = dist
 			nearest = sled
-
 	return nearest
 
 
 func get_movement_velocity() -> Vector3:
-	## Return current movement velocity for external systems (sled pulling).
-	## Returns zero when not actively moving to prevent stale velocity reads.
+	## Return current movement velocity for external systems.
 	if is_moving:
 		return velocity
 	return Vector3.ZERO
-
-
-func _get_sled_harness_position() -> Vector3:
-	## Get the harness attachment point on the sled (front marker or sled center).
-	if attached_sled == null:
-		return global_position
-	if "sled_front" in attached_sled and attached_sled.sled_front != null:
-		return attached_sled.sled_front.global_position
-	return attached_sled.global_position
-
-
-func _get_sled_speed_modifier() -> float:
-	## Calculate movement speed modifier based on sled weight.
-	## Heavier loads = slower movement. Multiple pullers share the burden.
-	if attached_sled == null:
-		return 1.0
-
-	# Get sled total weight and number of pullers
-	var total_weight: float = 150.0  # Default base
-	if attached_sled.has_method("get_total_weight"):
-		total_weight = attached_sled.get_total_weight()
-
-	var num_pullers: int = 1
-	if "pullers" in attached_sled:
-		num_pullers = maxi(attached_sled.pullers.size(), 1)
-
-	# Each puller can comfortably pull ~100kg at full speed
-	var comfortable_weight_per_puller: float = 100.0
-	var weight_per_puller: float = total_weight / num_pullers
-
-	# Speed modifier: 1.0 at comfortable weight, decreasing as weight increases
-	# Minimum 0.3 (30% speed) even for very heavy loads
-	var modifier: float = comfortable_weight_per_puller / maxf(weight_per_puller, 1.0)
-	return clampf(modifier, 0.3, 1.0)
-
-
-func _sync_animation_to_leader() -> void:
-	## Sync this follower's animation speed to match the leader's effective speed.
-	## All pullers should move at the same pace since they're pulling together.
-	if attached_sled == null or not "lead_puller" in attached_sled:
-		return
-
-	var leader: Node3D = attached_sled.lead_puller
-	if leader == null or leader == self:
-		return
-
-	# Get leader's effective movement speed (their base speed * sled modifier)
-	var leader_speed: float = 1.0
-	if "movement_speed" in leader:
-		leader_speed = leader.movement_speed
-
-	# Apply sled weight modifier (same as leader experiences)
-	var speed_mod: float = _get_sled_speed_modifier()
-	var effective_speed: float = leader_speed * speed_mod
-
-	# Cap our speed to not exceed leader's effective speed
-	var our_effective_speed: float = minf(movement_speed * speed_mod, effective_speed)
-
-	# Update animation speed to match the capped effective speed
-	var time_scale := _get_time_scale()
-	if animation_player:
-		animation_player.speed_scale = maxf(0.0, base_animation_speed * our_effective_speed * time_scale)
-
-	# Also sync footstep pitch
-	if is_instance_valid(_footstep_player):
-		var pitch := base_footstep_speed * our_effective_speed * time_scale
-		if pitch > 0.01:
-			_footstep_player.pitch_scale = pitch
-
-
-func _is_rope_taut() -> bool:
-	## Check if rope is at max tension (used by rope visual for taut appearance).
-	if attached_sled == null:
-		return false
-	var rope_len: float = attached_sled.rope_length if "rope_length" in attached_sled else 2.0
-	var harness_pos: Vector3 = _get_sled_harness_position()
-	return global_position.distance_to(harness_pos) >= rope_len * 0.8

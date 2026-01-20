@@ -47,12 +47,12 @@ const PEAK_POSITIONS: Array = [
 ## Creates an erosion-style cove from coastline into island
 ## Increased 3x per user feedback - needs to be large enough for ship + landing area
 const INLET_WIDTH_PIXELS: int = 80  # ~200m wide cove mouth at 2.5m/pixel
-const INLET_LENGTH_PIXELS: int = 400  # ~1000m long cove into island (was 200)
+const INLET_LENGTH_PIXELS: int = 600  # ~1500m long cove into island
 const INLET_FLOOR_HEIGHT: float = 3.0  # Cove floor height (above sea level for ship)
 const FROZEN_SEA_HEIGHT: float = -2.0  # Flat frozen sea level around island
 
 ## Smooth blending radius to prevent spike artifacts at cove edges
-const INLET_BLEND_RADIUS: int = 40  # ~100m smooth transition zone
+const INLET_BLEND_RADIUS: int = 80  # ~200m smooth transition zone for natural blending
 
 
 ## Generate the heightmap based on island mask
@@ -90,7 +90,6 @@ static func generate_heightmap(
 
 	var cfg_ridge_frequency: float = config.ridge_frequency if config else 0.008
 	var cfg_ridge_amplitude: float = config.ridge_amplitude if config else 0.3
-	var cfg_use_ridged_noise: bool = config.use_ridged_noise if config else true
 	var cfg_valley_frequency: float = config.valley_frequency if config else 0.005
 	var cfg_valley_cut_strength: float = config.valley_cut_strength if config else 0.3
 	var cfg_erosion_frequency: float = config.erosion_frequency if config else 0.012
@@ -210,27 +209,16 @@ static func generate_heightmap(
 					# Base elevation factor (still uses distance, but less dominant)
 					var dist_factor := 1.0 - clampf(peak_dist / peak_radius, 0.0, 1.0)
 
-					# === RIDGED NOISE for non-conical peaks ===
-					# Create ridge lines radiating from peak using absolute value trick
+					# === SMOOTH NOISE for mountain variation ===
+					# Uses standard noise (not ridged) to avoid "castle wall" artifacts
 					var ridge_raw := ridge_pattern.get_noise_2d(float(x), float(y))
-					var ridge_val: float
-					if cfg_use_ridged_noise:
-						ridge_val = 1.0 - absf(ridge_raw)  # Ridges where noise crosses zero
-						ridge_val = ridge_val * ridge_val  # Sharpen the ridges
-					else:
-						# Standard smooth noise (no castle walls)
-						ridge_val = (ridge_raw + 1.0) * 0.5
+					var ridge_val: float = (ridge_raw + 1.0) * 0.5  # Smooth 0-1 range
 
 					# === DOMAIN WARPING to break up uniformity ===
 					var warp_x := warp_noise.get_noise_2d(float(x), float(y)) * 100.0
 					var warp_y := warp_noise.get_noise_2d(float(x) + 500.0, float(y)) * 100.0
 					var warped_ridge := ridge_pattern.get_noise_2d(float(x) + warp_x, float(y) + warp_y)
-					var warped_val: float
-					if cfg_use_ridged_noise:
-						warped_val = 1.0 - absf(warped_ridge)
-						warped_val = warped_val * warped_val
-					else:
-						warped_val = (warped_ridge + 1.0) * 0.5
+					var warped_val: float = (warped_ridge + 1.0) * 0.5  # Smooth 0-1 range
 
 					# Combine both ridge patterns
 					var combined_ridge := maxf(ridge_val, warped_val * 0.8)
@@ -290,49 +278,16 @@ static func generate_heightmap(
 
 				mountain_height = mtn_raw * cfg_max_hill_height * 1.5 * mountain_factor * mask_value
 
-			# 5. CLIFF RIDGES - Full jagged cliffs on COAST, smoother in MIDLANDS
-			# Coastal cliffs (mask_value 0.5-0.8) should be JAGGED
-			# Midlands (interior, ny 0.35-0.65) should have OCCASIONAL sparse cliffs only
-			# Use ny_warped for organic biome boundaries
+			# 5. COASTAL CLIFFS - DISABLED to prevent impassable barriers
+			# The cliff system was creating "sinkhole" patterns that blocked navigation.
+			# Instead, terrain variation now comes from hills and erosion only.
+			# Coastal definition is handled by the island mask falloff.
 			var cliff_height := 0.0
-			if ny_warped < cfg_flat_plains_start and mask_value > 0.5:
-				# Domain warp for natural cliff shapes (jagged look)
-				var warp_offset_x := cliff_detail.get_noise_2d(float(x) * 0.5, float(y) * 0.5) * 40.0
-				var warp_offset_y := cliff_detail.get_noise_2d(float(x) * 0.5 + 100.0, float(y) * 0.5) * 40.0
-				var cliff_raw := cliff_noise.get_noise_2d(float(x) + warp_offset_x, float(y) + warp_offset_y)
-
-				# Determine if we're in COASTAL zone vs MIDLANDS zone (use warped boundaries)
-				# Coastal: near edges (mask_value < 0.8) OR in mountain band (ny_warped < cfg_midland_start)
-				# Midlands: interior terrain (mask_value > 0.8) AND (ny_warped between midland_start and flat_plains)
-				var is_coastal := mask_value < 0.8 or ny_warped < cfg_midland_start
-				var is_midlands := mask_value > 0.8 and ny_warped > cfg_midland_start and ny_warped < midland_end
-
-				var cliff_factor: float
-				var cliff_strength: float
-
-				if is_coastal:
-					# COASTAL CLIFFS: Full jagged noise, no thresholding
-					cliff_factor = (cliff_raw + 1.0) * 0.5  # Full 0-1 range
-					var cliff_detail_val := cliff_detail.get_noise_2d(float(x), float(y))
-					cliff_detail_val = (cliff_detail_val + 1.0) * 0.5 * 0.3
-					cliff_factor = cliff_factor * cliff_factor + cliff_detail_val
-
-					# Strong cliffs in mountain band, medium elsewhere on coast
-					cliff_strength = cfg_coastal_cliff_strength
-					if mountain_dist < 1.0:
-						cliff_strength = cfg_mountain_cliff_strength * (1.0 - mountain_dist)
-				elif is_midlands:
-					# MIDLANDS: Use configurable cliff strength (default 0 = smooth)
-					cliff_factor = (cliff_raw + 1.0) * 0.5
-					cliff_factor = cliff_factor * cliff_factor
-					cliff_strength = cfg_midland_cliff_strength
-				else:
-					# Fallback (shouldn't reach here often)
-					cliff_factor = (cliff_raw + 1.0) * 0.5
-					cliff_factor = cliff_factor * cliff_factor
-					cliff_strength = 0.2
-
-				cliff_height = cliff_factor * cfg_max_hill_height * cliff_strength * mask_value
+			# CLIFFS DISABLED - they created impassable ring-shaped barriers
+			# If you need cliffs later, they should be:
+			# 1. Only on the OUTER edge (mask < 0.6)
+			# 2. One-sided (facing outward, not forming rings)
+			# 3. With guaranteed gaps every 100-200m
 
 			# Combine peak and mountain heights (take max to preserve distinct peaks)
 			var total_mountain := maxf(peak_height, mountain_height + cliff_height)
@@ -549,13 +504,14 @@ static func carve_inlet(
 					var within_seg := along_seg / seg_len / float(num_segments)
 					best_progress = seg_progress + within_seg
 
-			# Skip pixels too far from the channel
-			var max_channel_dist := float(INLET_WIDTH_PIXELS) + float(INLET_BLEND_RADIUS) * 1.5
+			# Skip pixels too far from the channel - extended for softer blending
+			var max_channel_dist := float(INLET_WIDTH_PIXELS) + float(INLET_BLEND_RADIUS) * 3.0
 			if min_dist > max_channel_dist:
 				continue
 
-			# Channel width varies: widest at mouth, tapers inland
-			var width_factor := 1.0 - best_progress * 0.35
+			# Channel width varies: widest at mouth, tapers to point inland (fjord shape)
+			# 0.85 taper = 100% width at mouth, 15% width at inland terminus
+			var width_factor := 1.0 - best_progress * 0.85
 			var half_width := float(INLET_WIDTH_PIXELS) * width_factor * 0.5
 
 			# Floor height: rises gently from sea to inland
@@ -571,19 +527,26 @@ static func carve_inlet(
 				# Inland terminus: level landing area
 				floor_height = INLET_FLOOR_HEIGHT + 2.0
 
-			# Calculate influence using SMOOTH FALLOFF
+			# Calculate influence using EXTENDED SOFT FALLOFF
+			# Uses squared cosine for very gradual transition to surrounding terrain
 			var influence: float = 0.0
 
-			if min_dist < half_width * 0.6:
-				# Core area: full influence (flat floor)
+			# Core area: full influence for flat channel floor
+			var core_width := half_width * 0.5
+			if min_dist < core_width:
 				influence = 1.0
-			elif min_dist < half_width + float(INLET_BLEND_RADIUS):
-				# Transition zone: smooth falloff using cosine interpolation
-				var edge_start := half_width * 0.6
-				var edge_end := half_width + float(INLET_BLEND_RADIUS)
-				var t := (min_dist - edge_start) / (edge_end - edge_start)
-				t = clampf(t, 0.0, 1.0)
-				influence = 0.5 * (1.0 + cos(t * PI))
+			else:
+				# Extended falloff zone - much wider than before
+				# Use squared falloff for very gradual transition
+				var falloff_start := core_width
+				var falloff_end := half_width + float(INLET_BLEND_RADIUS) * 2.5
+
+				if min_dist < falloff_end:
+					var t := (min_dist - falloff_start) / (falloff_end - falloff_start)
+					t = clampf(t, 0.0, 1.0)
+					# Squared cosine for even softer edges - prevents cliff walls
+					var cosine_falloff := 0.5 * (1.0 + cos(t * PI))
+					influence = cosine_falloff * cosine_falloff
 
 			if influence < 0.001:
 				continue
@@ -603,13 +566,18 @@ static func carve_inlet(
 	# Create a gentle slope leading from the inlet floor up to the island terrain
 	var ramp_start := waypoints[waypoints.size() - 1]  # Inland terminus
 	var ramp_direction := base_direction  # Continue in same general direction
-	var ramp_length := 120.0  # ~300m ramp
+	var ramp_length := 180.0  # ~450m ramp for smoother terminus blending
 	var ramp_width := float(INLET_WIDTH_PIXELS) * 0.8  # Slightly narrower than channel
 
 	_carve_walkable_ramp(heightmap, ramp_start, ramp_direction, ramp_length, ramp_width, inlet_rng)
 
 	# Final pass: Gaussian blur on the carved region to smooth transitions
-	_gaussian_blur_region(heightmap, min_x, min_y, max_x, max_y, 3)
+	# Extended region and larger kernel for softer blending with surrounding terrain
+	var blur_min_x := maxi(min_x - 50, 0)
+	var blur_min_y := maxi(min_y - 50, 0)
+	var blur_max_x := mini(max_x + 50, img_width - 1)
+	var blur_max_y := mini(max_y + 50, img_height - 1)
+	_gaussian_blur_region(heightmap, blur_min_x, blur_min_y, blur_max_x, blur_max_y, 5)
 
 	# Ensure the frozen sea buffer around the island is FLAT
 	_ensure_flat_frozen_sea(heightmap, island_mask)
@@ -622,7 +590,7 @@ static func carve_inlet(
 	#   - Well past the coastline (inside the inlet)
 	#   - In the frozen ice/snow channel (not on the gravel ramp which starts ~70%)
 	#   - At low elevation (proper "trapped in ice" aesthetic)
-	var ship_waypoint_index := int(waypoints.size() * 0.45)  # 45% = solidly inside inlet channel
+	var ship_waypoint_index := int(waypoints.size() * 0.55)  # 55% = deeper inside inlet, trapped in ice
 	var ship_waypoint := waypoints[ship_waypoint_index]
 	var meters_per_pixel: float = TerrainGenerator.METERS_PER_PIXEL
 	var world_x := (ship_waypoint.x - float(img_width) / 2.0) * meters_per_pixel
@@ -863,3 +831,336 @@ static func _create_noise(seed_val: int, frequency: float, octaves: int, persist
 	noise.fractal_lacunarity = lacunarity
 	noise.frequency = frequency
 	return noise
+
+
+## Apply fast noise-based erosion effect to heightmap.
+## Creates carved, weathered look by adding slope-following noise displacement.
+## This is NOT real hydraulic erosion - it's a visual approximation that runs quickly.
+static func apply_erosion_effect(
+	heightmap: Image,
+	island_mask: Image,
+	erosion_rng: RandomNumberGenerator,
+	erosion_strength: float = 0.4,  # 0 = none, 1 = maximum
+	focus_north: bool = true  # Concentrate erosion in northern regions
+) -> void:
+	var width := heightmap.get_width()
+	var height := heightmap.get_height()
+
+	print("[HeightmapGenerator] Applying erosion effect (strength=%.2f)..." % erosion_strength)
+	var start_time := Time.get_ticks_msec()
+
+	# Create noise for erosion patterns
+	var erosion_noise := _create_noise(erosion_rng.randi(), 0.015, 3, 0.5, 2.0)
+	var detail_noise := _create_noise(erosion_rng.randi(), 0.04, 2, 0.4, 2.0)
+
+	# First pass: Calculate gradients (slope direction and magnitude)
+	var gradients := {}  # Store as Vector2 (dx, dy) per pixel
+
+	for y in range(1, height - 1):
+		for x in range(1, width - 1):
+			var h_left: float = heightmap.get_pixel(x - 1, y).r
+			var h_right: float = heightmap.get_pixel(x + 1, y).r
+			var h_up: float = heightmap.get_pixel(x, y - 1).r
+			var h_down: float = heightmap.get_pixel(x, y + 1).r
+
+			var dx := (h_right - h_left) * 0.5
+			var dy := (h_down - h_up) * 0.5
+			gradients[Vector2i(x, y)] = Vector2(dx, dy)
+
+	# Second pass: Apply erosion displacement
+	var temp_heights := {}  # Store modified heights
+
+	for y in range(2, height - 2):
+		for x in range(2, width - 2):
+			var mask_value: float = island_mask.get_pixel(x, y).r
+			if mask_value < 0.3:
+				continue  # Skip ocean/ice
+
+			var current_height: float = heightmap.get_pixel(x, y).r
+			var gradient: Vector2 = gradients.get(Vector2i(x, y), Vector2.ZERO)
+			var slope_magnitude := gradient.length()
+
+			# Stronger erosion on steeper slopes
+			var slope_factor := clampf(slope_magnitude / 20.0, 0.0, 1.0)
+
+			# Regional focus: stronger in north
+			var ny := float(y) / float(height)
+			var regional_factor := 1.0
+			if focus_north:
+				regional_factor = 1.0 - ny * 0.6  # 1.0 at north, 0.4 at south
+
+			# Get erosion noise values
+			var erosion_val := erosion_noise.get_noise_2d(float(x), float(y))
+			var detail_val := detail_noise.get_noise_2d(float(x), float(y))
+
+			# Combine noise with gradient direction for "carved" look
+			# Sample height in gradient direction to create channel-like features
+			if slope_magnitude > 0.5:
+				var grad_dir := gradient.normalized()
+				# Offset sample position along gradient
+				var offset_x := int(grad_dir.x * 3.0)
+				var offset_y := int(grad_dir.y * 3.0)
+				var sample_x := clampi(x + offset_x, 0, width - 1)
+				var sample_y := clampi(y + offset_y, 0, height - 1)
+				var downhill_height: float = heightmap.get_pixel(sample_x, sample_y).r
+
+				# Carve toward downhill - creates channel effect
+				var carve_amount := (current_height - downhill_height) * 0.15
+				carve_amount *= slope_factor * regional_factor * erosion_strength
+				carve_amount *= (erosion_val + 1.0) * 0.5  # Modulate with noise
+
+				current_height -= maxf(carve_amount, 0.0)
+
+			# Add fine detail noise for weathered texture
+			var detail_amount := detail_val * 2.0 * erosion_strength * regional_factor
+			detail_amount *= (1.0 - slope_factor * 0.5)  # Less detail on steep slopes
+			current_height += detail_amount
+
+			temp_heights[Vector2i(x, y)] = current_height
+
+	# Apply modified heights
+	for pos in temp_heights:
+		var new_height: float = temp_heights[pos]
+		heightmap.set_pixel(pos.x, pos.y, Color(new_height, 0.0, 0.0, 1.0))
+
+	# Light smoothing pass to blend erosion
+	_smooth_heightmap_region(heightmap, 2, height - 2, 2, width - 2, 1)
+
+	var elapsed := Time.get_ticks_msec() - start_time
+	print("[HeightmapGenerator] Erosion complete in %dms" % elapsed)
+
+
+## Light smoothing pass on a heightmap region
+static func _smooth_heightmap_region(heightmap: Image, min_y: int, max_y: int, min_x: int, max_x: int, iterations: int) -> void:
+	for _iter in range(iterations):
+		for y in range(min_y, max_y):
+			for x in range(min_x, max_x):
+				var h_center: float = heightmap.get_pixel(x, y).r
+				var h_left: float = heightmap.get_pixel(x - 1, y).r
+				var h_right: float = heightmap.get_pixel(x + 1, y).r
+				var h_up: float = heightmap.get_pixel(x, y - 1).r
+				var h_down: float = heightmap.get_pixel(x, y + 1).r
+
+				# Very light averaging (mostly keep original)
+				var avg := (h_center * 4.0 + h_left + h_right + h_up + h_down) / 8.0
+				heightmap.set_pixel(x, y, Color(avg, 0.0, 0.0, 1.0))
+
+
+## Carve traversable valleys through steep cliff formations.
+## Uses aggressive erosion that actually LOWERS terrain to create passages,
+## not just smoothing which doesn't work for 2-5m cliffs.
+##
+## Parameters:
+##   heightmap: The heightmap image to modify
+##   island_mask: Mask defining land areas (only erode on land)
+##   meters_per_pixel: Scale factor for slope calculation
+##   max_walkable_slope: Maximum slope angle in degrees (default 35)
+##   valley_spacing_pixels: Spacing between carved valleys (default 60 = ~150m)
+static func smooth_steep_slopes(
+	heightmap: Image,
+	island_mask: Image,
+	meters_per_pixel: float,
+	max_walkable_slope: float = 35.0,
+	valley_spacing_pixels: int = 60
+) -> void:
+	var width := heightmap.get_width()
+	var height := heightmap.get_height()
+
+	print("[HeightmapGenerator] Carving traversable valleys through cliffs...")
+	var start_time := Time.get_ticks_msec()
+
+	# Maximum height change per pixel for walkable slope
+	var max_height_diff := tan(deg_to_rad(max_walkable_slope)) * meters_per_pixel
+
+	# First: identify all cliff edges (steep transitions)
+	var cliff_pixels: Dictionary = {}  # Vector2i -> height_drop (positive = cliff going down)
+
+	for y in range(2, height - 2):
+		for x in range(2, width - 2):
+			var mask_val: float = island_mask.get_pixel(x, y).r
+			if mask_val < 0.3:
+				continue
+
+			var h_center: float = heightmap.get_pixel(x, y).r
+
+			# Check all 4 neighbors for steep drops
+			var h_left: float = heightmap.get_pixel(x - 1, y).r
+			var h_right: float = heightmap.get_pixel(x + 1, y).r
+			var h_up: float = heightmap.get_pixel(x, y - 1).r
+			var h_down: float = heightmap.get_pixel(x, y + 1).r
+
+			var max_drop := maxf(
+				maxf(h_center - h_left, h_center - h_right),
+				maxf(h_center - h_up, h_center - h_down)
+			)
+
+			# Is this a cliff edge? (height drops more than walkable)
+			if max_drop > max_height_diff * 1.2:
+				cliff_pixels[Vector2i(x, y)] = max_drop
+
+	print("[HeightmapGenerator] Found %d cliff pixels" % cliff_pixels.size())
+
+	if cliff_pixels.is_empty():
+		var elapsed := Time.get_ticks_msec() - start_time
+		print("[HeightmapGenerator] No cliffs to carve (%dms)" % elapsed)
+		return
+
+	# Second: carve valleys at regular intervals along cliff lines
+	var valleys_carved := 0
+	var valley_width := 20  # Pixels wide (~50m)
+	var valley_length := 40  # How far the valley extends perpendicular to cliff
+
+	# Grid to ensure valleys are spaced out
+	var grid_size := valley_spacing_pixels
+	var processed_cells: Dictionary = {}
+
+	for cliff_pos in cliff_pixels:
+		var grid_x: int = cliff_pos.x / grid_size
+		var grid_y: int = cliff_pos.y / grid_size
+		var grid_key := Vector2i(grid_x, grid_y)
+
+		if processed_cells.has(grid_key):
+			continue
+		processed_cells[grid_key] = true
+
+		# Find the steepest point in this grid cell to carve through
+		var best_pos: Vector2i = cliff_pos
+		var best_drop: float = cliff_pixels[cliff_pos]
+
+		for dy in range(-10, 11):
+			for dx in range(-10, 11):
+				var check := Vector2i(cliff_pos.x + dx, cliff_pos.y + dy)
+				if cliff_pixels.has(check) and cliff_pixels[check] > best_drop:
+					best_drop = cliff_pixels[check]
+					best_pos = check
+
+		# Carve a valley through this cliff
+		_carve_valley_through_cliff(heightmap, best_pos.x, best_pos.y, valley_width, valley_length, max_height_diff)
+		valleys_carved += 1
+
+	# Third: apply heavy smoothing pass to blend the carved valleys
+	_heavy_smooth_pass(heightmap, island_mask, 3)
+
+	var elapsed := Time.get_ticks_msec() - start_time
+	print("[HeightmapGenerator] Carved %d valleys through cliffs in %dms" % [valleys_carved, elapsed])
+
+
+## Carve an actual valley/gulley through a cliff at the given position.
+## This LOWERS terrain to create a navigable passage.
+static func _carve_valley_through_cliff(
+	heightmap: Image,
+	center_x: int,
+	center_y: int,
+	valley_width: int,
+	valley_length: int,
+	max_slope_per_pixel: float
+) -> void:
+	var img_width := heightmap.get_width()
+	var img_height := heightmap.get_height()
+
+	# Sample heights around the cliff to find the lower side
+	var h_center: float = heightmap.get_pixel(center_x, center_y).r
+
+	# Find which direction goes downhill (that's where the cliff drops to)
+	var h_left: float = heightmap.get_pixel(maxi(center_x - 5, 0), center_y).r
+	var h_right: float = heightmap.get_pixel(mini(center_x + 5, img_width - 1), center_y).r
+	var h_up: float = heightmap.get_pixel(center_x, maxi(center_y - 5, 0)).r
+	var h_down: float = heightmap.get_pixel(center_x, mini(center_y + 5, img_height - 1)).r
+
+	# Determine primary downhill direction
+	var min_h := minf(minf(h_left, h_right), minf(h_up, h_down))
+	var dir_x := 0
+	var dir_y := 0
+	if min_h == h_left:
+		dir_x = -1
+	elif min_h == h_right:
+		dir_x = 1
+	elif min_h == h_up:
+		dir_y = -1
+	else:
+		dir_y = 1
+
+	# The valley runs PERPENDICULAR to the cliff face (along the cliff)
+	var valley_dir_x := -dir_y  # Perpendicular
+	var valley_dir_y := dir_x
+
+	# Target height: the lower side of the cliff plus a small margin
+	var target_base_height := min_h + 1.0
+
+	# Carve the valley
+	var half_width := valley_width / 2
+	var half_length := valley_length / 2
+
+	for along in range(-half_length, half_length + 1):
+		for across in range(-half_width, half_width + 1):
+			var px := center_x + valley_dir_x * along + dir_x * across
+			var py := center_y + valley_dir_y * along + dir_y * across
+
+			if px < 1 or px >= img_width - 1 or py < 1 or py >= img_height - 1:
+				continue
+
+			var current_h: float = heightmap.get_pixel(px, py).r
+
+			# Distance from valley center (for U-shaped profile)
+			var dist_across := absf(float(across))
+			var dist_along := absf(float(along))
+
+			# Valley floor is lowest at center, rises toward edges
+			var across_factor := dist_across / float(half_width)
+			across_factor = clampf(across_factor, 0.0, 1.0)
+			var floor_rise := across_factor * across_factor * 3.0  # U-shape, up to 3m rise at edges
+
+			# Taper the valley at the ends
+			var along_factor := dist_along / float(half_length)
+			along_factor = clampf(along_factor, 0.0, 1.0)
+			var end_taper := along_factor * along_factor  # Gentler at ends
+
+			# Calculate target height for this point
+			var valley_floor := target_base_height + floor_rise
+
+			# Blend: stronger carving at center, weaker at edges
+			var carve_strength := (1.0 - across_factor) * (1.0 - end_taper)
+			carve_strength = clampf(carve_strength, 0.0, 1.0)
+
+			# Only carve DOWN, and only if we're above the valley floor
+			if current_h > valley_floor:
+				var new_h := lerpf(current_h, valley_floor, carve_strength * 0.85)
+				# Ensure we don't create new cliffs - gradual transition
+				new_h = maxf(new_h, valley_floor)
+				heightmap.set_pixel(px, py, Color(new_h, 0.0, 0.0, 1.0))
+
+
+## Heavy smoothing pass to blend carved valleys into surrounding terrain
+static func _heavy_smooth_pass(heightmap: Image, island_mask: Image, iterations: int) -> void:
+	var width := heightmap.get_width()
+	var height := heightmap.get_height()
+
+	for _iter in range(iterations):
+		# Use a temporary copy to avoid read-while-write
+		var new_heights: Dictionary = {}
+
+		for y in range(2, height - 2):
+			for x in range(2, width - 2):
+				var mask_val: float = island_mask.get_pixel(x, y).r
+				if mask_val < 0.3:
+					continue
+
+				var h_center: float = heightmap.get_pixel(x, y).r
+
+				# 3x3 kernel average
+				var sum := 0.0
+				var count := 0
+				for dy in range(-1, 2):
+					for dx in range(-1, 2):
+						sum += heightmap.get_pixel(x + dx, y + dy).r
+						count += 1
+
+				var avg := sum / float(count)
+
+				# Blend toward average (strong smoothing)
+				var smoothed := lerpf(h_center, avg, 0.4)
+				new_heights[Vector2i(x, y)] = smoothed
+
+		# Apply
+		for pos in new_heights:
+			heightmap.set_pixel(pos.x, pos.y, Color(new_heights[pos], 0.0, 0.0, 1.0))

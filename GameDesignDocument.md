@@ -40,9 +40,42 @@ During the chaos of escaping the ship being crushed (and the ensuing snowstorm),
 | 2-3 groups | 3-5 men each | 0-1 (often none) | Small cache of supplies |
 
 **Errant Group Placement:**
-- Spawned along the north coast biome
-- Each group has a very small supply cache (food, fuel, minor materials)
+- Spawned via POI spawner along the north coast biome
+- Each group includes:
+  - 3-5 men
+  - 0-1 officer (can be none)
+  - 1-3 barrels of food (partially filled, same rules as ship salvage)
+  - 1-3 crates of supplies
 - Groups are stationary, waiting to be found
+
+**Live Simulation (Full BT):**
+
+Errant groups run full behavior trees from game start. The existing BT handles needs naturally - they will deplete resources, weaken, potentially cannibalize, and die organically without special simulation code.
+
+*Rationale: Adding 6-15 units to the existing 18-25 is negligible overhead. LimboAI is efficient, and idle units doing basic need-checking are cheap. This approach is simpler, creates emergent drama, and requires no special-case code.*
+
+**Camp Setup:**
+- **Camp Fire:** Each camp has a small, dim fire (smaller/dimmer than normal campfire). Provides minimal warmth but makes camps hard to spot from distance - player must actively scout.
+- **Wandering Limit:** Units are restricted to a small radius around their camp (leash system or BT constraint). Prevents excessive pathfinding and keeps groups cohesive.
+- **Path Validation:** POI spawner must verify at least one navigable path exists from ship spawn to each errant camp location.
+
+**Discovery & Recruitment:**
+
+Errant men are NOT immediately selectable. They must be "recruited" to join the colony:
+
+| Requirement | Details |
+|-------------|---------|
+| Proximity | A Captain or Officer must come within recruitment range (~10-15m) |
+| Action | Automatic recruitment on proximity (no manual action needed) |
+| Result | Units added to `selectable_units` group, now player-controllable |
+
+*Before recruitment:* Units visible but not selectable, not shown in portrait bar, run autonomous survival BT.
+*After recruitment:* Full player control, added to roster, shown in UI.
+
+**Animation LOD (Future - Not MVP):**
+- Start/stop animations based on distance from nearest controllable unit
+- Reduces overhead for distant errant groups
+- Units beyond visible range use simplified or no animation updates
 
 **Time Pressure - Attrition:**
 If the player does not find these groups quickly enough:
@@ -322,6 +355,35 @@ Being in darkness (nighttime) DOUBLES cold effects when combined with sub-zero t
 - **Navigation** - Expedition success, pathfinding
 - **Cold Resistance** - Slower cold buildup
 - **Survival** - General efficiency bonus
+- **Strength** - Sled hauling capacity, carry weight (60-100, skewed distribution)
+
+### Strength Mechanic
+
+Strength determines hauling and carrying capacity. Unlike other skills, strength is primarily a physical attribute that degrades under poor conditions.
+
+**Generation:**
+- Range: 60-100
+- Distribution: Skewed toward lower values (scores above 70 increasingly rare)
+- Approximately 50% spawn with 60-70, 35% with 70-85, 15% with 85-100
+
+**Degradation (Stacking):**
+When core stats fall low, strength is sapped. Multiple low stats stack:
+| Condition | Strength Loss (per stat) |
+|-----------|--------------------------|
+| Stat critical (<15%) | -1.0/hr each |
+| Stat low (<35%) | -0.5/hr each |
+
+Example: Critical hunger (-1.0) + low warmth (-0.5) + low energy (-0.5) = -2.0/hr total
+
+**Recovery:**
+- All 5 core stats must be above 75% simultaneously
+- Recovery rate: +0.5/hr
+- Cannot exceed base (spawn) value
+
+**Usage:**
+- Sled man-hauling efficiency
+- Carry weight capacity
+- Modified by "Strong" (+50%) and "Weak" (-40%) traits
 
 ### Traits (permanent modifiers)
 | Trait | Effect |

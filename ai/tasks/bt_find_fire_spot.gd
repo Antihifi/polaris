@@ -5,7 +5,6 @@ class_name BTFindFireSpot
 
 @export var fire_node_var: StringName = &"target_node"
 @export var output_position_var: StringName = &"target_position"
-@export var fire_position_var: StringName = &"fire_position"  ## Store fire pos for BTFaceTarget
 @export var fire_distance: float = 4.0
 @export var min_spacing: float = 2.5
 
@@ -23,9 +22,10 @@ func _tick(_delta: float) -> Status:
 	# Get all survivors to check spacing
 	var survivors: Array[Node] = agent.get_tree().get_nodes_in_group("survivors")
 
-	# Try 8 positions around the fire
+	# Try 8 positions around the fire (randomize start to prevent crescents)
+	var start_offset: int = randi() % 8
 	for i in range(8):
-		var angle: float = i * TAU / 8.0
+		var angle: float = ((i + start_offset) % 8) * TAU / 8.0
 		var offset := Vector3(cos(angle), 0, sin(angle)) * fire_distance
 		var candidate: Vector3 = fire.global_position + offset
 
@@ -43,7 +43,6 @@ func _tick(_delta: float) -> Status:
 
 		if not too_close:
 			blackboard.set_var(output_position_var, candidate)
-			blackboard.set_var(fire_position_var, fire.global_position)  # For BTFaceTarget
 			blackboard.set_var(&"current_action", "Warming by fire")
 			return SUCCESS
 
@@ -51,6 +50,5 @@ func _tick(_delta: float) -> Status:
 	var random_angle: float = randf() * TAU
 	var fallback: Vector3 = fire.global_position + Vector3(cos(random_angle), 0, sin(random_angle)) * fire_distance
 	blackboard.set_var(output_position_var, fallback)
-	blackboard.set_var(fire_position_var, fire.global_position)  # For BTFaceTarget
 	blackboard.set_var(&"current_action", "Warming by fire")
 	return SUCCESS

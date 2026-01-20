@@ -51,10 +51,9 @@ var _popup_light: DirectionalLight3D = null
 ## Tooltips explaining each parameter's effect on terrain generation
 const TOOLTIPS := {
 	# Ridge parameters
-	"ridge_amplitude": "Height of ridge features on mountains. Lower values create smoother peaks, higher values create sharper ridges. Reduce to fix 'castle wall' artifacts.",
-	"ridge_frequency": "How often ridge patterns repeat. Lower = wider ridges, higher = more frequent narrow ridges.",
-	"valley_cut_strength": "How deep valleys cut between ridges. Higher values create more pronounced V-shaped valleys.",
-	"use_ridged_noise": "Enable ridged noise for alpine-style peaks. Disable for smoother, dome-shaped mountains.",
+	"ridge_amplitude": "Strength of mountain height variation. Higher values create more varied terrain.",
+	"ridge_frequency": "How often terrain patterns repeat. Lower = broader features, higher = more frequent variation.",
+	"valley_cut_strength": "How deep valleys cut between peaks. Higher values create more pronounced V-shaped valleys.",
 	# Cliff parameters
 	"cliff_frequency": "How often cliff formations appear. Higher = more frequent cliff bands.",
 	"coastal_cliff_strength": "Height of cliffs along coastlines. Higher = more dramatic coastal cliffs.",
@@ -216,11 +215,10 @@ func _build_ui() -> void:
 	margin.add_child(vbox)
 
 	# ============== RIDGE PARAMETERS ==============
-	_add_section_header(vbox, "RIDGE PARAMETERS (Castle Wall Fix)")
-	_add_slider(vbox, "ridge_amplitude", "Ridge Amplitude", 0.0, 1.0, 0.05)
-	_add_slider(vbox, "ridge_frequency", "Ridge Frequency", 0.001, 0.02, 0.001)
+	_add_section_header(vbox, "MOUNTAIN VARIATION")
+	_add_slider(vbox, "ridge_amplitude", "Variation Strength", 0.0, 1.0, 0.05)
+	_add_slider(vbox, "ridge_frequency", "Variation Frequency", 0.001, 0.02, 0.001)
 	_add_slider(vbox, "valley_cut_strength", "Valley Cut Strength", 0.0, 0.5, 0.05)
-	_add_checkbox(vbox, "use_ridged_noise", "Use Ridged Noise")
 
 	vbox.add_child(HSeparator.new())
 

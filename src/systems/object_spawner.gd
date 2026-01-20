@@ -182,6 +182,34 @@ func _find_node_by_class(node: Node, class_name_str: String) -> Node:
 	return null
 
 
+func spawn_campfire(position: Vector3, dim: bool = false) -> Node3D:
+	## Spawn a campfire at the given position.
+	## If dim=true, reduces warmth radius and light energy (for errant camps).
+	var fire: Node3D = fire_scene.instantiate()
+	get_tree().current_scene.add_child(fire)
+
+	# Position on terrain
+	var fire_height := _get_terrain_height(position)
+	fire.global_position = Vector3(position.x, fire_height, position.z)
+
+	if dim:
+		# Reduce warmth radius (WarmthArea has warmth_radius=10 by default)
+		var warmth_area: Node = fire.find_child("WarmthArea", true, false)
+		if warmth_area and warmth_area.has_method("set_radius"):
+			warmth_area.set_radius(5.0)  # Half normal radius
+			print("[ObjectSpawner] Set dim fire warmth radius to 5m")
+
+		# Reduce light energy if fire has a light
+		for child in fire.get_children():
+			if child is OmniLight3D:
+				child.light_energy *= 0.5
+				print("[ObjectSpawner] Reduced fire light energy by 50%%")
+				break
+
+	print("[ObjectSpawner] Spawned %s campfire at %s" % ["dim" if dim else "normal", fire.global_position])
+	return fire
+
+
 func spawn_ship(position: Vector3, rotation_y: float = 0.0) -> Node3D:
 	## Spawn the ship at the given position.
 	## Used for procedurally generated terrain where ship isn't pre-placed.

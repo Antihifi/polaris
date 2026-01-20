@@ -61,10 +61,12 @@ func _setup_behavior_tree() -> void:
 	_blackboard.set_var(&"current_action", "Idle")
 	_blackboard.set_var(&"target_position", Vector3.INF)
 	_blackboard.set_var(&"target_node", null)
-	_blackboard.set_var(&"target_marker", null)
 
 	# Start the behavior tree
-	_bt_player.update_mode = BTPlayer.UpdateMode.PHYSICS
+	# Use IDLE mode (runs in _process) instead of PHYSICS to avoid interfering with
+	# physics timing. PHYSICS mode caused bouncy walking due to BT ticking during
+	# avoidance callback processing.
+	_bt_player.update_mode = BTPlayer.UpdateMode.IDLE
 	_bt_player.active = enabled
 
 	print("[ManAIController] AI initialized for: ", _unit.name)

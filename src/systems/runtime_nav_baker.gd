@@ -169,7 +169,11 @@ func _task_bake(p_center: Vector3) -> void:
 		# editor terrain has painted nav areas. We MUST use false for procedural.
 		var faces: PackedVector3Array = terrain.generate_nav_mesh_source_geometry(aabb, false)
 		faces_added = faces.size()
-		source_geometry.add_faces(faces, Transform3D.IDENTITY)
+		# Only add faces if we have any - empty array causes error in add_faces()
+		if faces_added > 0:
+			source_geometry.add_faces(faces, Transform3D.IDENTITY)
+		else:
+			print("[RuntimeNavBaker] WARNING: Terrain returned 0 faces for AABB")
 
 		# Debug: Check height of first few faces (terrain transform check removed - thread unsafe)
 		if faces.size() >= 3:

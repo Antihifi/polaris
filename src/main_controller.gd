@@ -213,8 +213,15 @@ func _spawn_test_officer() -> void:
 
 
 func _find_terrain3d() -> Node:
-	## Find the Terrain3D node in the scene.
-	var nodes := get_tree().get_nodes_in_group("terrain")
-	if nodes.size() > 0:
-		return nodes[0]
+	## Find the Terrain3D node in the scene by searching recursively.
+	return _find_node_by_class(self, "Terrain3D")
+
+
+func _find_node_by_class(node: Node, class_name_to_find: String) -> Node:
+	if node.get_class() == class_name_to_find:
+		return node
+	for child in node.get_children():
+		var result := _find_node_by_class(child, class_name_to_find)
+		if result:
+			return result
 	return null

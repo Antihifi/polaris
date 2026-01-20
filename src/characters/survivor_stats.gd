@@ -59,6 +59,15 @@ const DYING_HEALTH_DRAIN: float = 5.0
 @export var current_carry_weight: float = 0.0
 @export var movement_speed_modifier: float = 1.0
 
+## Base strength - the maximum this unit spawned with (60-100, skewed distribution)
+## Used for sled hauling and carrying heavy objects. Cannot exceed this value.
+@export_range(60.0, 100.0) var base_strength: float = 75.0
+
+## Current strength - sapped by low stats, recovers when all core stats are above 75%
+@export_range(0.0, 100.0) var current_strength: float = 75.0:
+	set(value):
+		current_strength = clampf(value, 0.0, base_strength)
+
 # Thresholds for need states
 const CRITICAL_THRESHOLD: float = 15.0
 const LOW_THRESHOLD: float = 35.0
@@ -109,6 +118,56 @@ func is_tired() -> bool:
 
 func is_dead() -> bool:
 	return health <= 0.0
+
+
+func is_weakened() -> bool:
+	## Returns true if current strength has degraded significantly from base
+	return current_strength < base_strength * 0.9
+
+
+func can_recover_strength() -> bool:
+	## All core stats must be above 75% to recover strength
+	return health > 75.0 and hunger > 75.0 and warmth > 75.0 and energy > 75.0 and morale > 75.0
+
+
+func get_strength_efficiency() -> float:
+	## Returns strength as a percentage of base (for hauling calculations)
+	if base_strength <= 0.0:
+		return 0.0
+	return current_strength / base_strength
+
+
+func get_strength_drain() -> float:
+	## Calculate hourly strength drain from low stats. Stacks for each low stat.
+	var drain: float = 0.0
+
+	# Check each core stat for critical/low thresholds
+	if hunger <= CRITICAL_THRESHOLD:
+		drain += 1.0
+	elif hunger <= LOW_THRESHOLD:
+		drain += 0.5
+
+	if warmth <= CRITICAL_THRESHOLD:
+		drain += 1.0
+	elif warmth <= LOW_THRESHOLD:
+		drain += 0.5
+
+	if energy <= CRITICAL_THRESHOLD:
+		drain += 1.0
+	elif energy <= LOW_THRESHOLD:
+		drain += 0.5
+
+	if morale <= CRITICAL_THRESHOLD:
+		drain += 1.0
+	elif morale <= LOW_THRESHOLD:
+		drain += 0.5
+
+	if health <= CRITICAL_THRESHOLD:
+		drain += 1.0
+	elif health <= LOW_THRESHOLD:
+		drain += 0.5
+
+	return drain
 
 
 func get_dying_cause() -> DeathCause:
@@ -238,9 +297,10 @@ func get_most_critical_need() -> String:
 
 
 func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, is_near_fire: bool,
-		ambient_temperature: float, is_in_sunlight: bool = true) -> void:
+		ambient_temperature: float, is_in_sunlight: bool = true, is_blizzard: bool = false) -> void:
 	## Called once per in-game hour to update needs.
 	## Uses cascading multipliers: low energy/warmth increase hunger drain, etc.
+	## is_blizzard applies extra morale and warmth penalties per GDD.
 
 	# Hunger decay with cascading multiplier
 	var hunger_drain := hunger_decay_rate * get_hunger_drain_multiplier()
@@ -264,6 +324,10 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 	# Nighttime doubles cold effect when below 0C
 	if not is_in_sunlight and ambient_temperature < 0.0:
 		cold_effect *= 2.0
+
+	# Blizzard penalty: extra cold exposure (GDD: faster warmth drain in heavy snow)
+	if is_blizzard and not is_in_shelter:
+		cold_effect += 3.0  # Significant extra cold from blizzard winds
 
 	warmth_change -= maxf(cold_effect, 0.0)
 	warmth += warmth_change
@@ -303,6 +367,14 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 		morale_drain += 1.0  # Extra morale loss from suffering
 	if not is_in_sunlight:
 		morale_drain += 0.5  # Darkness is depressing (especially in winter)
+
+	# Blizzard morale penalty (GDD: -1.0/hr during blizzard, worse if exposed)
+	if is_blizzard:
+		if is_in_shelter:
+			morale_drain += 0.25  # Minor drain even in shelter (storm is scary)
+		else:
+			morale_drain += 1.0  # Full GDD blizzard penalty when exposed
+
 	morale -= morale_drain
 
 	# Dying condition - stats at 0 cause rapid health loss
@@ -315,6 +387,14 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 			health -= 2.0
 		if is_freezing():
 			health -= 3.0
+
+	# Strength management - sapped by low stats, recovers when all stats healthy
+	var strength_drain: float = get_strength_drain()
+	if strength_drain > 0.0:
+		current_strength -= strength_drain
+	elif can_recover_strength() and current_strength < base_strength:
+		# Recovery: +0.5/hr when all stats above 75%
+		current_strength += 0.5
 
 
 func get_energy_drain_multiplier() -> float:

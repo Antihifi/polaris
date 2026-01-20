@@ -42,6 +42,7 @@ var construction_bar: ProgressBar
 var medical_bar: ProgressBar
 var navigation_bar: ProgressBar
 var survival_bar: ProgressBar
+var strength_bar: ProgressBar
 
 var _current_unit: ClickableUnit = null
 var _camera: Camera3D = null
@@ -89,6 +90,7 @@ func _ready() -> void:
 	medical_bar = skills_vbox.get_node("Hunger/ProgressBar")
 	navigation_bar = skills_vbox.get_node("Body Temperature/ProgressBar")
 	survival_bar = skills_vbox.get_node("Morale/ProgressBar")
+	strength_bar = skills_vbox.get_node("Strength/ProgressBar")
 
 	# Override skill bars to show value instead of percentage
 	_configure_skill_bar(hunting_bar)
@@ -96,6 +98,7 @@ func _ready() -> void:
 	_configure_skill_bar(medical_bar)
 	_configure_skill_bar(navigation_bar)
 	_configure_skill_bar(survival_bar)
+	_configure_skill_bar(strength_bar)
 
 	# Create trend indicators for stat bars
 	_health_trend = _create_trend_indicator(health_bar)
@@ -345,6 +348,10 @@ func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
 	skills_button.button_pressed = false
 	effects_button.button_pressed = false
 
+	# Hide skills button for Men (only Officers and Captain can view skills)
+	var is_officer_or_captain: bool = _current_unit.rank != ClickableUnit.UnitRank.MAN
+	skills_button.visible = is_officer_or_captain
+
 	_update_display()
 	_update_panel_position()
 	visible = true
@@ -437,6 +444,9 @@ func _update_display() -> void:
 		medical_bar.value = stats.medicine_skill
 		navigation_bar.value = stats.navigation_skill
 		survival_bar.value = stats.survival_skill
+
+		# Update strength bar (absolute 0-100 scale, shows current strength)
+		strength_bar.value = stats.current_strength
 
 	# Update special trait visibility and text
 	_update_special_trait()

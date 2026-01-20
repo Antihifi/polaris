@@ -228,6 +228,16 @@ func _generate_heightmap() -> void:
 		config
 	)
 
+	# Apply fast noise-based erosion for weathered, carved look
+	# Focuses on northern regions for dramatic coastal features
+	var erosion_rng := RandomNumberGenerator.new()
+	erosion_rng.seed = height_rng.seed + 999  # Derived from height seed
+	HeightmapGenerator.apply_erosion_effect(_heightmap, _island_mask, erosion_rng, 0.4, true)
+
+	# Smooth steep slopes to create passable gaps in cliff formations
+	# This ensures navigation paths exist through the terrain while preserving character
+	HeightmapGenerator.smooth_steep_slopes(_heightmap, _island_mask, METERS_PER_PIXEL, 35.0, 80)
+
 	var stats := HeightmapGenerator.get_height_stats(_heightmap)
 	print("[TerrainGenerator] Height range: %.1f to %.1f meters (avg: %.1f)" % [
 		stats.min,

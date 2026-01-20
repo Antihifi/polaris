@@ -6,6 +6,7 @@ extends CanvasLayer
 
 @onready var time_hud: Control = $TimeHUD
 @onready var character_stats: Control = $CharacterStats
+@onready var men_status: MenStatus = $MenStatus
 
 var _selected_unit: ClickableUnit = null
 var _input_handler: Node = null
@@ -16,6 +17,8 @@ func _ready() -> void:
 	call_deferred("_connect_to_input_handler")
 	# Connect to units for deselection
 	call_deferred("_connect_to_units")
+	# Connect to character spawner for unit count updates
+	call_deferred("_connect_to_spawner")
 
 
 func _connect_to_input_handler() -> void:
@@ -36,6 +39,22 @@ func _connect_to_units() -> void:
 			if not unit.deselected.is_connected(_on_unit_deselected):
 				unit.deselected.connect(_on_unit_deselected.bind(unit))
 	print("[GameHUD] Connected to ", units.size(), " selectable units")
+
+
+func _connect_to_spawner() -> void:
+	## Connect to character spawner to refresh unit list when new units spawn.
+	var spawner := get_node_or_null("../CharacterSpawner")
+	if spawner and spawner.has_signal("survivors_spawned"):
+		spawner.survivors_spawned.connect(_on_survivors_spawned)
+		print("[GameHUD] Connected to CharacterSpawner for unit count updates")
+
+
+func _on_survivors_spawned(_count: int) -> void:
+	## Refresh unit list when new survivors are spawned.
+	if men_status:
+		men_status.refresh()
+	# Also reconnect to new units for deselection signals
+	_connect_to_units()
 
 
 func _on_unit_double_clicked(unit: ClickableUnit) -> void:

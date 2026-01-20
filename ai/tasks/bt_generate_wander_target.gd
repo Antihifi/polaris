@@ -2,6 +2,7 @@
 extends BTAction
 class_name BTGenerateWanderTarget
 ## Generates a random wander target within a radius.
+## Respects leash boundary for errant units (undiscovered groups).
 
 @export var output_var: StringName = &"target_position"
 @export var wander_radius: float = 10.0
@@ -21,6 +22,11 @@ func _tick(_delta: float) -> Status:
 
 	var offset := Vector3(cos(angle), 0, sin(angle)) * distance
 	var target: Vector3 = agent.global_position + offset
+
+	# Constrain to leash boundary if agent is leashed (errant group)
+	if agent.has_method("is_leashed") and agent.is_leashed():
+		if agent.has_method("get_leash_constrained_position"):
+			target = agent.get_leash_constrained_position(target)
 
 	blackboard.set_var(output_var, target)
 	blackboard.set_var(&"current_action", "Wandering")

@@ -59,6 +59,7 @@ func _collapse() -> void:
 
 func _populate_crew_list() -> void:
 	## Rebuild the crew list from current units.
+	## Only shows discovered units (errant groups hidden until found).
 	# Clear existing
 	for child in crew_list.get_children():
 		child.queue_free()
@@ -69,11 +70,16 @@ func _populate_crew_list() -> void:
 	units.append_array(get_tree().get_nodes_in_group("survivors"))
 	units.append_array(get_tree().get_nodes_in_group("selectable_units"))
 
-	# Remove duplicates
+	# Remove duplicates and filter to discovered units only
 	var unique_units: Array[Node] = []
 	for unit in units:
 		if unit not in unique_units and is_instance_valid(unit):
-			unique_units.append(unit)
+			# Only show discovered units in roster
+			var is_discovered := true
+			if "is_discovered" in unit:
+				is_discovered = unit.is_discovered
+			if is_discovered:
+				unique_units.append(unit)
 
 	# Sort by name if available
 	unique_units.sort_custom(func(a, b):
@@ -86,8 +92,8 @@ func _populate_crew_list() -> void:
 	for unit in unique_units:
 		_add_unit_row(unit)
 
-	# Update the "Men" button to show count
-	men_button.text = "Men (%d)" % unique_units.size()
+	# Update the "Units" button to show count
+	men_button.text = "Units (%d)" % unique_units.size()
 
 
 func _add_unit_row(unit: Node) -> void:
@@ -96,6 +102,14 @@ func _add_unit_row(unit: Node) -> void:
 	row.add_theme_constant_override("separation", 10)
 	row.mouse_filter = Control.MOUSE_FILTER_STOP
 
+	# Determine rank color (Captain = navy blue, Officer = olive green, Men = default)
+	var name_color := Color(0.9, 0.9, 0.9)  # Default for Men
+	if unit is ClickableUnit:
+		if unit.rank == ClickableUnit.UnitRank.CAPTAIN:
+			name_color = Color(0.5, 0.6, 0.85)  # Desaturated navy blue
+		elif unit.rank == ClickableUnit.UnitRank.OFFICER:
+			name_color = Color(0.6, 0.7, 0.45)  # Desaturated olive green
+
 	# Name label
 	var name_label := Label.new()
 	var unit_name: String = unit.unit_name if "unit_name" in unit else unit.name
@@ -103,6 +117,7 @@ func _add_unit_row(unit: Node) -> void:
 	name_label.custom_minimum_size.x = 120
 	name_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	name_label.add_theme_font_size_override("font_size", 11)
+	name_label.add_theme_color_override("font_color", name_color)
 	row.add_child(name_label)
 
 	# Action label
@@ -194,3 +209,9 @@ func _on_row_input(event: InputEvent, unit: Node) -> void:
 				input_handler._deselect_all()
 				if input_handler.has_method("_add_to_selection"):
 					input_handler._add_to_selection(unit)
+
+
+func refresh() -> void:
+	## Public method to refresh unit list and count.
+	## Call this when new units are spawned or discovered.
+	_populate_crew_list()

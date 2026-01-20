@@ -8,9 +8,12 @@ var _captain_scene: PackedScene = preload("res://src/characters/captain.tscn")
 var _camera_scene: PackedScene = preload("res://src/camera/rts_camera.tscn")
 var _hud_scene: PackedScene = preload("res://ui/game_hud.tscn")
 var _inventory_hud_scene: PackedScene = preload("res://ui/inventory_hud.tscn")
+var _sled_panel_scene: PackedScene = preload("res://ui/sled_panel.tscn")
 var _ship_scene: PackedScene = preload("res://objects/ship1/ship_1.tscn")
 var _sky3d_scene: PackedScene = preload("res://sky_3d.tscn")
 var _snow_controller: PackedScene = preload("res://src/systems/weather/snow_controller.tscn")
+var _scenario_panel_scene: PackedScene = preload("res://ui/scenario_panel.tscn")
+var _tutorial_panel_scene: PackedScene = preload("res://ui/tutorial_panel.tscn")
 
 	
 ## Load terrain texture configuration (dedicated scene for procedural generation)
@@ -29,8 +32,13 @@ var runtime_nav_baker: RuntimeNavBaker = null
 var captain: Node3D = null
 var ship: Node3D = null  # The frozen ship
 var rts_camera: Camera3D = null
+var sled_panel: Control = null  # Sled interaction UI
 var _seed_manager = null  # SeedManager instance
 var character_spawner: Node
+var scenario_panel: ScenarioPanel = null  # Intro screen
+var tutorial_panel: TutorialPanel = null  # Tutorial screen
+var game_hud: CanvasLayer = null  # Main game HUD
+var inventory_hud: CanvasLayer = null  # Inventory HUD
 
 ## Generated data
 var _heightmap: Image = null
@@ -48,6 +56,22 @@ var _progress_bar: ProgressBar = null
 @export var barrel_count: int = 6
 @export var crate_count: int = 6
 @export var fire_count: int = 2
+
+## Ship complement configuration (GDD values)
+@export var officer_count_min: int = 2
+@export var officer_count_max: int = 4
+@export var men_count_min: int = 15
+@export var men_count_max: int = 20
+
+## Errant group configuration (GDD values)
+@export var errant_group_count_min: int = 2
+@export var errant_group_count_max: int = 3
+@export var errant_men_min: int = 3
+@export var errant_men_max: int = 5
+@export var errant_officer_chance: float = 0.4  # 40% chance per group
+
+## Object spawner reference
+var object_spawner: Node = null
 
 
 var _temp_camera: Camera3D = null  # Temp camera to prevent Terrain3D errors during generation
@@ -157,6 +181,9 @@ func _generate_game() -> void:
 	print("[ProceduralGame] Seed: %s" % _seed_manager.get_seed_string())
 
 	_hide_loading()
+
+	# Show scenario intro screen (game waits for player to click "Let's Begin")
+	_show_scenario_screen()
 
 
 func _create_loading_ui() -> void:
@@ -429,33 +456,50 @@ func _place_pois(inlet_position: Vector3) -> void:
 
 
 func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
-	## Spawn captain at navigable spawn_pos, ship at ship_pos, containers around ship.
+	## Spawn full ship complement and errant groups as per GDD.
 	## spawn_pos is pre-calculated to be on gentle terrain where NavMesh works.
 	## ship_pos comes from POI placement (inlet center).
 
-	# Create character spawner
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+
+	# Create spawners
 	character_spawner = preload("res://src/systems/character_spawner.gd").new()
 	character_spawner.name = "CharacterSpawner"
 	character_spawner.spawn_radius = spawn_radius
 	add_child(character_spawner)
 
+	object_spawner = preload("res://src/systems/object_spawner.gd").new()
+	object_spawner.name = "ObjectSpawner"
+	object_spawner.spawn_radius = spawn_radius
+	add_child(object_spawner)
+
+	# === SHIP COMPLEMENT (GDD: 1 captain, 2-4 officers, 15-20 men) ===
+
 	# Spawn captain
 	captain = _captain_scene.instantiate()
 	captain.name = "Captain"
+	captain.rank = ClickableUnit.UnitRank.CAPTAIN
 	add_child(captain)
-
-	# spawn_pos already has correct Y from caller
 	captain.global_position = spawn_pos
 	captain.movement_speed = 5.0
-
 	print("[ProceduralGame] Captain spawned at %s" % captain.global_position)
 
-	# Spawn ship at ship_pos (inlet center where it's "trapped in ice")
+	# Spawn officers (player-controlled)
+	var officer_count := rng.randi_range(officer_count_min, officer_count_max)
+	var officers: Array[Node] = character_spawner.spawn_officers(officer_count, spawn_pos)
+	print("[ProceduralGame] Spawned %d officers near captain" % officers.size())
+
+	# Spawn men (AI-controlled)
+	var men_count := rng.randi_range(men_count_min, men_count_max)
+	var men: Array[Node] = character_spawner.spawn_survivors(men_count, spawn_pos)
+	print("[ProceduralGame] Spawned %d men near captain" % men.size())
+
+	# === SHIP ===
 	ship = _ship_scene.instantiate()
 	ship.name = "Ship1"
 	add_child(ship)
 
-	# Get terrain height at ship position
 	var ship_height := ship_pos.y
 	if terrain and "data" in terrain and terrain.data:
 		var terrain_height: float = terrain.data.get_height(Vector3(ship_pos.x, 0, ship_pos.z))
@@ -464,19 +508,19 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 
 	ship.global_position = Vector3(ship_pos.x, ship_height, ship_pos.z)
 
-	# Verify ship is within 500m of captain (GDD requirement)
 	var distance_to_captain := captain.global_position.distance_to(ship.global_position)
 	print("[ProceduralGame] Ship spawned at %s (distance to captain: %.1fm)" % [ship.global_position, distance_to_captain])
-	if distance_to_captain > 500.0:
-		push_warning("[ProceduralGame] Ship is %.1fm from captain - exceeds 500m requirement!" % distance_to_captain)
 
-	# Tell RuntimeNavBaker to track captain for auto-rebaking as they move
+	# Tell RuntimeNavBaker to track captain for auto-rebaking
 	runtime_nav_baker.player = captain
 
-	# Spawn containers around ship (they don't need navigation)
+	# Spawn containers around ship
 	_spawn_containers(ship_pos)
 
-	# Schedule AI and verification after NavMesh sync (needs physics frames)
+	# === ERRANT GROUPS (GDD: 2-3 groups along north coast) ===
+	_spawn_errant_groups(rng, ship_pos)
+
+	# Schedule final setup after NavMesh sync
 	_finalize_captain_setup.call_deferred()
 
 
@@ -585,13 +629,96 @@ func _verify_captain_position() -> void:
 
 
 func _spawn_containers(center: Vector3) -> void:
-	## Spawn barrels and crates around ship position
-	var object_spawner := preload("res://src/systems/object_spawner.gd").new()
-	object_spawner.name = "ObjectSpawner"
-	object_spawner.spawn_radius = spawn_radius
-	add_child(object_spawner)
+	## Spawn barrels and crates around ship position.
+	## Uses the object_spawner created in _spawn_entities_at.
+	if object_spawner:
+		object_spawner.spawn_containers(barrel_count, crate_count, fire_count, center)
 
-	object_spawner.spawn_containers(barrel_count, crate_count, fire_count, center)
+
+func _spawn_errant_groups(rng: RandomNumberGenerator, ship_pos: Vector3) -> void:
+	## Spawn errant groups along the north coast.
+	## GDD: 2-3 groups, 3-5 men each, 0-1 officer, with supplies and dim fire.
+
+	var group_count := rng.randi_range(errant_group_count_min, errant_group_count_max)
+	print("[ProceduralGame] Spawning %d errant groups along north coast..." % group_count)
+
+	for i in range(group_count):
+		# Find position on north coast (on island, not frozen sea)
+		var camp_pos := _find_north_coast_position(rng, i, group_count, ship_pos)
+		if camp_pos == Vector3.INF:
+			push_warning("[ProceduralGame] Could not find valid position for errant group %d" % i)
+			continue
+
+		# Spawn dim campfire at camp center
+		var fire: Node3D = object_spawner.spawn_campfire(camp_pos, true)  # dim=true
+
+		# Spawn supplies around fire
+		var group_barrels := rng.randi_range(1, 3)
+		var group_crates := rng.randi_range(1, 3)
+		object_spawner.spawn_containers(group_barrels, group_crates, 0, camp_pos)
+
+		# Spawn units (undiscovered, leashed to camp)
+		var men_in_group := rng.randi_range(errant_men_min, errant_men_max)
+		var has_officer := rng.randf() < errant_officer_chance
+		var units: Array[Node] = character_spawner.spawn_errant_group(camp_pos, men_in_group, has_officer, 20.0)
+
+		print("[ProceduralGame] Errant group %d at %s: %d men, %s officer, %d barrels, %d crates" % [
+			i + 1, camp_pos, men_in_group, "1" if has_officer else "no", group_barrels, group_crates])
+
+
+func _find_north_coast_position(rng: RandomNumberGenerator, group_index: int, total_groups: int, ship_pos: Vector3) -> Vector3:
+	## Find a valid position on the north coast for an errant group.
+	## Uses island_mask to ensure position is on solid land (mask >= 0.3).
+	## Spreads groups across east-west to avoid clustering.
+
+	if not _island_mask:
+		push_error("[ProceduralGame] No island mask available for errant group placement")
+		return Vector3.INF
+
+	var img_width := _island_mask.get_width()
+	var img_height := _island_mask.get_height()
+
+	# Search in north region (top 30% of image)
+	var search_y_max := int(img_height * 0.30)
+	var search_y_min := int(img_height * 0.05)  # Avoid very edge
+
+	# Divide east-west into sections for each group
+	var section_width := img_width / total_groups
+	var section_start := group_index * section_width + int(section_width * 0.1)
+	var section_end := (group_index + 1) * section_width - int(section_width * 0.1)
+
+	# Try to find valid position
+	var max_attempts := 50
+	for attempt in range(max_attempts):
+		var px := rng.randi_range(section_start, section_end)
+		var py := rng.randi_range(search_y_min, search_y_max)
+
+		# Check island mask - must be solid land (>= 0.3)
+		var mask_value: float = _island_mask.get_pixel(px, py).r
+		if mask_value < 0.3:
+			continue
+
+		# Convert pixel to world position
+		var half_size := float(img_width) / 2.0
+		var world_x := (float(px) - half_size) * METERS_PER_PIXEL
+		var world_z := (float(py) - half_size) * METERS_PER_PIXEL
+
+		# Get terrain height
+		var world_y := 0.0
+		if terrain and "data" in terrain and terrain.data:
+			var height: float = terrain.data.get_height(Vector3(world_x, 0, world_z))
+			if not is_nan(height):
+				world_y = height
+
+		var world_pos := Vector3(world_x, world_y, world_z)
+
+		# Ensure minimum distance from ship (at least 200m)
+		if world_pos.distance_to(ship_pos) < 200.0:
+			continue
+
+		return world_pos
+
+	return Vector3.INF
 
 
 func _setup_game_ui() -> void:
@@ -627,19 +754,34 @@ func _setup_game_ui() -> void:
 	input_handler.camera = rts_camera
 	add_child(input_handler)
 
-	# Create HUD
-	var game_hud := _hud_scene.instantiate()
+	# Create HUD (starts hidden until scenario dismissed)
+	game_hud = _hud_scene.instantiate()
 	add_child(game_hud)
+	game_hud.visible = false
 
-	# Create inventory HUD
-	var inventory_hud := _inventory_hud_scene.instantiate()
+	# Create inventory HUD (starts hidden until scenario dismissed)
+	inventory_hud = _inventory_hud_scene.instantiate()
 	add_child(inventory_hud)
+	inventory_hud.visible = false
 
 	# Connect container click to inventory HUD
 	if input_handler.has_signal("container_clicked"):
 		input_handler.container_clicked.connect(func(container):
 			container.open()
 			inventory_hud.open_container(container)
+		)
+
+	# Create sled interaction panel
+	sled_panel = _sled_panel_scene.instantiate()
+	add_child(sled_panel)
+
+	# Connect sled click to sled panel
+	if input_handler.has_signal("sled_clicked"):
+		input_handler.sled_clicked.connect(func(sled):
+			if sled_panel.has_method("show_for_sled"):
+				var selected: Array[Node] = input_handler.get_selected_units()
+				if not selected.is_empty():
+					sled_panel.show_for_sled(sled, selected, rts_camera)
 		)
 
 	print("[ProceduralGame] UI setup complete")
@@ -666,6 +808,13 @@ func _create_basic_lighting() -> void:
 
 	var snow_ctrl = _snow_controller.instantiate()
 	add_child(snow_ctrl)
+
+	# Notify TimeManager to find the newly added Sky3D
+	# (TimeManager's initial search runs before we create Sky3D)
+	var time_manager = get_node_or_null("/root/TimeManager")
+	if time_manager and time_manager.has_method("refresh_sky3d"):
+		time_manager.refresh_sky3d()
+		print("[ProceduralGame] TimeManager refreshed to find Sky3D")
 
 	print("[ProceduralGame] Sky3D and SnowController added to scene")
 
@@ -750,3 +899,97 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif key.keycode == KEY_F8:
 			character_spawner.despawn_all()
 			print("[MainController] Despawned all survivors (F8)")
+
+
+func _show_scenario_screen() -> void:
+	## Show the scenario introduction screen after generation completes.
+	## Player must click "Let's Begin" to start playing.
+
+	# Create scenario panel
+	scenario_panel = _scenario_panel_scene.instantiate()
+	add_child(scenario_panel)
+
+	# Create tutorial panel (starts hidden)
+	tutorial_panel = _tutorial_panel_scene.instantiate()
+	add_child(tutorial_panel)
+
+	# Connect signals
+	scenario_panel.game_started.connect(_on_scenario_begin)
+	scenario_panel.tutorial_requested.connect(_on_tutorial_requested)
+	tutorial_panel.back_requested.connect(_on_tutorial_back)
+
+	# Show scenario screen
+	scenario_panel.show_scenario()
+
+	# Pause game time while showing scenario
+	var time_manager := get_node_or_null("/root/TimeManager")
+	if time_manager and "paused" in time_manager:
+		time_manager.paused = true
+
+	print("[ProceduralGame] Scenario screen displayed")
+
+
+func _on_scenario_begin() -> void:
+	## Player clicked "Let's Begin" - start the game.
+
+	# Show HUD elements
+	if game_hud:
+		game_hud.visible = true
+	if inventory_hud:
+		inventory_hud.visible = true
+
+	# Start random weather
+	_start_random_weather()
+
+	# Unpause game time
+	var time_manager := get_node_or_null("/root/TimeManager")
+	if time_manager and "paused" in time_manager:
+		time_manager.paused = false
+
+	print("[ProceduralGame] Game started!")
+
+
+func _start_random_weather() -> void:
+	## Randomize initial weather conditions.
+	## 40% clear, 40% light snow, 20% blizzard (harsh but fair).
+	var snow_ctrl := _find_snow_controller()
+	if not snow_ctrl:
+		print("[ProceduralGame] No SnowController found, skipping weather")
+		return
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+
+	var roll := rng.randf()
+	if roll < 0.4:
+		# 40% chance: Clear weather (already default)
+		print("[ProceduralGame] Starting weather: Clear")
+	elif roll < 0.8:
+		# 40% chance: Light snow
+		snow_ctrl.start_snow(1)  # SnowIntensity.LIGHT = 1
+		print("[ProceduralGame] Starting weather: Light snow")
+	else:
+		# 20% chance: Blizzard (challenging start)
+		snow_ctrl.start_snow(2)  # SnowIntensity.HEAVY = 2
+		print("[ProceduralGame] Starting weather: BLIZZARD!")
+
+
+func _find_snow_controller() -> Node:
+	## Find SnowController node in scene.
+	var nodes := get_tree().get_nodes_in_group("weather")
+	if nodes.size() > 0:
+		return nodes[0]
+	# Search by class/name
+	return get_tree().current_scene.find_child("SnowController", true, false)
+
+
+func _on_tutorial_requested() -> void:
+	## Player clicked "Tutorial" - show tutorial screen.
+	scenario_panel.hide_scenario()
+	tutorial_panel.show_tutorial()
+
+
+func _on_tutorial_back() -> void:
+	## Player clicked "Back" from tutorial - return to scenario.
+	tutorial_panel.hide_tutorial()
+	scenario_panel.show_scenario()

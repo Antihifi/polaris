@@ -26,11 +26,10 @@ extends Resource
 @export_range(0.1, 0.8, 0.05) var persistence: float = 0.4
 @export_range(1.5, 3.0, 0.1) var lacunarity: float = 2.0
 
-## ============== RIDGE PARAMETERS (Castle Wall Fix) ==============
+## ============== RIDGE PARAMETERS ==============
 @export_group("Ridge Parameters")
 @export_range(0.001, 0.02, 0.001) var ridge_frequency: float = 0.008
-@export_range(0.0, 1.0, 0.05) var ridge_amplitude: float = 0.3  ## Was 0.6, reduced to fix castle walls
-@export var use_ridged_noise: bool = true  ## Toggle ridged noise on/off
+@export_range(0.0, 1.0, 0.05) var ridge_amplitude: float = 0.3  ## Mountain variation strength
 @export_range(0.001, 0.02, 0.001) var valley_frequency: float = 0.005
 @export_range(0.0, 0.5, 0.05) var valley_cut_strength: float = 0.3
 @export_range(0.005, 0.03, 0.005) var erosion_frequency: float = 0.012
@@ -141,7 +140,6 @@ func reset_to_defaults() -> void:
 
 	ridge_frequency = 0.008
 	ridge_amplitude = 0.3
-	use_ridged_noise = true
 	valley_frequency = 0.005
 	valley_cut_strength = 0.3
 	erosion_frequency = 0.012

@@ -81,6 +81,12 @@ func _ready() -> void:
 	_initialize_rescue_timer()
 
 
+func refresh_sky3d() -> void:
+	## Re-search for Sky3D node. Call this after dynamically adding Sky3D to a scene.
+	## Used by procedural_game_controller after creating Sky3D at runtime.
+	_find_sky3d()
+
+
 func _find_sky3d() -> void:
 	## Locate Sky3D node and configure it for our game.
 	sky3d = _find_node_by_class(get_tree().current_scene, "Sky3D")
@@ -98,11 +104,10 @@ func _find_sky3d() -> void:
 
 
 ## Starting date for the expedition (September 1846 - when Franklin expedition became trapped in ice)
-## NOTE: Using 2024 temporarily to test if Sky3D has issues with historical dates
 @export var starting_month: int = 9
 @export var starting_day: int = 12
-@export var starting_year: int = 2024  # Changed from 1846 to test
-@export var starting_hour: float = 8.0
+@export var starting_year: int = 1846
+@export var starting_hour: float = 4.5  # Just before dawn (~4:30 AM)
 
 func _configure_sky3d() -> void:
 	## Configure Sky3D for arctic survival game.
@@ -282,6 +287,7 @@ func _update_survivor_needs() -> void:
 	var survivors := get_tree().get_nodes_in_group("survivors")
 	var temp := get_current_temperature()
 	var is_day := is_daytime()
+	var blizzard := is_blizzard()
 
 	for node in survivors:
 		if node.has_method("update_needs"):
@@ -295,7 +301,7 @@ func _update_survivor_needs() -> void:
 			var near_fire := false
 			if node.has_method("is_near_fire"):
 				near_fire = node.is_near_fire()
-			node.update_needs(1.0, in_shelter, near_fire, temp, in_sunlight)
+			node.update_needs(1.0, in_shelter, near_fire, temp, in_sunlight, blizzard)
 
 
 # --- Time Control ---

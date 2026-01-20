@@ -5,8 +5,11 @@ class_name CharacterSpawner extends Node
 signal survivors_spawned(count: int)
 signal spawn_progress(current: int, total: int)
 
-## Scene to instantiate for each unit (defaults to captain.tscn)
+## Scene to instantiate for each unit (defaults to men.tscn)
 @export var unit_scene: PackedScene
+
+## Officer scene (no AI controller, player-controlled)
+var officer_scene: PackedScene
 
 ## Random name pools (Franklin expedition era)
 const FIRST_NAMES: Array[String] = [
@@ -39,9 +42,11 @@ var _terrain_cache: Node = null
 func _ready() -> void:
 	_rng.randomize()
 
-	# Load default unit
+	# Load default unit scenes
 	if not unit_scene:
 		unit_scene = preload("res://src/characters/men.tscn")
+	if not officer_scene:
+		officer_scene = preload("res://src/characters/officers.tscn")
 
 
 func spawn_survivors(count: int, center: Vector3 = Vector3.INF) -> Array[Node]:
@@ -64,6 +69,106 @@ func spawn_survivors(count: int, center: Vector3 = Vector3.INF) -> Array[Node]:
 	survivors_spawned.emit(spawned.size())
 	print("[CharacterSpawner] Spawned %d units" % spawned.size())
 	return spawned
+
+
+func spawn_officers(count: int, center: Vector3) -> Array[Node]:
+	## Spawn multiple officers (player-controlled, no AI).
+	## Used for ship complement officers.
+	var spawned: Array[Node] = []
+	var positions := _generate_spawn_positions(count, center)
+
+	for i in range(count):
+		var officer := _spawn_single_officer(positions[i], i)
+		if officer:
+			spawned.append(officer)
+			_spawned_units.append(officer)
+
+	print("[CharacterSpawner] Spawned %d officers" % spawned.size())
+	return spawned
+
+
+func spawn_errant_group(center: Vector3, men_count: int, has_officer: bool, leash_radius: float = 20.0) -> Array[Node]:
+	## Spawn an errant group (undiscovered, AI-controlled, leashed to camp).
+	## These units don't appear in roster until discovered by captain/officer.
+	var group: Array[Node] = []
+	var positions := _generate_spawn_positions(men_count + (1 if has_officer else 0), center)
+	var pos_idx := 0
+
+	# Spawn men (undiscovered, AI-controlled)
+	for i in range(men_count):
+		var unit := _spawn_single_unit(positions[pos_idx], i)
+		if unit:
+			unit.is_discovered = false
+			unit.remove_from_group("selectable_units")
+			unit.leash_center = center
+			unit.leash_radius = leash_radius
+			group.append(unit)
+		pos_idx += 1
+
+	# Optionally spawn officer (undiscovered, AI-controlled until found)
+	if has_officer and pos_idx < positions.size():
+		var officer := _spawn_errant_officer(positions[pos_idx])
+		if officer:
+			officer.is_discovered = false
+			officer.remove_from_group("selectable_units")
+			officer.leash_center = center
+			officer.leash_radius = leash_radius
+			group.append(officer)
+
+	print("[CharacterSpawner] Spawned errant group: %d men, %s officer" % [
+		men_count, "1" if has_officer else "no"])
+	return group
+
+
+func _spawn_single_officer(position: Vector3, index: int) -> Node:
+	## Create and configure a single officer (player-controlled).
+	var unit: Node = officer_scene.instantiate()
+
+	# Add to scene FIRST
+	get_tree().current_scene.add_child(unit)
+	unit.global_position = position
+
+	# Generate random identity
+	var first_name := FIRST_NAMES[_rng.randi() % FIRST_NAMES.size()]
+	var last_name := LAST_NAMES[_rng.randi() % LAST_NAMES.size()]
+	unit.unit_name = "Lt. %s %s" % [first_name, last_name]
+
+	# Set rank
+	unit.rank = ClickableUnit.UnitRank.OFFICER
+
+	# Randomize stats
+	_randomize_stats(unit)
+
+	# Set movement speed with slight variation
+	unit.movement_speed = _vary_value(base_movement_speed, 0.15)
+
+	# Random rotation
+	unit.rotation.y = _rng.randf() * TAU
+
+	return unit
+
+
+func _spawn_errant_officer(position: Vector3) -> Node:
+	## Spawn an officer for errant group (AI-controlled until discovered).
+	## Uses men.tscn (with AI) but sets rank to OFFICER.
+	var unit: Node = unit_scene.instantiate()  # men.tscn has ManAIController
+
+	get_tree().current_scene.add_child(unit)
+	unit.global_position = position
+
+	var first_name := FIRST_NAMES[_rng.randi() % FIRST_NAMES.size()]
+	var last_name := LAST_NAMES[_rng.randi() % LAST_NAMES.size()]
+	unit.unit_name = "Lt. %s %s" % [first_name, last_name]
+
+	# Set rank to officer (AI will be removed on discovery)
+	unit.rank = ClickableUnit.UnitRank.OFFICER
+
+	_randomize_stats(unit)
+	unit.movement_speed = _vary_value(base_movement_speed, 0.15)
+	unit.rotation.y = _rng.randf() * TAU
+
+	_spawned_units.append(unit)
+	return unit
 
 
 func _spawn_single_unit(position: Vector3, index: int) -> Node:
@@ -155,6 +260,11 @@ func _randomize_stats(unit: Node) -> void:
 	# Vary physical attributes
 	stats.max_carry_weight = _vary_value(50.0, 0.3)
 
+	# Generate strength with skewed distribution (60-100, higher values rare)
+	var strength_value: float = _generate_skewed_strength()
+	stats.base_strength = strength_value
+	stats.current_strength = strength_value
+
 
 func _apply_initial_animation_offset(unit: Node) -> void:
 	## Apply animation offset to the current idle animation.
@@ -191,6 +301,16 @@ func _vary_value(base_value: float, variation: float) -> float:
 	var min_val := base_value * (1.0 - variation)
 	var max_val := base_value * (1.0 + variation)
 	return _rng.randf_range(min_val, max_val)
+
+
+func _generate_skewed_strength() -> float:
+	## Generate strength 60-100 with values above 70 increasingly rare.
+	## Uses inverse power distribution: most units will be 60-70, few will be 85+.
+	## Approximately: 50% get 60-70, 35% get 70-85, 15% get 85-100.
+	var uniform: float = _rng.randf()  # 0.0 to 1.0
+	var power: float = 2.5  # Higher = more skewed toward lower values
+	var skewed: float = 1.0 - pow(uniform, 1.0 / power)
+	return 60.0 + skewed * 40.0  # Maps to 60-100 range
 
 
 func _generate_spawn_positions(count: int, center: Vector3) -> Array[Vector3]:
