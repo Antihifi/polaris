@@ -8,6 +8,7 @@ extends Node
 @export var unit_collision_mask: int = 2     # Layer for selectable units
 @export var container_collision_mask: int = 8  # Layer 4 for containers (1 << 3)
 @export var sled_collision_mask: int = 16     # Layer 5 for vehicles/sleds
+@export var workbench_collision_mask: int = 32  # Layer 6 for workbenches
 
 ## Enable multi-selection with shift-click and box select
 @export var multi_select_enabled: bool = true
@@ -16,6 +17,7 @@ signal unit_double_clicked(unit: Node)
 signal selection_changed(units: Array)
 signal container_clicked(container: StorageContainer)
 signal sled_clicked(sled: Node)
+signal workbench_clicked(workbench: Node)
 
 # Single selection (legacy support)
 var selected_unit: ClickableUnit = null
@@ -220,6 +222,34 @@ func _raycast_for_sled(screen_position: Vector2) -> Node:
 	return null
 
 
+func _raycast_for_workbench(screen_position: Vector2) -> Node:
+	## Raycast to find a workbench at screen position. Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+
+	# Try workbench collision layer first
+	var workbench_query := PhysicsRayQueryParameters3D.create(from, to, workbench_collision_mask)
+	workbench_query.collide_with_areas = true
+	workbench_query.collide_with_bodies = true
+	var workbench_result := space_state.intersect_ray(workbench_query)
+
+	if not workbench_result.is_empty():
+		var hit: Object = workbench_result.collider
+		if hit is Node:
+			# Walk up parent chain to find workbench root (in "workbenches" group)
+			var current: Node = hit as Node
+			for i in range(5):
+				if not current:
+					break
+				if current.is_in_group("workbenches"):
+					return current
+				current = current.get_parent()
+
+	return null
+
+
 func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 	## Handle clicking on a unit - single or additive selection.
 	# Check for double-click
@@ -261,7 +291,14 @@ func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 func _handle_right_click(screen_position: Vector2) -> void:
 	## Move selected unit(s) to clicked position on terrain.
 	## If clicking on a sled with units selected, emit sled_clicked signal.
+	## If clicking on a workbench, emit workbench_clicked signal.
 	## Non-lead sled pullers are filtered out - they follow their leader automatically.
+
+	# Check if right-clicking on a workbench
+	var clicked_workbench := _raycast_for_workbench(screen_position)
+	if clicked_workbench:
+		workbench_clicked.emit(clicked_workbench)
+		return
 
 	# Check if right-clicking on a sled (only if we have units selected)
 	if has_selection():
@@ -500,6 +537,10 @@ func _finish_box_selection() -> void:
 		if not is_instance_valid(unit):
 			continue
 
+		# Skip undiscovered units - they cannot be selected until recruited
+		if "is_discovered" in unit and not unit.is_discovered:
+			continue
+
 		# Project unit position to screen
 		var screen_pos := camera.unproject_position(unit.global_position)
 
@@ -531,6 +572,9 @@ func _select_all_units() -> void:
 
 	for unit in unique_units:
 		if is_instance_valid(unit):
+			# Skip undiscovered units - they cannot be selected until recruited
+			if "is_discovered" in unit and not unit.is_discovered:
+				continue
 			_add_to_selection(unit)
 
 	print("[RTSInput] Selected all %d units" % selected_units.size())

@@ -25,6 +25,7 @@ var character_spawner: Node
 var object_spawner: Node
 var inventory_hud: CanvasLayer
 var sled_panel: Control
+var workbench_panel: Control
 
 
 func _ready() -> void:
@@ -69,6 +70,14 @@ func _ready() -> void:
 
 	# Connect sled click to sled panel
 	input_handler.sled_clicked.connect(_on_sled_clicked)
+
+	# Create workbench interaction panel
+	var workbench_panel_scene := preload("res://ui/workbench_panel.tscn")
+	workbench_panel = workbench_panel_scene.instantiate()
+	add_child(workbench_panel)
+
+	# Connect workbench click to workbench panel
+	input_handler.workbench_clicked.connect(_on_workbench_clicked)
 
 	# Captain is player-controlled only - no AI controller
 
@@ -172,6 +181,13 @@ func _on_sled_clicked(sled: Node) -> void:
 	if selected.is_empty():
 		return
 	sled_panel.show_for_sled(sled, selected, rts_camera)
+
+
+func _on_workbench_clicked(workbench: Node) -> void:
+	## Handle workbench right-click - show workbench crafting panel.
+	if not workbench or not workbench_panel:
+		return
+	workbench_panel.show_for_workbench(workbench, rts_camera)
 
 
 func _add_ai_controller(unit: Node) -> void:

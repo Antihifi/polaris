@@ -110,13 +110,17 @@ func select_multiple(units: Array[Node], add_to_selection: bool = false) -> void
 
 func select_all() -> void:
 	## Select all units in the scene.
+	## Skips undiscovered (errant) units - they cannot be selected until recruited.
 	var all_units := get_tree().get_nodes_in_group("survivors")
 	all_units.append_array(get_tree().get_nodes_in_group("selectable_units"))
 
-	# Remove duplicates
+	# Remove duplicates and filter undiscovered
 	var unique_units: Array[Node] = []
 	for node in all_units:
 		if node not in unique_units and is_instance_valid(node):
+			# Skip undiscovered units
+			if "is_discovered" in node and not node.is_discovered:
+				continue
 			unique_units.append(node)
 
 	select_multiple(unique_units)
@@ -215,6 +219,9 @@ func finish_box_selection(camera: Camera3D, selection_rect: Rect2, add_to_select
 
 	for node in all_units:
 		if node is Node3D:
+			# Skip undiscovered units - they cannot be selected until recruited
+			if "is_discovered" in node and not node.is_discovered:
+				continue
 			var screen_pos := camera.unproject_position(node.global_position)
 			if selection_rect.has_point(screen_pos) and node not in units_in_box:
 				units_in_box.append(node)
@@ -261,9 +268,13 @@ func try_select_at_position(camera: Camera3D, screen_position: Vector2, add_to_s
 
 func _is_selectable(node: Object) -> bool:
 	## Check if a node is selectable (in survivors or selectable_units group).
+	## Errant (undiscovered) units cannot be selected until recruited.
 	if not node is Node:
 		return false
 	var n := node as Node
+	# Check discovery state - errant units cannot be selected
+	if "is_discovered" in n and not n.is_discovered:
+		return false
 	return n.is_in_group("survivors") or n.is_in_group("selectable_units")
 
 

@@ -5,6 +5,7 @@ const TerrainGenerator := preload("res://src/terrain/terrain_generator.gd")
 var _panel: Control = null
 var _is_open: bool = false
 var _snow_controller: SnowController = null
+var _dynamic_weather_controller: Node = null
 var _seed_input: LineEdit = null
 var _progress_label: Label = null
 var _new_game_btn: Button = null
@@ -15,6 +16,9 @@ var _temp_label: Label = null
 var _temp_override_check: CheckBox = null
 var _temp_slider: HSlider = null
 var _temp_value_label: Label = null
+
+# Weather status display
+var _weather_status_label: Label = null
 
 # Camera controls
 var _camera_constraint_check: CheckBox = null
@@ -27,9 +31,37 @@ var _camera_original_zoom_speed: float = 20.0
 var _stat_sliders: Dictionary = {}  # stat_name -> HSlider
 var _stat_value_labels: Dictionary = {}  # stat_name -> Label
 
+# Scene mode detection
+var _is_procedural_mode: bool = false
+var _debug_override_unlocked: bool = false
+var _override_input: LineEdit = null
+var _override_container: Control = null
+var _debug_content_container: Control = null
+const OVERRIDE_CODE: String = "1111"
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# Detect if we're in procedural mode (not main.tscn)
+	_is_procedural_mode = _detect_procedural_mode()
+
+
+func _detect_procedural_mode() -> bool:
+	## Returns true if we're in a procedural game scene, false for main.tscn.
+	var scene := get_tree().current_scene
+	if not scene:
+		return false
+	# Check scene filename
+	var scene_path: String = scene.scene_file_path
+	if scene_path.ends_with("main.tscn"):
+		return false
+	# Check for ProceduralGameController node/script
+	if scene.get_script() and "procedural" in scene.get_script().resource_path.to_lower():
+		return true
+	# Check by name
+	if "procedural" in scene.name.to_lower():
+		return true
+	return true  # Default to procedural (limited menu) for unknown scenes
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -56,6 +88,7 @@ func _open_menu() -> void:
 		get_node("/root/TimeManager").pause()
 	# Update displays
 	_update_temp_label()
+	_update_weather_status()
 	_sync_temp_override_state()
 	_sync_camera_constraint_state()
 
@@ -84,7 +117,11 @@ func _create_panel() -> void:
 
 	_panel = PanelContainer.new()
 	_panel.process_mode = Node.PROCESS_MODE_ALWAYS
-	_panel.custom_minimum_size = Vector2(400, 600)
+	# Smaller panel for procedural mode (pause menu)
+	if _is_procedural_mode and not _debug_override_unlocked:
+		_panel.custom_minimum_size = Vector2(300, 200)
+	else:
+		_panel.custom_minimum_size = Vector2(400, 600)
 	# Limit max height to 80% of viewport
 	_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	center.add_child(_panel)
@@ -93,7 +130,7 @@ func _create_panel() -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(380, 0)
+	scroll.custom_minimum_size = Vector2(280, 0) if (_is_procedural_mode and not _debug_override_unlocked) else Vector2(380, 0)
 	_panel.add_child(scroll)
 
 	var margin := MarginContainer.new()
@@ -109,6 +146,66 @@ func _create_panel() -> void:
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.add_child(vbox)
 
+	# Different content based on mode
+	if _is_procedural_mode and not _debug_override_unlocked:
+		_create_pause_menu_content(vbox)
+	else:
+		_create_full_debug_content(vbox)
+
+	_find_snow_controller()
+
+
+func _create_pause_menu_content(vbox: VBoxContainer) -> void:
+	## Create simplified pause menu for procedural mode.
+	var title := Label.new()
+	title.text = "PAUSED"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	vbox.add_child(HSeparator.new())
+
+	_add_button(vbox, "Resume", _close_menu)
+
+	var quit_btn := Button.new()
+	quit_btn.text = "Quit to Main Menu"
+	quit_btn.pressed.connect(_on_quit_to_menu)
+	vbox.add_child(quit_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	# Override code section (hidden/subtle)
+	_override_container = VBoxContainer.new()
+	_override_container.add_theme_constant_override("separation", 5)
+	vbox.add_child(_override_container)
+
+	var override_label := Label.new()
+	override_label.text = "Enter Override Code:"
+	override_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	override_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	_override_container.add_child(override_label)
+
+	var override_hbox := HBoxContainer.new()
+	override_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	_override_container.add_child(override_hbox)
+
+	_override_input = LineEdit.new()
+	_override_input.placeholder_text = "****"
+	_override_input.secret = true
+	_override_input.custom_minimum_size.x = 80
+	_override_input.max_length = 4
+	_override_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_override_input.text_submitted.connect(_on_override_submitted)
+	override_hbox.add_child(_override_input)
+
+	var hint := Label.new()
+	hint.text = "Press ESC to close"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	vbox.add_child(hint)
+
+
+func _create_full_debug_content(vbox: VBoxContainer) -> void:
+	## Create full debug menu content.
 	var title := Label.new()
 	title.text = "DEBUG MENU"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -155,10 +252,20 @@ func _create_panel() -> void:
 	weather_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(weather_label)
 
-	_add_button(vbox, "Light Snow", _on_light_snow)
-	_add_button(vbox, "Heavy Blizzard", _on_heavy_blizzard)
+	# Weather status display
+	_weather_status_label = Label.new()
+	_weather_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_weather_status_label.add_theme_color_override("font_color", Color(0.8, 0.9, 1.0))
+	_weather_status_label.text = "Loading..."
+	vbox.add_child(_weather_status_label)
+
+	# Force weather buttons
+	_add_button(vbox, "Force Clear Weather", _on_force_clear)
+	_add_button(vbox, "Force Very Light Snow", _on_force_very_light)
+	_add_button(vbox, "Force Light Snow", _on_light_snow)
+	_add_button(vbox, "Force Medium Snow", _on_force_medium)
+	_add_button(vbox, "Force Heavy Blizzard", _on_heavy_blizzard)
 	_add_button(vbox, "Stop Snow (Fade)", _on_stop_fade)
-	_add_button(vbox, "Stop Snow (Immediate)", _on_stop_immediate)
 
 	vbox.add_child(HSeparator.new())
 
@@ -230,13 +337,18 @@ func _create_panel() -> void:
 
 	_add_button(vbox, "RESUME", _close_menu)
 
+	# Add Quit to Main Menu button for procedural mode with override unlocked
+	if _is_procedural_mode and _debug_override_unlocked:
+		var quit_btn := Button.new()
+		quit_btn.text = "Quit to Main Menu"
+		quit_btn.pressed.connect(_on_quit_to_menu)
+		vbox.add_child(quit_btn)
+
 	var hint := Label.new()
 	hint.text = "Press ESC to close"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	vbox.add_child(hint)
-
-	_find_snow_controller()
 
 
 func _add_button(parent: Control, text: String, callback: Callable) -> void:
@@ -246,33 +358,128 @@ func _add_button(parent: Control, text: String, callback: Callable) -> void:
 	parent.add_child(btn)
 
 
+func _on_override_submitted(code: String) -> void:
+	## Check if the entered code unlocks the full debug menu.
+	if code == OVERRIDE_CODE:
+		_debug_override_unlocked = true
+		print("[DebugMenu] Override code accepted - full debug menu unlocked")
+		# Rebuild the panel with full debug content
+		_rebuild_panel()
+	else:
+		# Wrong code - clear the input and flash red
+		if _override_input:
+			_override_input.text = ""
+			_override_input.add_theme_color_override("font_color", Color.RED)
+			# Reset color after a moment
+			get_tree().create_timer(0.5).timeout.connect(func():
+				if _override_input:
+					_override_input.remove_theme_color_override("font_color")
+			)
+
+
+func _on_quit_to_menu() -> void:
+	## Quit to main menu - unpause and change scene.
+	get_tree().paused = false
+	# Resume TimeManager if it exists
+	if has_node("/root/TimeManager"):
+		get_node("/root/TimeManager").unpause()
+	# Change to main menu scene
+	get_tree().change_scene_to_file("res://scenes/menu_screen/menu_screen.tscn")
+
+
+func _rebuild_panel() -> void:
+	## Destroy and recreate the panel (used when override is unlocked).
+	if _panel:
+		_panel.get_parent().get_parent().queue_free()  # Free the CanvasLayer
+		_panel = null
+	# Reset control references
+	_seed_input = null
+	_progress_label = null
+	_new_game_btn = null
+	_temp_label = null
+	_temp_override_check = null
+	_temp_slider = null
+	_temp_value_label = null
+	_weather_status_label = null
+	_camera_constraint_check = null
+	_stat_sliders.clear()
+	_stat_value_labels.clear()
+	_override_input = null
+	_override_container = null
+	# Recreate with new content
+	_create_panel()
+	_panel.visible = true
+	# Update displays
+	_update_temp_label()
+	_update_weather_status()
+	_sync_temp_override_state()
+	_sync_camera_constraint_state()
+
+
 func _find_snow_controller() -> void:
 	await get_tree().process_frame
 	var root := get_tree().current_scene
 	if root:
+		# Find SnowController
 		var nodes := root.find_children("*", "SnowController", true, false)
 		if nodes.size() > 0:
 			_snow_controller = nodes[0]
 
+		# Find DynamicWeatherController
+		var dyn_nodes := root.find_children("*", "DynamicWeatherController", true, false)
+		if dyn_nodes.size() > 0:
+			_dynamic_weather_controller = dyn_nodes[0]
+			print("[DebugMenu] Found DynamicWeatherController")
 
-func _on_light_snow() -> void:
-	if _snow_controller:
+
+func _on_force_clear() -> void:
+	if _dynamic_weather_controller and _dynamic_weather_controller.has_method("force_weather"):
+		_dynamic_weather_controller.force_weather("Clear")
+		_update_weather_status()
+	elif _snow_controller:
+		_snow_controller.stop_snow()
+
+
+func _on_force_very_light() -> void:
+	if _dynamic_weather_controller and _dynamic_weather_controller.has_method("force_weather"):
+		_dynamic_weather_controller.force_weather("Very Light")
+		_update_weather_status()
+	elif _snow_controller:
+		# Fallback: Very Light maps to Light in basic SnowController
 		_snow_controller.start_snow(SnowController.SnowIntensity.LIGHT)
 
 
+func _on_light_snow() -> void:
+	if _dynamic_weather_controller and _dynamic_weather_controller.has_method("force_weather"):
+		_dynamic_weather_controller.force_weather("Light")
+		_update_weather_status()
+	elif _snow_controller:
+		_snow_controller.start_snow(SnowController.SnowIntensity.LIGHT)
+
+
+func _on_force_medium() -> void:
+	if _dynamic_weather_controller and _dynamic_weather_controller.has_method("force_weather"):
+		_dynamic_weather_controller.force_weather("Medium")
+		_update_weather_status()
+	elif _snow_controller:
+		# Fallback: Medium maps to Heavy in basic SnowController
+		_snow_controller.start_snow(SnowController.SnowIntensity.HEAVY)
+
+
 func _on_heavy_blizzard() -> void:
-	if _snow_controller:
+	if _dynamic_weather_controller and _dynamic_weather_controller.has_method("force_weather"):
+		_dynamic_weather_controller.force_weather("Heavy")
+		_update_weather_status()
+	elif _snow_controller:
 		_snow_controller.start_snow(SnowController.SnowIntensity.HEAVY)
 
 
 func _on_stop_fade() -> void:
-	if _snow_controller:
+	if _dynamic_weather_controller and _dynamic_weather_controller.has_method("force_clear_weather"):
+		_dynamic_weather_controller.force_clear_weather()
+		_update_weather_status()
+	elif _snow_controller:
 		_snow_controller.stop_snow()
-
-
-func _on_stop_immediate() -> void:
-	if _snow_controller:
-		_snow_controller.set_snow_immediate(SnowController.SnowIntensity.NONE)
 
 
 func _on_new_game() -> void:
@@ -511,6 +718,49 @@ func _sync_temp_override_state() -> void:
 			var override_val: float = time_manager.get_temperature_override_value()
 			_temp_slider.set_value_no_signal(override_val)
 			_temp_value_label.text = "%.0f°C" % override_val
+
+
+# --- Weather Status ---
+
+func _update_weather_status() -> void:
+	## Update weather status label with current weather info.
+	if not _weather_status_label:
+		return
+
+	# Try to find DynamicWeatherController if not cached
+	if not _dynamic_weather_controller:
+		var root := get_tree().current_scene
+		if root:
+			var dyn_nodes := root.find_children("*", "DynamicWeatherController", true, false)
+			if dyn_nodes.size() > 0:
+				_dynamic_weather_controller = dyn_nodes[0]
+
+	if _dynamic_weather_controller and _dynamic_weather_controller.has_method("get_weather_status"):
+		var status: Dictionary = _dynamic_weather_controller.get_weather_status()
+		var event_name: String = status.get("event_name", "Unknown")
+		var wind_speed: float = status.get("wind_speed", 0.0)
+		var wind_dir: String = status.get("wind_direction", "?")
+		var fog_density: float = status.get("fog_density", 0.0)
+		var time_remaining: float = status.get("time_remaining", 0.0)
+
+		_weather_status_label.text = "Event: %s\nWind: %.1f m/s from %s\nFog: %.3f\nRemaining: %.0fs" % [
+			event_name,
+			wind_speed,
+			wind_dir,
+			fog_density,
+			time_remaining
+		]
+	elif _snow_controller:
+		# Fallback to SnowController info
+		var intensity: String = "Unknown"
+		match _snow_controller.current_intensity:
+			0: intensity = "None"
+			1: intensity = "Light"
+			2: intensity = "Heavy"
+
+		_weather_status_label.text = "Event: %s (SnowController)" % intensity
+	else:
+		_weather_status_label.text = "Weather system not found"
 
 
 # --- Camera Controls ---

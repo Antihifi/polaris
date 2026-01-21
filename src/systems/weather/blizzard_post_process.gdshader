@@ -3,30 +3,32 @@ render_mode blend_mix, depth_test_disabled, cull_disabled, unshaded;
 
 // Screen-space volumetric blizzard fog shader
 // Adapted from "Frozen Wasteland" by Dave Hoskins (Shadertoy)
-// Uses ground-plane projected fog sampling for stable camera movement
+// Uses full 3D world-space fog sampling with wind animation
 
 // Raymarching settings
-uniform int ray_steps : hint_range(8, 64) = 20;
+uniform int ray_steps : hint_range(8, 64) = 24;
 uniform float max_distance : hint_range(50.0, 500.0) = 150.0;
 
 // Fog density and appearance
 uniform float fog_density : hint_range(0.0, 0.5) = 0.08;
 uniform float fog_height : hint_range(-50.0, 100.0) = 20.0;
-uniform float fog_falloff : hint_range(0.0, 0.2) = 0.02;
-uniform float fog_thickness : hint_range(1.0, 50.0) = 15.0;
+uniform float fog_falloff : hint_range(0.0, 0.2) = 0.04;
 
 // Noise settings
-uniform float noise_scale : hint_range(0.001, 0.05) = 0.004;
-uniform float detail_scale : hint_range(0.01, 0.2) = 0.02;
+uniform float noise_scale : hint_range(0.001, 0.05) = 0.008;
+uniform float detail_scale : hint_range(0.01, 0.2) = 0.03;
 
-// Wind animation - kept slow and smooth
-uniform float wind_speed : hint_range(0.0, 10.0) = 2.0;
+// Wind animation
+uniform float wind_speed : hint_range(0.0, 20.0) = 7.0;
 uniform float wind_direction : hint_range(-3.14159, 3.14159) = 0.0;
-uniform float vertical_drift : hint_range(0.0, 1.0) = 0.1;
+uniform float vertical_drift : hint_range(0.0, 3.0) = 0.5;
 
 // Wave turbulence for organic band shapes
-uniform float wave_amplitude : hint_range(0.0, 30.0) = 15.0;
-uniform float wave_frequency : hint_range(0.0, 0.2) = 0.04;
+uniform float wave_amplitude : hint_range(0.0, 10.0) = 3.0;
+uniform float wave_frequency : hint_range(0.0, 1.0) = 0.3;
+
+// Maximum fog opacity (prevents whiteout)
+uniform float fog_max_opacity : hint_range(0.1, 1.0) = 0.7;
 
 // Colors
 uniform vec3 fog_color : source_color = vec3(0.8, 0.82, 0.85);
@@ -72,42 +74,42 @@ float triangle_noise_3d(vec3 p) {
 	return rz;
 }
 
-// Sample fog density using WORLD XZ coordinates only
-// This ensures fog bands are anchored to the world and don't swirl with camera movement
-float sample_fog_2d(vec2 world_xz, float world_y, float time_val) {
-	// Wind direction vector
+// Sample fog density at a 3D world position
+// Uses full 3D noise sampling with wind animation - like original Shadertoy
+float fogmap(vec3 world_pos, float time_val) {
+	vec3 p = world_pos;
+
+	// Wind direction vector (negated to match particle visual direction)
 	vec2 wind_dir = vec2(-sin(wind_direction), -cos(wind_direction));
 
-	// Animate fog position with wind (XZ plane only)
-	vec2 fog_xz = world_xz;
-	fog_xz -= time_val * wind_speed * wind_dir;
+	// Horizontal wind drift - fog moves with the wind
+	p.xz -= time_val * wind_speed * wind_dir;
 
-	// Add large sweeping waves for organic band movement
-	// These are based on original world position, not animated position
-	fog_xz.x += sin(world_xz.y * wave_frequency + time_val * 0.15) * wave_amplitude;
-	fog_xz.y += cos(world_xz.x * wave_frequency * 0.8 + time_val * 0.1) * wave_amplitude * 0.7;
+	// Add wave turbulence for organic movement
+	// Use original world position for wave offset so bands sweep across terrain
+	p.xz += sin(world_pos.z * wave_frequency) * wave_amplitude;
+	p.xz += cos(world_pos.x * wave_frequency * 0.7) * wave_amplitude * 0.5;
 
-	// Sample noise using 2D position + slow vertical animation
-	vec3 noise_pos = vec3(fog_xz.x, time_val * vertical_drift, fog_xz.y);
+	// Vertical falling motion (snow/fog settling downward)
+	p.y -= time_val * vertical_drift;
 
-	// Primary noise at coarse scale for main bands
-	float noise = triangle_noise_3d(noise_pos * noise_scale);
+	// Primary triangle noise - creates defined bands
+	float noise = triangle_noise_3d(p * noise_scale + 0.1);
 
-	// Detail noise at finer scale
-	float detail = triangle_noise_3d(noise_pos * detail_scale) * 0.25;
+	// Detail layer at finer scale for texture
+	float detail = triangle_noise_3d(p * detail_scale) * 0.3;
 
-	// Combine
-	noise = noise * 0.75 + detail;
+	// Combine with threshold for gaps between bands
+	// max(noise - threshold, 0) creates areas of zero fog
+	float combined = max(noise - 0.1, 0.0) * (noise * 0.7 + detail);
 
-	// Threshold to create distinct bands with gaps
-	noise = smoothstep(0.2, 0.5, noise);
+	// Height-based density - fog is thickest below fog_height, fades above
+	float height_factor = 1.0;
+	if (world_pos.y > fog_height) {
+		height_factor = exp(-(world_pos.y - fog_height) * fog_falloff);
+	}
 
-	// Height-based density - fog is thickest near fog_height, fades above and below
-	float height_dist = abs(world_y - fog_height);
-	float height_factor = exp(-height_dist * fog_falloff);
-
-	// Also fade with horizontal distance for volume effect
-	return noise * height_factor;
+	return combined * height_factor;
 }
 
 varying mat4 inv_proj;
@@ -145,8 +147,8 @@ void fragment() {
 	// Limit ray distance
 	float ray_max = min(scene_dist, max_distance);
 
-	// Raymarching with Beer-Lambert transmittance
-	float transmittance = 1.0;
+	// Raymarching - accumulate fog along the ray
+	float fog_amount = 0.0;
 	float step_size = ray_max / float(ray_steps);
 
 	for (int i = 0; i < ray_steps; i++) {
@@ -154,22 +156,18 @@ void fragment() {
 		float t = (float(i) + 0.5) * step_size;
 		vec3 sample_pos = cam_pos + ray_dir * t;
 
-		// KEY: Sample fog using only XZ world coordinates
-		// This makes fog bands stable regardless of camera position/angle
-		float fog_sample = sample_fog_2d(sample_pos.xz, sample_pos.y, TIME);
+		// Sample fog at full 3D world position
+		float fog_sample = fogmap(sample_pos, TIME);
 
-		// Beer-Lambert transmittance
-		transmittance *= exp(-fog_sample * fog_density * step_size);
+		// Accumulate fog with distance-based density
+		fog_amount += fog_sample * fog_density * step_size;
 
 		// Early exit optimization
-		if (transmittance < 0.01) break;
+		if (fog_amount > 0.95) break;
 	}
 
-	// Convert transmittance to opacity
-	float opacity = 1.0 - transmittance;
-
-	// Cap maximum opacity to prevent whiteout
-	opacity = min(opacity, 0.7);
+	// Apply max opacity cap to prevent whiteout
+	float opacity = min(fog_amount, fog_max_opacity);
 
 	// Apply light tint for sunrise/sunset
 	vec3 tinted_fog = mix(fog_color, fog_color * light_tint, light_tint_strength);

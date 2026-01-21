@@ -154,6 +154,8 @@ func _update_tooltip() -> void:
 				tooltip = _get_fuel_tooltip(item_name)
 			"tool":
 				tooltip = _get_tool_tooltip(item_name)
+			"material":
+				tooltip = _get_material_tooltip(item_name)
 			_:
 				tooltip = item_name
 
@@ -203,3 +205,12 @@ func _get_tool_tooltip(item_name: String) -> String:
 			return "HATCHET\nA small axe.\nEssential for chopping\nwood and construction."
 		_:
 			return item_name + "\nA useful tool."
+
+
+func _get_material_tooltip(item_name: String) -> String:
+	## Return descriptive tooltip for material items.
+	match item_name:
+		"Scrap Wood":
+			return "SCRAP WOOD\nSalvaged timber from\nthe ship. Used at a\nworkbench for crafting."
+		_:
+			return item_name + "\nCrafting material."

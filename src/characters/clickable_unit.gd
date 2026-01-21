@@ -57,6 +57,9 @@ var sled_puller: Node = null  # SledPullerComponent
 var footstep_sound: AudioStream = preload("res://sounds/snow-walk-1.mp3")
 var _footstep_player: AudioStreamPlayer3D
 
+# Discovery UI popup
+var _man_found_scene: PackedScene = preload("res://ui/man_found.tscn")
+
 var is_selected: bool = false
 var is_moving: bool = false
 ## Set by behavior tree tasks during stationary animations (sitting, sleeping).
@@ -344,8 +347,10 @@ func _find_node_by_class(node: Node, class_name_str: String) -> Node:
 
 func move_to(target_position: Vector3) -> void:
 	## Navigate to target position.
-	## Dead units cannot move.
+	## Dead and undiscovered units cannot move.
 	if is_dead:
+		return
+	if not is_discovered:
 		return
 
 	# Clear any leftover animation lock from aborted BT sequences
@@ -792,6 +797,9 @@ func discover() -> void:
 		# Officers can now discover other errant units
 		_setup_discovery_area()
 
+	# Show discovery UI popup
+	_show_discovery_popup()
+
 	discovered.emit(self)
 	print("[ClickableUnit] %s has been discovered and recruited!" % unit_name)
 
@@ -803,6 +811,48 @@ func _transition_to_player_control() -> void:
 	if ai_controller:
 		ai_controller.queue_free()
 		print("[ClickableUnit] %s transitioned to player control" % unit_name)
+
+
+func _show_discovery_popup() -> void:
+	## Show "MAN FOUND" UI popup that floats up and fades out.
+	var camera := get_viewport().get_camera_3d()
+	if not camera:
+		return
+
+	# Create popup instance
+	var popup: Control = _man_found_scene.instantiate()
+
+	# Set the unit's name in the label
+	var label: Label = popup.get_node_or_null("Name/MarginContainer/Label")
+	if label:
+		label.text = "%s FOUND" % unit_name.to_upper()
+
+	# Add to viewport as overlay
+	get_tree().current_scene.add_child(popup)
+
+	# Position popup above unit's head (0.25m above)
+	var start_world_pos := global_position + Vector3(0, 2.25, 0)  # ~2m character height + 0.25m
+	var start_screen_pos := camera.unproject_position(start_world_pos)
+
+	# Get the Name panel and position it
+	var panel: Control = popup.get_node_or_null("Name")
+	if panel:
+		panel.position = start_screen_pos - panel.size / 2.0
+
+	# Create tween for float-up and fade-out animation (3 seconds)
+	var tween := popup.create_tween()
+	tween.set_parallel(true)
+
+	# Float up animation - move panel upward on screen
+	if panel:
+		var end_screen_y := panel.position.y - 100.0  # Float up 100 pixels
+		tween.tween_property(panel, "position:y", end_screen_y, 3.0).set_ease(Tween.EASE_OUT)
+
+	# Fade out animation using self_modulate alpha
+	tween.tween_property(popup, "modulate:a", 0.0, 3.0).set_ease(Tween.EASE_IN)
+
+	# Queue free after animation completes
+	tween.chain().tween_callback(popup.queue_free)
 
 
 # --- Leash System (Errant Groups) ---
@@ -977,7 +1027,10 @@ func is_pulling_sled() -> bool:
 
 func can_receive_move_command() -> bool:
 	## Returns true if this unit can receive direct movement commands.
+	## Undiscovered units cannot be commanded until recruited.
 	## Non-lead sled pullers cannot be commanded directly - they follow the leader.
+	if not is_discovered:
+		return false
 	if sled_puller and sled_puller.is_support_puller():
 		return false
 	return true

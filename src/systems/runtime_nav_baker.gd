@@ -1,101 +1,77 @@
 class_name RuntimeNavBaker extends Node
-## Dynamic NavMesh baker that follows the player.
-## Adapted from Terrain3D demo's RuntimeNavigationBaker.gd
-## Bakes NavMesh in chunks around the player for efficient runtime navigation.
+## Chunk-based NavMesh baker that bakes around ALL units.
+## Chunks persist forever in memory - never removed.
+## Each chunk is a separate NavigationRegion3D.
 
 signal bake_finished
 
 @export var enabled: bool = true : set = set_enabled
-@export var enter_cost: float = 0.0 : set = set_enter_cost
-@export var travel_cost: float = 1.0 : set = set_travel_cost
-@export_flags_3d_navigation var navigation_layers: int = 1 : set = set_navigation_layers
+@export var enter_cost: float = 0.0
+@export var travel_cost: float = 1.0
+@export_flags_3d_navigation var navigation_layers: int = 1
 @export var template: NavigationMesh : set = set_template
 
 ## Reference to Terrain3D node (set by controller after terrain creation)
 var terrain: Node = null
 
-## Node to track for NavMesh baking (usually the captain/player)
-@export var player: Node3D
+## Size of each NavMesh chunk (256x512x256 = 256m wide, 512m tall, 256m deep)
+@export var chunk_size := Vector3(256, 512, 256)
 
-## Size of NavMesh chunk to bake (256x512x256 = 256m wide, 512m tall, 256m deep)
-@export var mesh_size := Vector3(256, 512, 256)
+## How often to check for new chunks needed (seconds)
+@export var check_interval: float = 0.5
 
-## Minimum distance player must move before re-baking
-@export var min_rebake_distance: float = 64.0
-
-## Cooldown between bakes to prevent spam
-@export var bake_cooldown: float = 1.0
+## Minimum distance unit must be from any chunk center to trigger new bake
+@export var chunk_trigger_distance: float = 100.0
 
 @export_group("Debug")
-@export var log_timing: bool = true  # Enable timing logs by default for debugging
+@export var log_timing: bool = true
 
-var _scene_geometry: NavigationMeshSourceGeometryData3D
-var _current_center := Vector3(INF, INF, INF)
+## Baked chunks stored by grid position (Vector2i -> NavigationRegion3D)
+var _chunks: Dictionary = {}
 
+## Chunk centers that are currently being baked (to prevent duplicates)
+var _pending_chunks: Dictionary = {}
+
+## Queue of chunk centers to bake
+var _bake_queue: Array[Vector3] = []
+
+## Current bake task
 var _bake_task_id: int = -1
 var _bake_task_timer: float = 0.0
-var _bake_cooldown_timer: float = 0.0
-var _nav_region: NavigationRegion3D
+var _current_bake_center: Vector3 = Vector3.ZERO
+
+## Timer for periodic unit checks
+var _check_timer: float = 0.0
+
+## Scene geometry cache
+var _scene_geometry: NavigationMeshSourceGeometryData3D
 
 
 func _ready() -> void:
-	add_to_group("nav_baker")  # For clickable_unit to find us
+	add_to_group("nav_baker")
 
-	_nav_region = NavigationRegion3D.new()
-	_nav_region.name = "DynamicNavRegion"
-	_nav_region.navigation_layers = navigation_layers
-	_nav_region.enabled = enabled
-	_nav_region.enter_cost = enter_cost
-	_nav_region.travel_cost = travel_cost
-
-	# Demo uses edge_connections = false to avoid performance hitches during rebakes.
-	# Edge connections cause the main thread to compare every edge when navmesh updates.
-	_nav_region.use_edge_connections = false
-
-	add_child(_nav_region)
-
-	# Create default template if not provided - MATCH DEMO EXACTLY
-	# See tmp/demo/CodeGeneratedDemo.tscn NavigationMesh_vs6am
 	if not template:
 		template = NavigationMesh.new()
-		# Use STATIC_COLLIDERS since we add terrain faces manually via add_faces()
 		template.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 		template.agent_height = 2.0
-		template.agent_max_slope = 30.0  # Demo default (not 45)
+		template.agent_max_slope = 30.0
 
-	# MUST update map cell size AFTER template is set
 	_update_map_cell_size()
 
-	print("[RuntimeNavBaker] Initialized with cell_size=%.2f, cell_height=%.2f, slope=%.0f, edge_connections=%s" % [
-		template.cell_size, template.cell_height, template.agent_max_slope, _nav_region.use_edge_connections])
+	print("[RuntimeNavBaker] Chunk system initialized: chunk_size=%s, trigger_dist=%.0f" % [chunk_size, chunk_trigger_distance])
 
-	# Parse existing scene geometry after scene is ready
 	parse_scene.call_deferred()
+
+	# Ensure processing is enabled if enabled flag is already true
+	# (set_enabled may have been called before _ready when template was null)
+	if enabled:
+		set_process(true)
+		print("[RuntimeNavBaker] Processing enabled in _ready()")
 
 
 func set_enabled(p_value: bool) -> void:
 	enabled = p_value
-	if _nav_region:
-		_nav_region.enabled = enabled
 	set_process(enabled and template)
-
-
-func set_enter_cost(p_value: float) -> void:
-	enter_cost = p_value
-	if _nav_region:
-		_nav_region.enter_cost = enter_cost
-
-
-func set_travel_cost(p_value: float) -> void:
-	travel_cost = p_value
-	if _nav_region:
-		_nav_region.travel_cost = travel_cost
-
-
-func set_navigation_layers(p_value: int) -> void:
-	navigation_layers = p_value
-	if _nav_region:
-		_nav_region.navigation_layers = navigation_layers
 
 
 func set_template(p_value: NavigationMesh) -> void:
@@ -110,205 +86,237 @@ func parse_scene() -> void:
 
 
 func _update_map_cell_size() -> void:
-	# Match demo: just set cell size/height, nothing else
 	if get_viewport() and template:
 		var map := get_viewport().find_world_3d().navigation_map
 		NavigationServer3D.map_set_cell_size(map, template.cell_size)
 		NavigationServer3D.map_set_cell_height(map, template.cell_height)
+		# Note: edge_connection_margin not needed - border_size creates aligned edges
+		print("[RuntimeNavBaker] Map cell size configured: %.3f / %.3f" % [template.cell_size, template.cell_height])
 
 
 func _process(p_delta: float) -> void:
-	# Track bake task timer (still needed for timing logs)
+	# Track bake timer
 	if _bake_task_id != -1:
 		_bake_task_timer += p_delta
+		return  # Don't start new bakes while one is in progress
 
-	# NOTE: Dynamic player tracking REMOVED - using full terrain bake instead
-	# This eliminates all navigation coverage issues permanently
+	# Process bake queue
+	if not _bake_queue.is_empty():
+		var center: Vector3 = _bake_queue.pop_front()
+		_start_chunk_bake(center)
+		return
+
+	# Periodic check for units needing chunks
+	_check_timer += p_delta
+	if _check_timer >= check_interval:
+		_check_timer = 0.0
+		_check_all_units()
 
 
-func _rebake(p_center: Vector3) -> void:
+func _check_all_units() -> void:
+	## Check all survivors and queue chunks for any not covered.
+	## Also pre-bakes adjacent chunks when units are near chunk boundaries.
+	var survivors := get_tree().get_nodes_in_group("survivors")
+
+	# Debug: Log occasionally to verify checking is happening
+	if log_timing and randf() < 0.02:  # 2% chance to log
+		print("[RuntimeNavBaker] Checking %d survivors, %d chunks exist" % [survivors.size(), _chunks.size()])
+
+	for unit in survivors:
+		if not is_instance_valid(unit) or not unit is Node3D:
+			continue
+
+		var pos: Vector3 = unit.global_position
+		var grid_pos := _world_to_grid(pos)
+
+		# Ensure current chunk exists
+		if not _chunks.has(grid_pos) and not _pending_chunks.has(grid_pos):
+			var chunk_center := _grid_to_world(grid_pos)
+			_queue_chunk(chunk_center, grid_pos)
+
+		# Pre-bake adjacent chunks if unit is near edge
+		_check_adjacent_chunks(pos, grid_pos)
+
+
+func _check_adjacent_chunks(unit_pos: Vector3, current_grid: Vector2i) -> void:
+	## Pre-bake adjacent chunks if unit is near chunk boundary.
+	## This ensures pathfinding targets in adjacent areas have NavMesh coverage.
+	var edge_threshold: float = 64.0  # Pre-bake when within 64m of chunk edge
+
+	# Calculate position within current chunk (0 to chunk_size)
+	var local_x: float = fmod(unit_pos.x, chunk_size.x)
+	var local_z: float = fmod(unit_pos.z, chunk_size.z)
+	if local_x < 0:
+		local_x += chunk_size.x
+	if local_z < 0:
+		local_z += chunk_size.z
+
+	# Check each direction and queue missing neighbors
+	# Near left edge (small local_x)?
+	if local_x < edge_threshold:
+		var neighbor := Vector2i(current_grid.x - 1, current_grid.y)
+		if not _chunks.has(neighbor) and not _pending_chunks.has(neighbor):
+			_queue_chunk(_grid_to_world(neighbor), neighbor)
+
+	# Near right edge (large local_x)?
+	if local_x > chunk_size.x - edge_threshold:
+		var neighbor := Vector2i(current_grid.x + 1, current_grid.y)
+		if not _chunks.has(neighbor) and not _pending_chunks.has(neighbor):
+			_queue_chunk(_grid_to_world(neighbor), neighbor)
+
+	# Near bottom edge (small local_z)?
+	if local_z < edge_threshold:
+		var neighbor := Vector2i(current_grid.x, current_grid.y - 1)
+		if not _chunks.has(neighbor) and not _pending_chunks.has(neighbor):
+			_queue_chunk(_grid_to_world(neighbor), neighbor)
+
+	# Near top edge (large local_z)?
+	if local_z > chunk_size.z - edge_threshold:
+		var neighbor := Vector2i(current_grid.x, current_grid.y + 1)
+		if not _chunks.has(neighbor) and not _pending_chunks.has(neighbor):
+			_queue_chunk(_grid_to_world(neighbor), neighbor)
+
+
+func _world_to_grid(world_pos: Vector3) -> Vector2i:
+	## Convert world position to chunk grid position.
+	var gx := int(floor(world_pos.x / chunk_size.x))
+	var gz := int(floor(world_pos.z / chunk_size.z))
+	return Vector2i(gx, gz)
+
+
+func _grid_to_world(grid_pos: Vector2i) -> Vector3:
+	## Convert grid position to world chunk center.
+	var wx := (float(grid_pos.x) + 0.5) * chunk_size.x
+	var wz := (float(grid_pos.y) + 0.5) * chunk_size.z
+	return Vector3(wx, 0, wz)
+
+
+func _queue_chunk(center: Vector3, grid_pos: Vector2i) -> void:
+	## Queue a chunk for baking.
+	if _pending_chunks.has(grid_pos):
+		return  # Already queued
+
+	_pending_chunks[grid_pos] = true
+	_bake_queue.append(center)
+
+	if log_timing:
+		print("[RuntimeNavBaker] Queued chunk at grid %s (world %s), queue size: %d" % [grid_pos, center, _bake_queue.size()])
+
+
+func _start_chunk_bake(center: Vector3) -> void:
+	## Start baking a chunk on worker thread.
 	if not template:
 		push_error("[RuntimeNavBaker] No template NavigationMesh!")
 		return
-	_bake_task_id = WorkerThreadPool.add_task(_task_bake.bind(p_center), false, "RuntimeNavBaker")
+
+	_current_bake_center = center
+	_bake_task_id = WorkerThreadPool.add_task(_task_bake_chunk.bind(center), false, "RuntimeNavBaker")
 	_bake_task_timer = 0.0
-	_bake_cooldown_timer = bake_cooldown
 
 
-func _task_bake(p_center: Vector3) -> void:
+func _task_bake_chunk(p_center: Vector3) -> void:
+	## Worker thread: bake a single chunk.
 	var nav_mesh: NavigationMesh = template.duplicate()
-	nav_mesh.filter_baking_aabb = AABB(-mesh_size * 0.5, mesh_size)
+
+	# CRITICAL: Grow AABB to include neighboring geometry, then trim with border_size
+	# This prevents agent_radius from shrinking edges at chunk boundaries
+	# Result: gap-free, perfectly aligned chunk edges
+	var border: float = chunk_size.x  # Use chunk width as border
+	var grown_size := Vector3(chunk_size.x + border * 2, chunk_size.y, chunk_size.z + border * 2)
+	nav_mesh.filter_baking_aabb = AABB(-grown_size * 0.5, grown_size)
 	nav_mesh.filter_baking_aabb_offset = p_center
+	nav_mesh.border_size = border  # Trim back to actual chunk size
+
 	var source_geometry: NavigationMeshSourceGeometryData3D
 	if _scene_geometry:
 		source_geometry = _scene_geometry.duplicate()
 	else:
 		source_geometry = NavigationMeshSourceGeometryData3D.new()
 
-	var faces_added := 0
 	if terrain and terrain.has_method("generate_nav_mesh_source_geometry"):
+		# Use grown AABB to fetch terrain geometry (includes neighbor areas)
 		var aabb: AABB = nav_mesh.filter_baking_aabb
 		aabb.position += nav_mesh.filter_baking_aabb_offset
-		print("[RuntimeNavBaker] Requesting faces for AABB: pos=%s, size=%s" % [aabb.position, aabb.size])
-		# CRITICAL: Second param MUST be false for procedural terrain!
-		# true  = only generates geometry for terrain painted navigable in editor (0 faces for procedural!)
-		# false = generates geometry for ENTIRE terrain regardless of paint
-		# The editor baker (addons/terrain_3d/menu/baker.gd) uses single-param because
-		# editor terrain has painted nav areas. We MUST use false for procedural.
 		var faces: PackedVector3Array = terrain.generate_nav_mesh_source_geometry(aabb, false)
-		faces_added = faces.size()
-		# Only add faces if we have any - empty array causes error in add_faces()
-		if faces_added > 0:
+		if faces.size() > 0:
 			source_geometry.add_faces(faces, Transform3D.IDENTITY)
-		else:
-			print("[RuntimeNavBaker] WARNING: Terrain returned 0 faces for AABB")
-
-		# Debug: Check height of first few faces (terrain transform check removed - thread unsafe)
-		if faces.size() >= 3:
-			var face_y_min := INF
-			var face_y_max := -INF
-			for i in range(mini(faces.size(), 30)):  # Check first 10 triangles
-				face_y_min = minf(face_y_min, faces[i].y)
-				face_y_max = maxf(face_y_max, faces[i].y)
-			print("[RuntimeNavBaker] Face Y range (sample): %.2f to %.2f" % [face_y_min, face_y_max])
-
-		print("[RuntimeNavBaker] Added %d terrain faces at center %s" % [faces_added, p_center])
-	else:
-		print("[RuntimeNavBaker] WARNING: No terrain or missing generate_nav_mesh_source_geometry method!")
 
 	if source_geometry.has_data():
-		# Debug: Show bake center height vs actual terrain height
-		print("[RuntimeNavBaker] Bake center: %s" % p_center)
 		NavigationServer3D.bake_from_source_geometry_data(nav_mesh, source_geometry)
-		_bake_finished.call_deferred(nav_mesh)
+		_chunk_bake_finished.call_deferred(nav_mesh, p_center)
 	else:
-		print("[RuntimeNavBaker] WARNING: No source geometry data!")
-		_bake_finished.call_deferred(null)
+		_chunk_bake_finished.call_deferred(null, p_center)
 
 
-func _bake_finished(p_nav_mesh: NavigationMesh) -> void:
+func _chunk_bake_finished(p_nav_mesh: NavigationMesh, p_center: Vector3) -> void:
+	## Main thread: process completed chunk bake.
+	var grid_pos := _world_to_grid(p_center)
+	_pending_chunks.erase(grid_pos)
+
 	if log_timing:
-		print("[RuntimeNavBaker] Bake took %.3fs" % _bake_task_timer)
+		print("[RuntimeNavBaker] Chunk bake at %s took %.3fs" % [grid_pos, _bake_task_timer])
 
 	_bake_task_timer = 0.0
 	_bake_task_id = -1
 
 	if p_nav_mesh:
-		# DISCOVERY #1 FIX (2026-01-12): Apply post-processing from editor baker
-		# See: addons/terrain_3d/menu/baker.gd lines 225-242
-		# This fixes Godot issue #85548 where navigation fails despite having polygons
-		var before_polys := p_nav_mesh.get_polygon_count()
+		# Apply post-processing
 		_postprocess_nav_mesh(p_nav_mesh)
-		var after_polys := p_nav_mesh.get_polygon_count()
-		print("[RuntimeNavBaker] Post-processing: %d -> %d polygons" % [before_polys, after_polys])
 
-		# DISCOVERY #1 FIX (2026-01-12): Null-reassign trick from editor baker
-		# See: addons/terrain_3d/menu/baker.gd lines 213-215
-		# Forces NavigationServer to properly re-register the mesh
-		_nav_region.navigation_mesh = null
-		_nav_region.navigation_mesh = p_nav_mesh
+		# Create new NavigationRegion3D for this chunk
+		var region := NavigationRegion3D.new()
+		region.name = "NavChunk_%d_%d" % [grid_pos.x, grid_pos.y]
+		region.navigation_layers = navigation_layers
+		region.enabled = true
+		region.enter_cost = enter_cost
+		region.travel_cost = travel_cost
+		region.use_edge_connections = false  # Not needed with border_size aligned edges
+		region.navigation_mesh = p_nav_mesh
+
+		add_child(region)
+		_chunks[grid_pos] = region
 
 		var polygon_count := p_nav_mesh.get_polygon_count()
-		var vertices := p_nav_mesh.get_vertices()
-		print("[RuntimeNavBaker] NavMesh ready: %d polygons, %d vertices (after post-processing)" % [polygon_count, vertices.size()])
-
-		# Debug: Log vertex height range
-		if vertices.size() > 0 and log_timing:
-			var min_y := INF
-			var max_y := -INF
-			for v in vertices:
-				min_y = minf(min_y, v.y)
-				max_y = maxf(max_y, v.y)
-			print("[RuntimeNavBaker] Vertex Y range: %.2f to %.2f" % [min_y, max_y])
-
-		# DEBUG: Check which navigation map the region is on
-		var region_map := _nav_region.get_navigation_map()
-		var world_map := get_viewport().find_world_3d().navigation_map if get_viewport() else RID()
-		print("[RuntimeNavBaker] Region map=%s, World map=%s, SAME=%s" % [region_map, world_map, region_map == world_map])
-		print("[RuntimeNavBaker] Region enabled=%s, layers=%d" % [_nav_region.enabled, _nav_region.navigation_layers])
-
-		# DEBUG: Check if NavMesh has valid cell sizes
-		print("[RuntimeNavBaker] NavMesh cell_size=%.3f, cell_height=%.3f" % [p_nav_mesh.cell_size, p_nav_mesh.cell_height])
-
-		# DEBUG: Query the map directly to see if region is registered
-		var map_regions := NavigationServer3D.map_get_regions(region_map)
-		print("[RuntimeNavBaker] Map has %d regions total" % map_regions.size())
+		print("[RuntimeNavBaker] Chunk %s ready: %d polygons (total chunks: %d)" % [grid_pos, polygon_count, _chunks.size()])
 	else:
-		print("[RuntimeNavBaker] WARNING: Bake returned null NavMesh!")
+		print("[RuntimeNavBaker] WARNING: Chunk %s bake failed!" % grid_pos)
 
 	bake_finished.emit()
 
 
-## Force an immediate bake at the given position
+## Force bake a chunk at specific position (called externally)
 func force_bake_at(position: Vector3) -> void:
-	_current_center = position
-	_rebake(position)
+	var grid_pos := _world_to_grid(position)
+	if not _chunks.has(grid_pos) and not _pending_chunks.has(grid_pos):
+		var center := _grid_to_world(grid_pos)
+		_queue_chunk(center, grid_pos)
 
 
-## Bake the ENTIRE terrain at game start.
-## Takes ~45 seconds but eliminates all navigation coverage issues.
-## After calling this, disable dynamic rebaking by setting enabled = false.
-func bake_full_terrain() -> void:
-	print("[RuntimeNavBaker] ========================================")
-	print("[RuntimeNavBaker] BAKING FULL TERRAIN - This takes ~45 seconds")
-	print("[RuntimeNavBaker] ========================================")
-
-	# Full terrain: 10,240m × 10,240m (4096 pixels × 2.5m/pixel), centered at origin
-	# Use slightly larger size to ensure complete coverage
-	var terrain_size := 10500.0
-	mesh_size = Vector3(terrain_size, 600, terrain_size)
-
-	# CRITICAL: Increase cell_size for full terrain bake to avoid crash prevention
-	# Default 0.25m cell_size = 42,000 x 42,000 cells = 1.76 BILLION cells (crash!)
-	# Using 2.0m cell_size = 5,250 x 5,250 cells = ~27.5 million cells (manageable)
-	# This is coarser but still provides good pathfinding for human-scale agents
-	if template:
-		var old_cell_size := template.cell_size
-		var old_cell_height := template.cell_height
-		template.cell_size = 2.0  # 2m cells for full terrain
-		template.cell_height = 1.0  # 1m height resolution
-		print("[RuntimeNavBaker] Cell size adjusted: %.2f -> %.2f (full terrain mode)" % [old_cell_size, template.cell_size])
-		print("[RuntimeNavBaker] Cell height adjusted: %.2f -> %.2f" % [old_cell_height, template.cell_height])
-		_update_map_cell_size()  # Update NavigationServer map settings
-
-	_current_center = Vector3.ZERO
-	_rebake(Vector3.ZERO)
-
-
-## Get the NavigationRegion3D for agents to use
-func get_nav_region() -> NavigationRegion3D:
-	return _nav_region
+## Request coverage at position - queues chunk if needed
+func ensure_coverage(target_position: Vector3) -> void:
+	force_bake_at(target_position)
 
 
 ## Get the navigation map RID
 func get_navigation_map() -> RID:
-	if _nav_region:
-		return _nav_region.get_navigation_map()
+	if get_viewport():
+		return get_viewport().find_world_3d().navigation_map
 	return RID()
 
 
-## NOTE: ensure_coverage() REMOVED - no longer needed with full terrain bake
-## All terrain is covered from the start, no runtime coverage checks required
+## Get chunk count for debugging
+func get_chunk_count() -> int:
+	return _chunks.size()
 
 
 # ============================================================================
 # POST-PROCESSING FUNCTIONS
-# DISCOVERY #1 FIX (2026-01-12): Copied from addons/terrain_3d/menu/baker.gd
-# These fix Godot issue #85548 where NavMesh shows polygons but navigation fails
+# From addons/terrain_3d/menu/baker.gd - fixes Godot issue #85548
 # ============================================================================
 
 func _postprocess_nav_mesh(p_nav_mesh: NavigationMesh) -> void:
-	## Post-process the nav mesh to work around Godot issue #85548
-	## Copied from addons/terrain_3d/menu/baker.gd lines 225-242
-
-	# Round all vertices to nearest cell_size/cell_height so mesh doesn't
-	# contain edges shorter than cell_size/cell_height (one cause of #85548)
 	var vertices: PackedVector3Array = _postprocess_round_vertices(p_nav_mesh)
-
-	# Rounding can collapse edges to 0 length. Remove empty polygons.
 	var polygons: Array[PackedInt32Array] = _postprocess_remove_empty_polygons(p_nav_mesh, vertices)
-
-	# Another cause of #85548 is overlapping polygons. Remove these.
 	_postprocess_remove_overlapping_polygons(p_nav_mesh, vertices, polygons)
 
 	p_nav_mesh.clear_polygons()
@@ -318,15 +326,11 @@ func _postprocess_nav_mesh(p_nav_mesh: NavigationMesh) -> void:
 
 
 func _postprocess_round_vertices(p_nav_mesh: NavigationMesh) -> PackedVector3Array:
-	## Round vertices to cell_size/cell_height grid
-	## Copied from addons/terrain_3d/menu/baker.gd lines 245-259
 	assert(p_nav_mesh != null)
 	assert(p_nav_mesh.cell_size > 0.0)
 	assert(p_nav_mesh.cell_height > 0.0)
 
 	var cell_size: Vector3 = Vector3(p_nav_mesh.cell_size, p_nav_mesh.cell_height, p_nav_mesh.cell_size)
-
-	# Round harder to avoid floating point errors with non-power-of-two cell sizes
 	var round_factor := cell_size * 1.001
 
 	var vertices: PackedVector3Array = p_nav_mesh.get_vertices()
@@ -336,15 +340,12 @@ func _postprocess_round_vertices(p_nav_mesh: NavigationMesh) -> PackedVector3Arr
 
 
 func _postprocess_remove_empty_polygons(p_nav_mesh: NavigationMesh, p_vertices: PackedVector3Array) -> Array[PackedInt32Array]:
-	## Remove polygons that became empty after vertex rounding
-	## Copied from addons/terrain_3d/menu/baker.gd lines 262-283
 	var polygons: Array[PackedInt32Array] = []
 
 	for i in range(p_nav_mesh.get_polygon_count()):
 		var old_polygon: PackedInt32Array = p_nav_mesh.get_polygon(i)
 		var new_polygon: PackedInt32Array = []
 
-		# Remove duplicate vertices (from rounding) from polygon
 		var polygon_vertices: PackedVector3Array = []
 		for index in old_polygon:
 			var vertex: Vector3 = p_vertices[index]
@@ -353,7 +354,6 @@ func _postprocess_remove_empty_polygons(p_nav_mesh: NavigationMesh, p_vertices: 
 			polygon_vertices.push_back(vertex)
 			new_polygon.push_back(index)
 
-		# If we removed vertices, polygon might be degenerate
 		if new_polygon.size() <= 2:
 			continue
 		polygons.push_back(new_polygon)
@@ -362,17 +362,8 @@ func _postprocess_remove_empty_polygons(p_nav_mesh: NavigationMesh, p_vertices: 
 
 
 func _postprocess_remove_overlapping_polygons(p_nav_mesh: NavigationMesh, p_vertices: PackedVector3Array, p_polygons: Array[PackedInt32Array]) -> void:
-	## Remove overlapping polygons that cause navigation failures
-	## Copied from addons/terrain_3d/menu/baker.gd lines 286-336
-	##
-	## Detects and removes overlapping polygons:
-	## - 'overlap' = edge shared by 3+ polygons
-	## - 'bad polygon' = polygon with 2+ overlaps
-	## Removing bad polygons fixes navigation without creating holes.
-
 	var cell_size: Vector3 = Vector3(p_nav_mesh.cell_size, p_nav_mesh.cell_height, p_nav_mesh.cell_size)
 
-	# Map edges (vertex pairs) to polygons containing that edge
 	var edges: Dictionary = {}
 
 	for polygon_index in range(p_polygons.size()):
@@ -381,8 +372,6 @@ func _postprocess_remove_overlapping_polygons(p_nav_mesh: NavigationMesh, p_vert
 			var vertex: Vector3 = p_vertices[polygon[j]]
 			var next_vertex: Vector3 = p_vertices[polygon[(j + 1) % polygon.size()]]
 
-			# Use cell coords (Vector3i) as key to avoid float errors
-			# Sort because shared edges can have vertices in different order
 			var edge_key: Array = [Vector3i(vertex / cell_size), Vector3i(next_vertex / cell_size)]
 			edge_key.sort()
 

@@ -37,15 +37,14 @@ enum GameState {
 @export_range(0.0, 1.0, 0.05) var ambient_volume_max: float = 0.4
 ## Ambient volume at maximum zoom in (0.0 to 1.0).
 @export_range(0.0, 1.0, 0.05) var ambient_volume_min: float = 0.1
-## Volume multiplier during blizzards (1.5 = 50% louder).
-@export_range(1.0, 3.0, 0.1) var blizzard_volume_multiplier: float = 1.5
 ## Volume boost for wind2.mp3 (quieter source file needs compensation).
 @export_range(1.0, 5.0, 0.1) var wind2_volume_boost: float = 2.5
 ## Time in seconds for a full crossfade cycle (wind1 -> wind2 -> wind1).
 @export_range(10.0, 120.0, 5.0) var crossfade_cycle_seconds: float = 45.0
 
-## Whether blizzard volume boost is active.
-var _blizzard_active: bool = false
+## Weather-based volume multiplier (set by DynamicWeatherController)
+## 1.0 = normal, 1.5 = blizzard (50% louder)
+var _weather_volume_multiplier: float = 1.0
 
 # Camera reference for zoom-based audio
 var _rts_camera: Camera3D = null
@@ -393,7 +392,7 @@ func _on_camera_zoom_changed(_zoom_level: float, zoom_ratio: float) -> void:
 
 
 func _update_wind_volume(zoom_ratio: float = -1.0) -> void:
-	## Update wind volume based on zoom, blizzard state, and crossfade.
+	## Update wind volume based on zoom, weather state, and crossfade.
 	if not is_instance_valid(_wind_player_1) or not is_instance_valid(_wind_player_2):
 		return
 
@@ -406,9 +405,8 @@ func _update_wind_volume(zoom_ratio: float = -1.0) -> void:
 
 	var base_volume := lerpf(ambient_volume_min, ambient_volume_max, zoom_ratio)
 
-	# Apply blizzard multiplier (50% louder)
-	if _blizzard_active:
-		base_volume *= blizzard_volume_multiplier
+	# Apply weather-based volume multiplier (from DynamicWeatherController)
+	base_volume *= _weather_volume_multiplier
 
 	# Use sine wave for smooth crossfade (0 -> 1 -> 0 over the cycle)
 	# sin gives us -1 to 1, we convert to 0 to 1 for the mix ratio
@@ -424,6 +422,7 @@ func _update_wind_volume(zoom_ratio: float = -1.0) -> void:
 
 func _connect_snow_controller() -> void:
 	## Find and connect to the SnowController for blizzard audio boost.
+	## NOTE: If DynamicWeatherController is active, it handles volume directly.
 	var tree := get_tree()
 	if not tree or not tree.current_scene:
 		return
@@ -435,22 +434,44 @@ func _connect_snow_controller() -> void:
 		snow_controller.snow_started.connect(_on_snow_started)
 		snow_controller.snow_stopped.connect(_on_snow_stopped)
 		snow_controller.snow_intensity_changed.connect(_on_snow_intensity_changed)
-		print("[GameManager] Connected to SnowController for blizzard audio")
+		print("[GameManager] Connected to SnowController for audio callbacks")
+
+
+func set_weather_volume_multiplier(multiplier: float) -> void:
+	## Set the weather-based volume multiplier (called by DynamicWeatherController).
+	## 1.0 = clear weather, 1.5 = heavy blizzard
+	_weather_volume_multiplier = clampf(multiplier, 1.0, 3.0)
+	_update_wind_volume()
+
+
+func get_weather_volume_multiplier() -> float:
+	## Get the current weather volume multiplier.
+	return _weather_volume_multiplier
 
 
 func _on_snow_started(intensity: SnowController.SnowIntensity) -> void:
-	## Handle snow starting - boost volume for blizzards.
-	_blizzard_active = (intensity == SnowController.SnowIntensity.HEAVY)
+	## Handle snow starting - set volume based on intensity.
+	## Only used as fallback if DynamicWeatherController is not active.
+	if intensity == SnowController.SnowIntensity.HEAVY:
+		_weather_volume_multiplier = 1.5
+	else:
+		_weather_volume_multiplier = 1.1
 	_update_wind_volume()
 
 
 func _on_snow_stopped() -> void:
 	## Handle snow stopping - restore normal volume.
-	_blizzard_active = false
+	_weather_volume_multiplier = 1.0
 	_update_wind_volume()
 
 
 func _on_snow_intensity_changed(_from: SnowController.SnowIntensity, to: SnowController.SnowIntensity) -> void:
-	## Handle snow intensity change - boost volume for blizzards.
-	_blizzard_active = (to == SnowController.SnowIntensity.HEAVY)
+	## Handle snow intensity change.
+	## Only used as fallback if DynamicWeatherController is not active.
+	if to == SnowController.SnowIntensity.HEAVY:
+		_weather_volume_multiplier = 1.5
+	elif to == SnowController.SnowIntensity.LIGHT:
+		_weather_volume_multiplier = 1.1
+	else:
+		_weather_volume_multiplier = 1.0
 	_update_wind_volume()

@@ -469,18 +469,20 @@ func _create_fog_volume() -> void:
 
 	# Set up shader parameters from exported variables
 	_fog_shader_material.set_shader_parameter("noise_scale", fog_noise_scale)
+	_fog_shader_material.set_shader_parameter("detail_scale", 0.03)  # Fine detail layer
 	_fog_shader_material.set_shader_parameter("fog_density", 0.0)  # Start at 0, will be set by intensity
 	_fog_shader_material.set_shader_parameter("wind_speed", fog_wind_speed)
 	_fog_shader_material.set_shader_parameter("wind_direction", 0.0)  # Will be synced from Sky3D
 	_fog_shader_material.set_shader_parameter("vertical_drift", fog_vertical_drift)
 	_fog_shader_material.set_shader_parameter("wave_amplitude", fog_wave_amplitude)
 	_fog_shader_material.set_shader_parameter("wave_frequency", fog_wave_frequency)
+	_fog_shader_material.set_shader_parameter("fog_max_opacity", fog_max_opacity)
 	_fog_shader_material.set_shader_parameter("fog_color", Vector3(fog_albedo.r, fog_albedo.g, fog_albedo.b))
 	_fog_shader_material.set_shader_parameter("fog_emission", Vector3(fog_emission_color.r, fog_emission_color.g, fog_emission_color.b))
-	_fog_shader_material.set_shader_parameter("max_distance", 200.0)
-	_fog_shader_material.set_shader_parameter("ray_steps", 32)
-	_fog_shader_material.set_shader_parameter("fog_height", 30.0)
-	_fog_shader_material.set_shader_parameter("fog_falloff", 0.05)
+	_fog_shader_material.set_shader_parameter("max_distance", 150.0)
+	_fog_shader_material.set_shader_parameter("ray_steps", 24)
+	_fog_shader_material.set_shader_parameter("fog_height", 20.0)  # Ground-hugging fog
+	_fog_shader_material.set_shader_parameter("fog_falloff", 0.04)  # Fades above ground level
 
 	_fog_mesh.material_override = _fog_shader_material
 
@@ -582,9 +584,12 @@ func _update_wind() -> void:
 		_fog_shader_material.set_shader_parameter("wind_direction", wind_dir)
 
 		# Smoothly interpolate fog wind speed to prevent hurricane effect during transitions
-		# Target is scaled down (fog moves slower than particles)
-		var target_fog_wind: float = wind_speed * 0.15
-		_smoothed_fog_wind_speed = lerpf(_smoothed_fog_wind_speed, target_fog_wind, 0.02)
+		# Fog moves slower than particles but should still be visible
+		# Heavy blizzard wind ~25 m/s -> fog wind ~5-7 m/s for nice drift
+		var target_fog_wind: float = wind_speed * 0.25
+		# Faster lerp (0.08) so fog reaches target speed in reasonable time
+		# At 60fps: 0.08 per frame reaches 95% of target in ~37 frames (~0.6 seconds)
+		_smoothed_fog_wind_speed = lerpf(_smoothed_fog_wind_speed, target_fog_wind, 0.08)
 		_fog_shader_material.set_shader_parameter("wind_speed", _smoothed_fog_wind_speed)
 
 	# Sync light tint from Sky3D for sunrise/sunset color matching

@@ -18,7 +18,7 @@ In the night, as the gale reached its fullest fury, her hull gave way at last. T
 
 Our course is now clear, though it pains me to delay. Our only hope of deliverance lies in man-hauling one of our ship's boats across the interior of King William Island, that we might reach open water to the south before the full fury of winter descends upon us. There is no time to circumnavigate the island by sea. We must strike overland, make for Back's Fish River, and send word to bring relief to those men who remain. But such a journey is impossible with our company so diminished. We must first find our scattered officers and men; and bring them back into the fold, or we shall none of us survive what lies ahead.
 
-I confess I know not what trials await us in that desolate country. But we are Englishmen, and we shall meet them as such.
+I confess I know not what trials await us in that Great White Nothing. But we are Englishmen, and we shall meet them as such.
 
 May Providence watch over us, and that all is well.
 

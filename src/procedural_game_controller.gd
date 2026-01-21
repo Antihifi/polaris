@@ -9,6 +9,7 @@ var _camera_scene: PackedScene = preload("res://src/camera/rts_camera.tscn")
 var _hud_scene: PackedScene = preload("res://ui/game_hud.tscn")
 var _inventory_hud_scene: PackedScene = preload("res://ui/inventory_hud.tscn")
 var _sled_panel_scene: PackedScene = preload("res://ui/sled_panel.tscn")
+var _workbench_panel_scene: PackedScene = preload("res://ui/workbench_panel.tscn")
 var _sled_scene: PackedScene = preload("res://objects/sled1/sled_1.tscn")
 var _ship_scene: PackedScene = preload("res://objects/ship1/ship_1.tscn")
 var _sky3d_scene: PackedScene = preload("res://sky_3d.tscn")
@@ -34,6 +35,7 @@ var captain: Node3D = null
 var ship: Node3D = null  # The frozen ship
 var rts_camera: Camera3D = null
 var sled_panel: Control = null  # Sled interaction UI
+var workbench_panel: Control = null  # Workbench crafting UI
 var _seed_manager = null  # SeedManager instance
 var character_spawner: Node
 var scenario_panel: ScenarioPanel = null  # Intro screen
@@ -117,7 +119,7 @@ func _generate_game() -> void:
 	_update_loading_detail("Mountains, valleys, and coastline complete")
 	await get_tree().process_frame
 
-	_update_loading("Carving Inlet", "Creating ship harbor", 25)
+	_update_loading("Carving Inlet", "Creating deadly ice traps", 25)
 	await get_tree().process_frame
 	var inlet_info := _carve_inlet()
 
@@ -157,14 +159,13 @@ func _generate_game() -> void:
 			spawn_pos.y = actual_height
 			print("[ProceduralGame] Spawn pos terrain height: %.2f" % actual_height)
 
-	# Bake NavMesh for ENTIRE terrain (one-time, ~45 seconds)
-	# This eliminates all navigation coverage issues - no more runtime rebaking needed
-	_update_loading("Baking Navigation Mesh", "Full terrain bake (~45 seconds)", 70)
-	runtime_nav_baker.enabled = true  # Enable BEFORE bake so region is active when mesh assigned
-	runtime_nav_baker.bake_full_terrain()
+	# Bake initial NavMesh chunk at spawn location
+	# Chunk system will automatically bake more chunks as units move around
+	_update_loading("Baking Navigation Mesh", "Baking initial chunk at spawn...", 70)
+	runtime_nav_baker.enabled = true
+	runtime_nav_baker.force_bake_at(spawn_pos)
 	await runtime_nav_baker.bake_finished
-	runtime_nav_baker.enabled = false  # DISABLE runtime rebaking - full coverage achieved
-	_update_loading_detail("Full terrain NavMesh baked successfully")
+	_update_loading_detail("Initial NavMesh chunk ready - more will bake as needed")
 	await get_tree().process_frame
 
 	# Stage 7: NOW spawn entities (after terrain + NavMesh ready)
@@ -436,19 +437,18 @@ func _import_terrain() -> void:
 
 
 func _setup_navigation() -> void:
-	## Setup RuntimeNavigationBaker (like demo)
+	## Setup RuntimeNavBaker - chunk-based system that bakes around ALL units
 
 	runtime_nav_baker = RuntimeNavBaker.new()
 	runtime_nav_baker.name = "RuntimeNavBaker"
 	runtime_nav_baker.terrain = terrain
-	# Use smaller mesh_size for denser navmesh (demo uses 256x512x256)
-	runtime_nav_baker.mesh_size = Vector3(256, 512, 256)
-	runtime_nav_baker.min_rebake_distance = 64.0  # Rebake more often for better coverage
-	runtime_nav_baker.bake_cooldown = 1.0
+	# Chunk size: 256x512x256 (256m wide, 512m tall, 256m deep)
+	runtime_nav_baker.chunk_size = Vector3(256, 512, 256)
+	runtime_nav_baker.check_interval = 0.5  # Check for new chunks every 0.5s
 	runtime_nav_baker.enabled = false  # Don't auto-bake yet
 	add_child(runtime_nav_baker)
 
-	print("[ProceduralGame] RuntimeNavBaker created")
+	print("[ProceduralGame] RuntimeNavBaker created (chunk-based, all units tracked)")
 
 
 func _place_pois(inlet_position: Vector3) -> void:
@@ -797,6 +797,17 @@ func _setup_game_ui() -> void:
 					sled_panel.show_for_sled(sled, selected, rts_camera)
 		)
 
+	# Create workbench interaction panel
+	workbench_panel = _workbench_panel_scene.instantiate()
+	add_child(workbench_panel)
+
+	# Connect workbench click to workbench panel
+	if input_handler.has_signal("workbench_clicked"):
+		input_handler.workbench_clicked.connect(func(workbench):
+			if workbench_panel.has_method("show_for_workbench"):
+				workbench_panel.show_for_workbench(workbench, rts_camera)
+		)
+
 	print("[ProceduralGame] UI setup complete")
 
 
@@ -812,15 +823,21 @@ func _add_ai_controller(unit: Node) -> void:
 
 
 func _create_basic_lighting() -> void:
-	## Create Sky3D and SnowController for the procedural scene.
+	## Create Sky3D, SnowController, and DynamicWeatherController for the procedural scene.
 	## Sky3D provides sun/moon lighting, day/night cycle, and atmosphere.
 	## SnowController provides weather particle effects.
+	## DynamicWeatherController manages procedural weather events.
 
 	var sky3d_node = _sky3d_scene.instantiate()
 	add_child(sky3d_node)
 
 	var snow_ctrl = _snow_controller.instantiate()
 	add_child(snow_ctrl)
+
+	# Add DynamicWeatherController for procedural weather events
+	var dynamic_weather := DynamicWeatherController.new()
+	dynamic_weather.name = "DynamicWeatherController"
+	add_child(dynamic_weather)
 
 	# Notify TimeManager to find the newly added Sky3D
 	# (TimeManager's initial search runs before we create Sky3D)
@@ -829,7 +846,7 @@ func _create_basic_lighting() -> void:
 		time_manager.refresh_sky3d()
 		print("[ProceduralGame] TimeManager refreshed to find Sky3D")
 
-	print("[ProceduralGame] Sky3D and SnowController added to scene")
+	print("[ProceduralGame] Sky3D, SnowController, and DynamicWeatherController added to scene")
 
 
 func _find_navigable_spawn(center: Vector3) -> Vector3:
@@ -970,11 +987,22 @@ func _on_scenario_begin() -> void:
 
 
 func _start_random_weather() -> void:
-	## Randomize initial weather conditions.
-	## 40% clear, 40% light snow, 20% blizzard (harsh but fair).
+	## Enable dynamic weather system.
+	## DynamicWeatherController handles all procedural weather scheduling,
+	## respecting time-of-day (no snow at sunrise/sunset) and using
+	## weighted random intensity selection with varied parameters.
+
+	var dynamic_weather := _find_dynamic_weather_controller()
+	if dynamic_weather:
+		# DynamicWeatherController already started with clear weather in _ready()
+		# It will automatically schedule the first weather event after clear period
+		print("[ProceduralGame] DynamicWeatherController active - procedural weather enabled")
+		return
+
+	# Fallback: Use old random weather if DynamicWeatherController not found
 	var snow_ctrl := _find_snow_controller()
 	if not snow_ctrl:
-		print("[ProceduralGame] No SnowController found, skipping weather")
+		print("[ProceduralGame] No weather controller found, skipping weather")
 		return
 
 	var rng := RandomNumberGenerator.new()
@@ -982,16 +1010,13 @@ func _start_random_weather() -> void:
 
 	var roll := rng.randf()
 	if roll < 0.4:
-		# 40% chance: Clear weather (already default)
-		print("[ProceduralGame] Starting weather: Clear")
+		print("[ProceduralGame] Starting weather: Clear (fallback)")
 	elif roll < 0.8:
-		# 40% chance: Light snow
 		snow_ctrl.start_snow(1)  # SnowIntensity.LIGHT = 1
-		print("[ProceduralGame] Starting weather: Light snow")
+		print("[ProceduralGame] Starting weather: Light snow (fallback)")
 	else:
-		# 20% chance: Blizzard (challenging start)
 		snow_ctrl.start_snow(2)  # SnowIntensity.HEAVY = 2
-		print("[ProceduralGame] Starting weather: BLIZZARD!")
+		print("[ProceduralGame] Starting weather: BLIZZARD! (fallback)")
 
 
 func _find_snow_controller() -> Node:
@@ -1001,6 +1026,14 @@ func _find_snow_controller() -> Node:
 		return nodes[0]
 	# Search by class/name
 	return get_tree().current_scene.find_child("SnowController", true, false)
+
+
+func _find_dynamic_weather_controller() -> Node:
+	## Find DynamicWeatherController node in scene.
+	var nodes := get_tree().current_scene.find_children("*", "DynamicWeatherController", true, false)
+	if nodes.size() > 0:
+		return nodes[0]
+	return null
 
 
 func _on_tutorial_requested() -> void:

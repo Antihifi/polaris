@@ -111,8 +111,8 @@ func _spawn_captain() -> void:
 		terrain_y = 0.0
 	captain.global_position = Vector3(0, terrain_y + 1.0, 0)
 
-	runtime_nav_baker.player = captain
 	runtime_nav_baker.enabled = true
+	runtime_nav_baker.force_bake_at(captain.global_position)
 
 	print("[FlatTest] Captain at %s" % captain.global_position)
 
