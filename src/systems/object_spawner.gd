@@ -26,6 +26,10 @@ var _spawned_containers: Array[Node] = []
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _terrain_cache: Node = null
 
+## Cached exclusion zones (ship + tents) to prevent spawning inside structures
+var _exclusion_zones: Array[AABB] = []
+var _exclusion_zones_cached: bool = false
+
 
 func _ready() -> void:
 	_rng.randomize()
@@ -118,9 +122,10 @@ func _populate_container(storage: StorageContainer, is_barrel: bool) -> void:
 
 
 func _generate_spawn_positions(count: int, center: Vector3) -> Array[Vector3]:
-	## Generate spread-out positions avoiding overlap.
+	## Generate spread-out positions avoiding overlap and exclusion zones.
 	## Containers are static objects so we use terrain height directly.
 	## Unlike characters, containers don't have gravity/collision to settle onto terrain.
+	print("[ObjectSpawner] Generating %d spawn positions around %s" % [count, center])
 	var positions: Array[Vector3] = []
 	var max_attempts := 100
 
@@ -134,15 +139,20 @@ func _generate_spawn_positions(count: int, center: Vector3) -> Array[Vector3]:
 			var angle := _rng.randf() * TAU
 			var radius := sqrt(_rng.randf()) * spawn_radius
 			pos = center + Vector3(cos(angle) * radius, 0, sin(angle) * radius)
+			pos.y = _get_terrain_height(pos)
 
 			valid = true
+
+			# Check separation from existing positions
 			for existing in positions:
 				if pos.distance_to(existing) < min_separation:
 					valid = false
 					break
 
-		# Use terrain height for static objects (they can't fall with physics)
-		pos.y = _get_terrain_height(pos)
+			# Check exclusion zones (ship, tents)
+			if valid and _is_position_in_exclusion_zone(pos):
+				valid = false
+
 		positions.append(pos)
 
 	return positions
@@ -268,3 +278,115 @@ func get_food_containers() -> Array[Node]:
 		if storage and storage.storage_type == StorageContainer.StorageType.FOOD:
 			result.append(c)
 	return result
+
+
+# --- Exclusion Zone System ---
+
+func _is_position_in_exclusion_zone(pos: Vector3) -> bool:
+	## Check if position is inside ship or tent.
+	if not _exclusion_zones_cached:
+		_cache_exclusion_zones()
+
+	for zone in _exclusion_zones:
+		if zone.has_point(pos):
+			return true
+	return false
+
+
+func _cache_exclusion_zones() -> void:
+	## Build list of AABBs for ship and all tents.
+	_exclusion_zones.clear()
+
+	# Find ship and get its AABB
+	var ship := get_ship()
+	print("[ObjectSpawner] Looking for ship... found: %s" % (ship.name if ship else "null"))
+	if ship:
+		var ship_aabb := _get_node_aabb(ship)
+		print("[ObjectSpawner] Ship AABB: pos=%s size=%s" % [ship_aabb.position, ship_aabb.size])
+		if ship_aabb.size != Vector3.ZERO:
+			_exclusion_zones.append(ship_aabb)
+			print("[ObjectSpawner] Added ship exclusion zone: %s" % ship_aabb)
+		else:
+			print("[ObjectSpawner] WARNING: Ship AABB has zero size, exclusion zone not added!")
+
+	# Find all ShelterArea nodes (tents)
+	var shelters := get_tree().get_nodes_in_group("shelters")
+	for shelter in shelters:
+		if shelter is Area3D:
+			var shelter_aabb := _get_area3d_aabb(shelter)
+			if shelter_aabb.size != Vector3.ZERO:
+				_exclusion_zones.append(shelter_aabb)
+
+	_exclusion_zones_cached = true
+	print("[ObjectSpawner] Cached %d exclusion zones (ship + %d shelters)" % [
+		_exclusion_zones.size(), shelters.size()])
+
+
+func _get_node_aabb(node: Node3D) -> AABB:
+	## Get world-space AABB for a node by recursively finding collision shapes.
+	var aabb := AABB()
+
+	for child in node.get_children():
+		if child is CollisionShape3D and child.shape:
+			# Get shape bounds and transform to world space
+			var shape_aabb := _get_shape_aabb(child.shape)
+			shape_aabb.position += child.global_position
+			if aabb.size == Vector3.ZERO:
+				aabb = shape_aabb
+			else:
+				aabb = aabb.merge(shape_aabb)
+		elif child is Node3D:
+			var child_aabb := _get_node_aabb(child)
+			if child_aabb.size != Vector3.ZERO:
+				if aabb.size == Vector3.ZERO:
+					aabb = child_aabb
+				else:
+					aabb = aabb.merge(child_aabb)
+
+	return aabb
+
+
+func _get_shape_aabb(shape: Shape3D) -> AABB:
+	## Get AABB for a collision shape.
+	if shape is BoxShape3D:
+		var box_shape: BoxShape3D = shape
+		var half: Vector3 = box_shape.size / 2.0
+		return AABB(-half, box_shape.size)
+	elif shape is CapsuleShape3D:
+		var capsule: CapsuleShape3D = shape
+		var r: float = capsule.radius
+		var h: float = capsule.height / 2.0
+		return AABB(Vector3(-r, -h, -r), Vector3(r * 2, capsule.height, r * 2))
+	elif shape is SphereShape3D:
+		var sphere: SphereShape3D = shape
+		var r: float = sphere.radius
+		return AABB(Vector3(-r, -r, -r), Vector3(r * 2, r * 2, r * 2))
+	elif shape is CylinderShape3D:
+		var cylinder: CylinderShape3D = shape
+		var r: float = cylinder.radius
+		var h: float = cylinder.height / 2.0
+		return AABB(Vector3(-r, -h, -r), Vector3(r * 2, cylinder.height, r * 2))
+	else:
+		# For complex shapes, try debug mesh
+		if shape.has_method("get_debug_mesh"):
+			var mesh: ArrayMesh = shape.get_debug_mesh()
+			if mesh:
+				return mesh.get_aabb()
+	return AABB()
+
+
+func _get_area3d_aabb(area: Area3D) -> AABB:
+	## Get world-space AABB for an Area3D's collision shape.
+	for child in area.get_children():
+		if child is CollisionShape3D and child.shape:
+			var shape_aabb := _get_shape_aabb(child.shape)
+			# Transform to world space
+			shape_aabb.position += child.global_position
+			return shape_aabb
+	return AABB()
+
+
+func clear_exclusion_cache() -> void:
+	## Call this if scene structure changes (new tents placed, etc.)
+	_exclusion_zones_cached = false
+	_exclusion_zones.clear()

@@ -11,8 +11,10 @@ signal unit_clicked(unit: Node)
 
 var _is_expanded: bool = false
 var _unit_rows: Dictionary = {}  # unit -> HBoxContainer
+var _row_backgrounds: Dictionary = {}  # unit -> ColorRect (for selection highlight)
 var _update_timer: float = 0.0
 const UPDATE_INTERVAL: float = 0.5  # Update twice per second, not every frame
+const HIGHLIGHT_COLOR := Color(1.0, 1.0, 1.0, 0.15)  # Semi-transparent white highlight
 
 
 func _ready() -> void:
@@ -21,6 +23,8 @@ func _ready() -> void:
 
 	# Initial population
 	call_deferred("_populate_crew_list")
+	# Connect to unit selection signals
+	call_deferred("_connect_to_unit_selections")
 
 
 func _process(delta: float) -> void:
@@ -64,6 +68,7 @@ func _populate_crew_list() -> void:
 	for child in crew_list.get_children():
 		child.queue_free()
 	_unit_rows.clear()
+	_row_backgrounds.clear()
 
 	# Get all survivors/selectable units
 	var units: Array[Node] = []
@@ -98,7 +103,25 @@ func _populate_crew_list() -> void:
 
 func _add_unit_row(unit: Node) -> void:
 	## Add a row for a unit showing name and action.
+	## Uses a container with background for selection highlighting.
+
+	# Create a container to hold background and row content
+	var container := Control.new()
+	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	container.custom_minimum_size.y = 20
+
+	# Create background ColorRect for selection highlight (starts hidden)
+	var bg := ColorRect.new()
+	bg.color = HIGHLIGHT_COLOR
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.visible = false
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(bg)
+	_row_backgrounds[unit] = bg
+
+	# Create the row content
 	var row := HBoxContainer.new()
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
 	row.add_theme_constant_override("separation", 10)
 	row.mouse_filter = Control.MOUSE_FILTER_STOP
 
@@ -129,6 +152,8 @@ func _add_unit_row(unit: Node) -> void:
 	action_label.name = "ActionLabel"
 	row.add_child(action_label)
 
+	container.add_child(row)
+
 	# Store reference for updates
 	_unit_rows[unit] = row
 
@@ -138,7 +163,11 @@ func _add_unit_row(unit: Node) -> void:
 	# Make row clickable
 	row.gui_input.connect(_on_row_input.bind(unit))
 
-	crew_list.add_child(row)
+	crew_list.add_child(container)
+
+	# Check if unit is already selected and highlight if so
+	if unit is ClickableUnit and unit.is_selected:
+		bg.visible = true
 
 
 func _get_unit_action(unit: Node) -> String:
@@ -215,3 +244,34 @@ func refresh() -> void:
 	## Public method to refresh unit list and count.
 	## Call this when new units are spawned or discovered.
 	_populate_crew_list()
+	_connect_to_unit_selections()
+
+
+func _connect_to_unit_selections() -> void:
+	## Connect to unit selected/deselected signals for highlighting.
+	var units := get_tree().get_nodes_in_group("selectable_units")
+	for unit in units:
+		if unit is ClickableUnit:
+			if not unit.selected.is_connected(_on_unit_selected):
+				unit.selected.connect(_on_unit_selected.bind(unit))
+			if not unit.deselected.is_connected(_on_unit_deselected):
+				unit.deselected.connect(_on_unit_deselected.bind(unit))
+
+
+func _on_unit_selected(unit: Node) -> void:
+	## Highlight the unit's row when selected.
+	_set_row_highlighted(unit, true)
+
+
+func _on_unit_deselected(unit: Node) -> void:
+	## Remove highlight from unit's row when deselected.
+	_set_row_highlighted(unit, false)
+
+
+func _set_row_highlighted(unit: Node, highlighted: bool) -> void:
+	## Set the highlight state for a unit's row.
+	if unit not in _row_backgrounds:
+		return
+	var bg: ColorRect = _row_backgrounds[unit]
+	if is_instance_valid(bg):
+		bg.visible = highlighted

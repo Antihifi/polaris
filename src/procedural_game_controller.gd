@@ -9,6 +9,7 @@ var _camera_scene: PackedScene = preload("res://src/camera/rts_camera.tscn")
 var _hud_scene: PackedScene = preload("res://ui/game_hud.tscn")
 var _inventory_hud_scene: PackedScene = preload("res://ui/inventory_hud.tscn")
 var _sled_panel_scene: PackedScene = preload("res://ui/sled_panel.tscn")
+var _sled_scene: PackedScene = preload("res://objects/sled1/sled_1.tscn")
 var _ship_scene: PackedScene = preload("res://objects/ship1/ship_1.tscn")
 var _sky3d_scene: PackedScene = preload("res://sky_3d.tscn")
 var _snow_controller: PackedScene = preload("res://src/systems/weather/snow_controller.tscn")
@@ -69,6 +70,8 @@ var _progress_bar: ProgressBar = null
 @export var errant_men_min: int = 3
 @export var errant_men_max: int = 5
 @export var errant_officer_chance: float = 0.4  # 40% chance per group
+@export var errant_max_distance: float = 1000.0  # Max distance from ship for errant camps
+@export var errant_min_distance: float = 200.0  # Min distance from ship for errant camps
 
 ## Object spawner reference
 var object_spawner: Node = null
@@ -154,13 +157,14 @@ func _generate_game() -> void:
 			spawn_pos.y = actual_height
 			print("[ProceduralGame] Spawn pos terrain height: %.2f" % actual_height)
 
-	# Bake NavMesh at the spawn location (not ship center)
-	# DISCOVERY #2 FIX (2026-01-12): Must enable region BEFORE bake, not after!
-	_update_loading("Baking Navigation Mesh", "This may take a minute", 70)
+	# Bake NavMesh for ENTIRE terrain (one-time, ~45 seconds)
+	# This eliminates all navigation coverage issues - no more runtime rebaking needed
+	_update_loading("Baking Navigation Mesh", "Full terrain bake (~45 seconds)", 70)
 	runtime_nav_baker.enabled = true  # Enable BEFORE bake so region is active when mesh assigned
-	runtime_nav_baker.force_bake_at(spawn_pos)
+	runtime_nav_baker.bake_full_terrain()
 	await runtime_nav_baker.bake_finished
-	_update_loading_detail("NavMesh baked successfully")
+	runtime_nav_baker.enabled = false  # DISABLE runtime rebaking - full coverage achieved
+	_update_loading_detail("Full terrain NavMesh baked successfully")
 	await get_tree().process_frame
 
 	# Stage 7: NOW spawn entities (after terrain + NavMesh ready)
@@ -308,6 +312,7 @@ func _create_terrain() -> void:
 	# Configure terrain settings BEFORE import
 	terrain.vertex_spacing = VERTEX_SPACING
 	terrain.region_size = Terrain3D.SIZE_2048
+	terrain.collision_mode = 3  # FULL_GAME - generates all collision at load, prevents fall-through
 
 	# Set the temp camera on terrain to prevent "Cannot find active camera" error
 	if terrain.has_method("set_camera") and _temp_camera:
@@ -495,6 +500,14 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	var men: Array[Node] = character_spawner.spawn_survivors(men_count, spawn_pos)
 	print("[ProceduralGame] Spawned %d men near captain" % men.size())
 
+	# Spawn test sled directly above captain for visibility testing
+	var sled: Node3D = _sled_scene.instantiate()
+	sled.name = "Sled1"
+	add_child(sled)
+	# Spawn 5m directly above captain so it's impossible to miss
+	sled.global_position = captain.global_position + Vector3(0, 5.0, 0)
+	print("[ProceduralGame] Spawned test sled at %s (above captain)" % sled.global_position)
+
 	# === SHIP ===
 	ship = _ship_scene.instantiate()
 	ship.name = "Ship1"
@@ -511,8 +524,7 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	var distance_to_captain := captain.global_position.distance_to(ship.global_position)
 	print("[ProceduralGame] Ship spawned at %s (distance to captain: %.1fm)" % [ship.global_position, distance_to_captain])
 
-	# Tell RuntimeNavBaker to track captain for auto-rebaking
-	runtime_nav_baker.player = captain
+	# NOTE: No player tracking needed - full terrain NavMesh already baked
 
 	# Spawn containers around ship
 	_spawn_containers(ship_pos)
@@ -712,8 +724,9 @@ func _find_north_coast_position(rng: RandomNumberGenerator, group_index: int, to
 
 		var world_pos := Vector3(world_x, world_y, world_z)
 
-		# Ensure minimum distance from ship (at least 200m)
-		if world_pos.distance_to(ship_pos) < 200.0:
+		# Ensure distance from ship within configured range
+		var dist_to_ship := world_pos.distance_to(ship_pos)
+		if dist_to_ship < errant_min_distance or dist_to_ship > errant_max_distance:
 			continue
 
 		return world_pos
@@ -921,12 +934,18 @@ func _show_scenario_screen() -> void:
 	# Show scenario screen
 	scenario_panel.show_scenario()
 
-	# Pause game time while showing scenario
+	# Pause game time and physics while showing scenario
 	var time_manager := get_node_or_null("/root/TimeManager")
 	if time_manager and "paused" in time_manager:
 		time_manager.paused = true
+	get_tree().paused = true
 
-	print("[ProceduralGame] Scenario screen displayed")
+	# Ensure snow is off during scenario screen
+	var snow_ctrl := _find_snow_controller()
+	if snow_ctrl and snow_ctrl.has_method("stop_snow"):
+		snow_ctrl.stop_snow()
+
+	print("[ProceduralGame] Scenario screen displayed (game paused)")
 
 
 func _on_scenario_begin() -> void:
@@ -938,13 +957,14 @@ func _on_scenario_begin() -> void:
 	if inventory_hud:
 		inventory_hud.visible = true
 
-	# Start random weather
-	_start_random_weather()
-
-	# Unpause game time
+	# Unpause game tree and time
+	get_tree().paused = false
 	var time_manager := get_node_or_null("/root/TimeManager")
 	if time_manager and "paused" in time_manager:
 		time_manager.paused = false
+
+	# Start random weather (after unpause so particles work)
+	_start_random_weather()
 
 	print("[ProceduralGame] Game started!")
 

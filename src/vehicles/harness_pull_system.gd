@@ -27,6 +27,7 @@ func _ready() -> void:
 	if sled == null:
 		push_error("[HarnessPullSystem] Parent must be a RigidBody3D")
 		return
+
 	print("[HarnessPullSystem] Initialized with rope_length=%.1fm, max_speed=%.1fm/s" % [rope_length, max_pull_speed])
 
 

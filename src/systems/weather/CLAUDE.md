@@ -9,7 +9,8 @@ Snow and blizzard effects with smooth transitions, integrating with Sky3D for re
 | `snow_controller.gd` | Main weather controller - manages snow intensity, fog, and Sky3D integration |
 | `snow_controller.tscn` | Scene definition (Node with script attached) |
 | `snow_particles.tscn` | GPU particle system for snowfall (5000 particles) |
-| `blizzard_fog.gdshader` | Animated fog shader creating drifting wind bands |
+| `blizzard_post_process.gdshader` | Screen-space raymarched volumetric fog with triangle noise |
+| `blizzard_fog.gdshader` | Legacy fog shader (replaced by post-process version) |
 
 ## Architecture
 
@@ -21,15 +22,140 @@ SnowController
 │   └── Follow camera, spawn upwind, drift with wind
 ├── Global Volumetric Fog (Environment)
 │   └── Base haze layer visible from all angles
-├── FogVolume with Shader (localized)
-│   └── Animated drifting bands around camera
+├── Screen-Space Post-Process Fog (MeshInstance3D + Shader)
+│   └── Raymarched volumetric bands with triangle noise
 ├── Sky3D Integration
-│   └── Wind, sun/ambient energy, SkyDome clouds
+│   └── Wind, sun/ambient energy, SkyDome clouds, light tint
 └── Camera Far Plane
     └── Distance clipping for true visibility reduction
 ```
 
 **Critical:** The camera far plane reduction is what actually hides distant mountains during blizzards, not just the fog.
+
+---
+
+## Blizzard Post-Process Shader
+
+The volumetric fog effect uses a **screen-space raymarching shader** adapted from Dave Hoskins' "Frozen Wasteland" Shadertoy.
+
+### How It Works
+
+1. **Fullscreen Quad**: A `MeshInstance3D` with a `QuadMesh` is parented to the camera
+2. **Depth Reading**: Shader reads the depth buffer to know where scene geometry is
+3. **Raymarching**: For each pixel, marches rays from camera toward the scene
+4. **Triangle Noise**: Samples procedural noise at world XZ coordinates for stable bands
+5. **Beer-Lambert**: Uses exponential transmittance for realistic fog accumulation
+6. **Light Tinting**: Syncs with Sky3D sun color for sunrise/sunset matching
+
+### Key Shader Technique: World-Anchored 2D Sampling
+
+```glsl
+// Sample fog using WORLD XZ coordinates only
+// This ensures fog bands are anchored to the world and don't swirl with camera movement
+float sample_fog_2d(vec2 world_xz, float world_y, float time_val) {
+    vec2 fog_xz = world_xz;
+    fog_xz -= time_val * wind_speed * wind_dir;  // Wind movement
+
+    // Large sweeping waves based on ORIGINAL world position
+    fog_xz.x += sin(world_xz.y * wave_frequency + time_val * 0.15) * wave_amplitude;
+
+    // Sample noise using 2D position (Y is time-based for animation)
+    vec3 noise_pos = vec3(fog_xz.x, time_val * vertical_drift, fog_xz.y);
+    float noise = triangle_noise_3d(noise_pos * noise_scale);
+
+    return noise * height_factor;
+}
+```
+
+### Triangle Noise
+
+Creates sharper, more defined fog bands than smooth Perlin noise:
+
+```glsl
+float tri(float x) { return abs(fract(x) - 0.5); }
+
+vec3 tri3(vec3 p) {
+    return vec3(tri(p.z + tri(p.y)), tri(p.z + tri(p.x)), tri(p.y + tri(p.x)));
+}
+
+float triangle_noise_3d(vec3 p) {
+    float rz = 0.0;
+    for (int i = 0; i < 3; i++) {
+        vec3 dg = tri3(bp);
+        p += dg;
+        rz += tri(p.z + tri(p.x + tri(p.y))) / z;
+        // ... octave scaling
+    }
+    return rz;
+}
+```
+
+### Beer-Lambert Transmittance
+
+Proper volumetric transparency - fog accumulates but doesn't fully block:
+
+```glsl
+float transmittance = 1.0;
+for (int i = 0; i < ray_steps; i++) {
+    float fog_sample = sample_fog_2d(sample_pos.xz, sample_pos.y, TIME);
+    transmittance *= exp(-fog_sample * fog_density * step_size);
+}
+float opacity = 1.0 - transmittance;
+```
+
+---
+
+## Shader Parameters & Tuning
+
+### Fog Density / Intensity
+
+| Parameter | Light Snow | Heavy Blizzard | Effect |
+|-----------|------------|----------------|--------|
+| `light_fog_shader_density` | 0.015 | - | Overall fog opacity |
+| `heavy_fog_shader_density` | - | 0.04 | Higher = denser fog |
+
+**Tuning:** Lower values = more subtle, semi-transparent bands. Higher values = denser, more opaque.
+
+### Band Size and Shape
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `fog_noise_scale` | 0.004 | Smaller = larger bands, Larger = finer detail |
+| `fog_wave_amplitude` | 15.0 | Larger = more sweeping wave motion |
+| `fog_wave_frequency` | 0.04 | Smaller = longer wavelength waves |
+
+**For larger sweeping bands:** Decrease `noise_scale`, increase `wave_amplitude`
+**For more detailed bands:** Increase `noise_scale`, decrease `wave_amplitude`
+
+### Movement Speed
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `fog_wind_speed` | 2.0 | How fast bands drift horizontally |
+| `fog_vertical_drift` | 0.1 | Vertical animation speed |
+
+**Note:** Wind speed is automatically synced from Sky3D and smoothed to prevent hurricane effects during transitions.
+
+### Height Distribution
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `fog_height` | 20.0 | Center height of fog layer (world Y) |
+| `fog_falloff` | 0.02 | How quickly fog fades above/below center |
+
+**For ground-hugging fog:** Lower `fog_height`, increase `fog_falloff`
+**For thick atmospheric fog:** Higher `fog_height`, decrease `fog_falloff`
+
+### Colors
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `fog_albedo` | (0.75, 0.77, 0.8) | Base fog color |
+| `fog_emission_color` | (0.6, 0.62, 0.65) | Self-illumination |
+
+**Sunrise/Sunset:** The shader automatically picks up Sky3D's sun color via `light_tint` uniform.
+
+---
 
 ## SnowController
 
@@ -49,287 +175,125 @@ enum SnowIntensity {
 }
 ```
 
-### Exports
+### Key Exports
+
 ```gdscript
 @export var sky3d: Node                        # Sky3D reference (auto-found if null)
 @export var transition_duration: float = 5.0  # Seconds for smooth transitions
-@export var spawn_height_offset: float = 25.0 # Height above camera for particles
-@export var normal_far_distance: float = 4000.0  # Clear weather far plane
-@export var blizzard_far_distance: float = 150.0 # Heavy snow far plane
+
+# Light Snow
+@export var light_fog_shader_density: float = 0.015
+@export var light_camera_far_ratio: float = 0.4
+
+# Heavy Blizzard
+@export var heavy_fog_shader_density: float = 0.04
+@export var heavy_camera_far_ratio: float = 0.0375
+
+# Fog Shader Tuning
+@export var fog_noise_scale: float = 0.008
+@export var fog_wind_speed: float = 7.0
+@export var fog_wave_amplitude: float = 3.0
 ```
-
-### Intensity Configurations
-
-Each intensity level defines a complete configuration dictionary:
-
-| Property | NONE | LIGHT | HEAVY |
-|----------|------|-------|-------|
-| `particle_amount_ratio` | 0.0 | 0.4 | 1.0 |
-| `sky3d_wind_speed` | 0.0 | 8.0 m/s | 25.0 m/s |
-| `sun_energy` | 1.0 | 0.7 | 0.25 |
-| `ambient_energy` | 1.0 | 0.85 | 0.4 |
-| `volumetric_fog_density` | 0.0 | 0.04 | 0.08 |
-| `fog_shader_density` | 0.0 | 1.2 | 2.5 |
-| `camera_far_ratio` | 1.0 | 0.4 (~1600m) | 0.0375 (~150m) |
-| `cumulus_coverage` | original | 0.75 | 1.0 |
-| `atm_darkness` | original | 0.65 | 0.85 |
 
 ### Public API
 
 ```gdscript
-# Start snow with smooth transition
 func start_snow(intensity: SnowIntensity = SnowIntensity.LIGHT) -> void
-
-# Stop snow with smooth fade-out
 func stop_snow() -> void
-
-# Set intensity immediately (no transition)
 func set_snow_immediate(intensity: SnowIntensity) -> void
-
-# Check if snowing (including during transitions)
 func is_snowing() -> bool
 ```
 
-### State Variables
-```gdscript
-var current_intensity: SnowIntensity = SnowIntensity.NONE
-var _target_intensity: SnowIntensity = SnowIntensity.NONE
-var _transition_progress: float = 1.0  # 0-1, 1 = complete
+---
 
-var _snow_particles: GPUParticles3D    # Active particle system
-var _particle_material: ParticleProcessMaterial  # For wind modification
-var _fog_volume: FogVolume             # Localized animated fog
-var _fog_shader_material: ShaderMaterial
-var _camera: Camera3D
-var _environment: Environment          # From Sky3D
-var _sky_dome: Node                     # SkyDome for clouds
-```
+## Implementation Details
 
-## Two-Layer Fog System
+### Wind Speed Smoothing
 
-### Layer 1: Global Volumetric Fog (Environment)
-```gdscript
-_environment.volumetric_fog_enabled = true
-_environment.volumetric_fog_density = 0.08       # Thick base layer
-_environment.volumetric_fog_emission = Color(0.25, 0.25, 0.27)  # Visible from all angles
-_environment.volumetric_fog_albedo = Color(0.9, 0.9, 0.95)      # White-ish for snow
-```
-
-Provides base haze layer visible from all directions.
-
-### Layer 2: FogVolume with Animated Shader
-```gdscript
-_fog_volume = FogVolume.new()
-_fog_volume.size = Vector3(400, 100, 400)  # 400m x 100m x 400m box
-_fog_volume.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
-_fog_volume.material = _fog_shader_material  # blizzard_fog.gdshader
-```
-
-Creates drifting bands of fog that move with the wind direction. Stays centered on camera every frame.
-
-## Blizzard Fog Shader
-
-```glsl
-shader_type fog;
-
-uniform sampler2D noise_tex : repeat_enable;
-uniform float noise_scale = 0.02;
-uniform float flatness = 8.0;           // Vertical banding control
-uniform float density = 2.0;
-uniform vec3 emission = vec3(0.7, 0.7, 0.75);
-uniform float fog_speed = 0.8;
-uniform float wind_direction = 0.0;     // Synced from Sky3D
-
-void fog() {
-    // Wind vector from direction (negated to match particle visual)
-    vec2 wind_dir = vec2(-sin(wind_direction), -cos(wind_direction));
-    vec2 move_uv = wind_dir * TIME * fog_speed;
-
-    // Layered noise for detail
-    float detail_noise = texture(noise_tex, WORLD_POSITION.xz * noise_scale + move_uv * 0.5).r;
-    float noise = texture(noise_tex, WORLD_POSITION.xz * noise_scale + move_uv + detail_noise).r;
-
-    DENSITY = mix(1.0, noise, UVW.y * flatness);
-    DENSITY *= step(0.0, -SDF) * density;
-    ALBEDO = texture(grad_tex, vec2(DENSITY, 0.5)).rgb;
-    EMISSION = emission;
-}
-```
-
-## Particle System
-
-### Snow Particles Configuration (snow_particles.tscn)
-- **Amount:** 5000 particles
-- **Emission shape:** Box 80x2x80 (horizontal spread)
-- **Initial velocity:** 3-5 m/s downward
-- **Lifetime:** 10 seconds
-- **Gravity:** Modified by wind (set dynamically)
-- **Turbulence:** Enabled for natural movement
-- **Billboard mode:** Face camera
-
-### Particle Positioning
-```gdscript
-func _update_particle_position() -> void:
-    # Spawn above camera
-    var spawn_y := _camera.global_position.y + spawn_height_offset
-
-    # Offset upwind so particles drift toward camera
-    var offset := Vector3.ZERO
-    if sky3d:
-        var wind_dir: float = sky3d.wind_direction
-        var wind_speed: float = sky3d.wind_speed
-        # Spawn opposite of wind direction
-        offset.x = -sin(wind_dir) * wind_speed * 1.5
-        offset.z = -cos(wind_dir) * wind_speed * 1.5
-
-    _snow_particles.global_position = Vector3(cam_pos.x + offset.x, spawn_y, cam_pos.z + offset.z)
-```
-
-### Wind-Driven Gravity
-```gdscript
-func _update_wind() -> void:
-    var wind_dir: float = sky3d.wind_direction
-    var wind_speed: float = sky3d.wind_speed
-    var mult: float = config["particle_wind_mult"]  # 0.8 or 2.0
-
-    var wind_x: float = sin(wind_dir) * wind_speed * mult
-    var wind_z: float = cos(wind_dir) * wind_speed * mult
-
-    _particle_material.gravity = Vector3(wind_x, -9.8, wind_z)
-```
-
-## Sky3D Integration
-
-### Properties Modified
-| Sky3D Property | Effect |
-|----------------|--------|
-| `wind_speed` | Affects particle drift and fog animation |
-| `wind_direction` | Direction of snow/fog movement |
-| `sun_energy` | Dimmed during storms (0.25 in heavy) |
-| `ambient_energy` | Reduced overall lighting |
-
-### SkyDome Properties Modified
-| Property | Effect |
-|----------|--------|
-| `cumulus_coverage` | Increased cloud cover |
-| `cumulus_intensity` | Reduced cloud detail |
-| `cirrus_coverage` | High altitude haze |
-| `atm_darkness` | Darker atmosphere |
-| `atm_thickness` | Thicker atmosphere scatter |
-| `atm_sun_intensity` | Sun disk dimming |
-
-## Transition System
-
-All properties smoothly interpolate over `transition_duration` (default 5 seconds):
+To prevent "hurricane effect" during intensity transitions, fog wind speed is smoothed:
 
 ```gdscript
-func _apply_transition() -> void:
-    var t: float = _transition_progress  # 0.0 to 1.0
-
-    # Particle amount
-    _snow_particles.amount_ratio = lerpf(from_ratio, to_ratio, t)
-
-    # Sky3D properties
-    sky3d.wind_speed = lerpf(from_wind, to_wind, t)
-    sky3d.sun_energy = lerpf(from_sun, to_sun, t)
-
-    # Volumetric fog
-    _environment.volumetric_fog_density = lerpf(from_fog, to_fog, t)
-
-    # Camera far plane (the key visibility control)
-    _camera.far = normal_far_distance * lerpf(from_far_ratio, to_far_ratio, t)
+var target_fog_wind: float = wind_speed * 0.15
+_smoothed_fog_wind_speed = lerpf(_smoothed_fog_wind_speed, target_fog_wind, 0.02)
+_fog_shader_material.set_shader_parameter("wind_speed", _smoothed_fog_wind_speed)
 ```
 
-## Critical Quirks & Implementation Details
+### Sunrise/Sunset Light Tinting
 
-### 1. Camera Far Plane is Key
+The fog color automatically matches Sky3D's sun color:
+
 ```gdscript
-// Line 496 comment: "this is what actually hides the mountains"
+func _update_fog_light_tint() -> void:
+    if "sun" in sky3d and sky3d.sun:
+        var sun_node: DirectionalLight3D = sky3d.sun
+        light_color = sun_node.light_color
+        var tint_amount = clamp(1.0 - sun_node.light_energy * 0.5, 0.0, 1.0)
+        _fog_shader_material.set_shader_parameter("light_tint_strength", tint_amount * 0.6)
+```
+
+### Camera Far Plane Reduction
+
+The fog alone doesn't hide distant mountains - the camera far plane does:
+
+```gdscript
 _camera.far = normal_far_distance * target_ratio  // 150m in heavy snow
 ```
 
-The volumetric fog alone doesn't hide distant terrain - reducing the camera's far clipping plane does the actual visibility reduction.
+---
 
-### 2. Original Values Caching
-The controller stores original Sky3D/SkyDome/Environment values in `_ready()` and restores them when snow stops. This prevents "getting stuck" with modified settings.
+## Performance Notes
 
-### 3. Wind Direction Synchronization
-Both particles and fog shader use the same wind direction from Sky3D:
-- Particles spawn upwind and drift toward camera
-- Fog shader animates in same direction
-- Creates cohesive visual effect
+The shader is optimized for performance:
+- **20 ray steps** (adjustable) - balance between quality and speed
+- **Early exit** when transmittance < 0.01
+- **Pure math noise** - no texture samples in the noise function
+- **Fixed iteration count** in triangle noise (3 octaves)
 
-### 4. Environment from Sky3D
-```gdscript
-// Sky3D extends WorldEnvironment, so its .environment is the active one
-if "environment" in sky3d and sky3d.environment:
-    _environment = sky3d.environment
-```
+Typical performance: 60fps on mid-range hardware with default settings.
 
-### 5. Deferred Initialization
-```gdscript
-func _ready() -> void:
-    await get_tree().process_frame  // Wait for Sky3D to initialize
-    _store_original_values()
-```
-
-## Integration Points
-
-### With TimeManager
-- TimeManager doesn't directly control weather
-- Weather could be triggered based on season/random events
-
-### With DebugMenu
-```gdscript
-# In ui/debug_menu.gd
-_snow_controller.start_snow(SnowController.SnowIntensity.LIGHT)
-_snow_controller.start_snow(SnowController.SnowIntensity.HEAVY)
-_snow_controller.stop_snow()
-_snow_controller.set_snow_immediate(SnowController.SnowIntensity.NONE)
-```
-
-### With Survivors (potential)
-Heavy snow could trigger:
-- Increased warmth drain
-- Reduced work efficiency
-- Shelter-seeking behavior
-
-## Scene Setup
-
-Add to main scene:
-```
-main.tscn
-├── Sky3D (WorldEnvironment)
-└── SnowController [instance: src/systems/weather/snow_controller.tscn]
-```
-
-The controller auto-finds Sky3D if not assigned via export.
+---
 
 ## Common Modifications
 
-### Add new intensity level (MODERATE)
+### Make fog more subtle
 ```gdscript
-enum SnowIntensity { NONE, LIGHT, MODERATE, HEAVY }
-
-# Add to _intensity_configs:
-SnowIntensity.MODERATE: {
-    "particle_amount_ratio": 0.6,
-    "camera_far_ratio": 0.25,  # ~1000m visibility
-    # ... other properties
-}
+light_fog_shader_density = 0.008  # Half the default
+fog_noise_scale = 0.003           # Larger, softer bands
 ```
 
-### Trigger weather based on season
+### Make fog more dramatic
 ```gdscript
-# In TimeManager or GameManager
-func _on_hour_passed(hour: int, day: int) -> void:
-    if TimeManager.current_season == TimeManager.Season.WINTER:
-        if randf() < 0.1:  # 10% chance per hour
-            _snow_controller.start_snow(SnowController.SnowIntensity.HEAVY)
+heavy_fog_shader_density = 0.08   # Double the default
+fog_wave_amplitude = 25.0         # More dramatic sweeping
 ```
 
-### Add rain weather type
-1. Create `rain_controller.gd` following same pattern
-2. Create `rain_particles.tscn` with different material
-3. Skip fog volume (rain doesn't reduce visibility as much)
-4. Modify Sky3D cloud/atmosphere settings
+### Change fog movement speed
+```gdscript
+fog_wind_speed = 15.0  # Faster horizontal drift
+```
+Note: This is further scaled by Sky3D wind and smoothed internally.
+
+### Disable sunrise/sunset tinting
+Set `light_tint_strength = 0.0` in the shader or modify `_update_fog_light_tint()`.
+
+---
+
+## Debugging
+
+### Fog not visible
+1. Check `light_fog_shader_density` / `heavy_fog_shader_density` > 0
+2. Verify `_fog_mesh` is created (check console for "Created screen-space post-process fog mesh")
+3. Ensure camera reference is valid
+
+### Fog too opaque / whiteout
+1. Lower `fog_shader_density` values (try 0.01-0.02)
+2. Check `fog_max_opacity` cap in shader (default 0.7)
+
+### Fog bands not moving
+1. Verify Sky3D wind_speed > 0
+2. Check `fog_wind_speed` export
+3. Confirm `_update_wind()` is being called
+
+### Hurricane effect during transitions
+1. Verify `_smoothed_fog_wind_speed` smoothing is active
+2. Lower the lerp factor (currently 0.02)

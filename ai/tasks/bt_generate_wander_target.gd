@@ -28,6 +28,9 @@ func _tick(_delta: float) -> Status:
 		if agent.has_method("get_leash_constrained_position"):
 			target = agent.get_leash_constrained_position(target)
 
+	# NOTE: NavMesh validation REMOVED - full terrain bake ensures complete coverage
+	# No need to snap targets to NavMesh anymore
+
 	blackboard.set_var(output_var, target)
 	blackboard.set_var(&"current_action", "Wandering")
 	return SUCCESS

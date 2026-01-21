@@ -63,6 +63,9 @@ func _ready() -> void:
 	else:
 		push_warning("[SledController] No HarnessPullSystem child - sled won't move")
 
+	# Disable collision on cargo StaticBody3D nodes to prevent physics conflicts
+	_disable_cargo_collision(self)
+
 
 
 
@@ -207,3 +210,13 @@ func get_harness_position() -> Vector3:
 	if sled_front:
 		return sled_front.global_position
 	return global_position
+
+
+## Recursively disable collision on StaticBody3D children (cargo items).
+## Prevents physics conflicts when cargo is parented to RigidBody3D sled.
+func _disable_cargo_collision(node: Node) -> void:
+	for child in node.get_children():
+		if child is StaticBody3D:
+			child.collision_layer = 0
+			child.collision_mask = 0
+		_disable_cargo_collision(child)

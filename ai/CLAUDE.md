@@ -283,6 +283,34 @@ Use built-in tasks with ClickableUnit's computed properties:
 
 **Fix:** Only lock animations AFTER movement AND proximity check complete.
 
+### Issue: is_animation_locked Never Cleared After BTDynamicSelector Abort (FIXED 2026-01-20)
+
+**Symptom:** Units play walking animation but don't actually move. They're stuck facing away from resources.
+
+**Root Cause:** When BTDynamicSelector aborts a sequence mid-animation (e.g., hunger drops during SitOnCrate's RandomWait), the final `BTSetAgentProperty(is_animation_locked = false)` never runs!
+
+Example SitOnCrateSequence:
+1. SetProperty(is_animation_locked = true) ← SET HERE
+2. PlayAnimation (sit down)
+3. PlayAnimation (sitting idle)
+4. RandomWait (20-40s) ← INTERRUPTED HERE when need drops
+5. PlayAnimation (stand up) ← NEVER REACHED
+6. SetProperty(is_animation_locked = false) ← NEVER REACHED!
+
+**Fix Applied:** In `clickable_unit.gd`, `move_to()` now clears `is_animation_locked`:
+```gdscript
+func move_to(target_position: Vector3) -> void:
+    if is_dead:
+        return
+    is_animation_locked = false  # <-- Clears leftover lock from aborted sequences
+    navigation_agent.target_position = target_position
+    ...
+```
+
+**Why this works:** Movement is mutually exclusive with stationary animations. If the BT calls move_to(), the unit should move, period.
+
+**Lesson learned:** Single-line fixes > 150-line overengineered solutions. Always find the actual root cause.
+
 ### BTCheckAgentProperty CheckType Values
 
 | Value | Name | Description |

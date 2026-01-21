@@ -41,10 +41,17 @@ func _tick(_delta: float) -> Status:
 		blackboard.set_var(&"current_action", "Too far from food")
 		return FAILURE
 
-	# Get StorageContainer child
+	# Get StorageContainer child - check target node first, then its parent
+	# (target_node may be a position marker whose parent is the actual container)
 	var storage: Node = container_node.find_child("StorageContainer", false, false)
 	if not storage:
 		storage = container_node.get_node_or_null("StorageContainer")
+	# If target_node is a position marker, check its parent (the barrel/crate)
+	if not storage and container_node.get_parent():
+		var parent_container: Node3D = container_node.get_parent()
+		storage = parent_container.find_child("StorageContainer", false, false)
+		if not storage:
+			storage = parent_container.get_node_or_null("StorageContainer")
 	if not storage or not storage.has_method("has_food"):
 		return FAILURE
 

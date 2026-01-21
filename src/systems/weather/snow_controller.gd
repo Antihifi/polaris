@@ -15,7 +15,7 @@ enum SnowIntensity {
 }
 
 const SNOW_PARTICLES_SCENE: PackedScene = preload("res://src/systems/weather/snow_particles.tscn")
-const BLIZZARD_FOG_SHADER: Shader = preload("res://src/systems/weather/blizzard_fog.gdshader")
+const BLIZZARD_POST_PROCESS_SHADER: Shader = preload("res://src/systems/weather/blizzard_post_process.gdshader")
 
 ## Reference to Sky3D node for lighting and wind
 @export var sky3d: Node  # Sky3D type
@@ -69,8 +69,8 @@ const BLIZZARD_FOG_SHADER: Shader = preload("res://src/systems/weather/blizzard_
 ## Volumetric fog emission color during light snow
 @export var light_fog_emission: Color = Color(0.2, 0.2, 0.22)
 
-## Animated fog shader density during light snow
-@export_range(0.0, 5.0, 0.1) var light_fog_shader_density: float = 1.2
+## Post-process fog shader density during light snow (lower = more subtle)
+@export_range(0.0, 0.5, 0.001) var light_fog_shader_density: float = 0.015
 
 ## Animated fog shader emission during light snow
 @export var light_fog_shader_emission: Color = Color(0.25, 0.25, 0.28)
@@ -110,8 +110,8 @@ const BLIZZARD_FOG_SHADER: Shader = preload("res://src/systems/weather/blizzard_
 ## Volumetric fog emission color during blizzard
 @export var heavy_fog_emission: Color = Color(0.25, 0.25, 0.27)
 
-## Animated fog shader density during blizzard
-@export_range(0.0, 10.0, 0.1) var heavy_fog_shader_density: float = 2.5
+## Post-process fog shader density during blizzard (lower = more subtle)
+@export_range(0.0, 0.5, 0.001) var heavy_fog_shader_density: float = 0.04
 
 ## Animated fog shader emission during blizzard
 @export var heavy_fog_shader_emission: Color = Color(0.35, 0.35, 0.38)
@@ -124,6 +124,36 @@ const BLIZZARD_FOG_SHADER: Shader = preload("res://src/systems/weather/blizzard_
 
 ## Atmosphere darkness during blizzard
 @export_range(0.0, 1.0, 0.01) var heavy_atm_darkness: float = 0.85
+
+# =============================================================================
+# VOLUMETRIC FOG SHADER (Triangle noise blizzard effect)
+# =============================================================================
+@export_category("Volumetric Fog Shader")
+
+## Triangle noise scale - smaller values = larger sweeping bands
+@export_range(0.001, 0.05, 0.001) var fog_noise_scale: float = 0.008
+
+## Fog wind speed (m/s) - how fast fog bands drift horizontally
+@export_range(0.0, 20.0, 0.5) var fog_wind_speed: float = 7.0
+
+## Vertical drift speed - snow falling/swirling vertically
+@export_range(0.0, 3.0, 0.1) var fog_vertical_drift: float = 0.5
+
+## Maximum fog opacity (0.7 = semi-transparent, 1.0 = can be opaque)
+## KEY: This prevents the "opaque curtain" effect
+@export_range(0.1, 1.0, 0.05) var fog_max_opacity: float = 0.7
+
+## Wave amplitude for organic turbulence movement
+@export_range(0.0, 10.0, 0.5) var fog_wave_amplitude: float = 3.0
+
+## Wave frequency for turbulence
+@export_range(0.0, 1.0, 0.05) var fog_wave_frequency: float = 0.3
+
+## Fog albedo color (reflected light color)
+@export var fog_albedo: Color = Color(0.75, 0.77, 0.8)
+
+## Fog emission color (self-illumination)
+@export var fog_emission_color: Color = Color(0.6, 0.62, 0.65)
 
 ## Current snow intensity
 var current_intensity: SnowIntensity = SnowIntensity.NONE
@@ -146,9 +176,12 @@ var _particle_material: ParticleProcessMaterial
 ## Environment for volumetric fog control
 var _environment: Environment = null
 
-## FogVolume for localized blizzard fog with animated shader
-var _fog_volume: FogVolume = null
+## Screen-space post-process mesh for volumetric blizzard fog
+var _fog_mesh: MeshInstance3D = null
 var _fog_shader_material: ShaderMaterial = null
+
+## Smoothed fog wind speed to prevent hurricane effect during transitions
+var _smoothed_fog_wind_speed: float = 0.0
 
 ## Original camera far distance
 var _original_camera_far: float = 4000.0
@@ -349,7 +382,7 @@ func start_snow(intensity: SnowIntensity = SnowIntensity.LIGHT) -> void:
 	if not is_instance_valid(_snow_particles):
 		_create_particles()
 
-	if not is_instance_valid(_fog_volume):
+	if not is_instance_valid(_fog_mesh):
 		_create_fog_volume()
 
 	if previous == SnowIntensity.NONE:
@@ -376,7 +409,7 @@ func set_snow_immediate(intensity: SnowIntensity) -> void:
 	if intensity != SnowIntensity.NONE:
 		if not is_instance_valid(_snow_particles):
 			_create_particles()
-		if not is_instance_valid(_fog_volume):
+		if not is_instance_valid(_fog_mesh):
 			_create_fog_volume()
 		_apply_intensity_config(intensity)
 		if previous == SnowIntensity.NONE:
@@ -422,53 +455,53 @@ func _cleanup_particles() -> void:
 
 
 func _create_fog_volume() -> void:
-	# Create a FogVolume that follows the camera for localized blizzard effect
-	_fog_volume = FogVolume.new()
-	_fog_volume.size = Vector3(400, 100, 400)  # Large area around camera
-	_fog_volume.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	# Create a fullscreen MeshInstance3D for screen-space post-process fog
+	_fog_mesh = MeshInstance3D.new()
 
-	# Create ShaderMaterial with animated blizzard fog shader
+	# Create fullscreen quad mesh
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)  # Fullscreen in NDC
+	_fog_mesh.mesh = quad
+
+	# Create ShaderMaterial with raymarched volumetric fog
 	_fog_shader_material = ShaderMaterial.new()
-	_fog_shader_material.shader = BLIZZARD_FOG_SHADER
+	_fog_shader_material.shader = BLIZZARD_POST_PROCESS_SHADER
 
-	# Set up shader parameters
-	_fog_shader_material.set_shader_parameter("noise_scale", 0.015)
-	_fog_shader_material.set_shader_parameter("flatness", 6.0)
-	_fog_shader_material.set_shader_parameter("density", 0.0)  # Start at 0
-	_fog_shader_material.set_shader_parameter("emission", Vector3(0.6, 0.6, 0.65))
-	_fog_shader_material.set_shader_parameter("fog_speed", 0.6)
+	# Set up shader parameters from exported variables
+	_fog_shader_material.set_shader_parameter("noise_scale", fog_noise_scale)
+	_fog_shader_material.set_shader_parameter("fog_density", 0.0)  # Start at 0, will be set by intensity
+	_fog_shader_material.set_shader_parameter("wind_speed", fog_wind_speed)
+	_fog_shader_material.set_shader_parameter("wind_direction", 0.0)  # Will be synced from Sky3D
+	_fog_shader_material.set_shader_parameter("vertical_drift", fog_vertical_drift)
+	_fog_shader_material.set_shader_parameter("wave_amplitude", fog_wave_amplitude)
+	_fog_shader_material.set_shader_parameter("wave_frequency", fog_wave_frequency)
+	_fog_shader_material.set_shader_parameter("fog_color", Vector3(fog_albedo.r, fog_albedo.g, fog_albedo.b))
+	_fog_shader_material.set_shader_parameter("fog_emission", Vector3(fog_emission_color.r, fog_emission_color.g, fog_emission_color.b))
+	_fog_shader_material.set_shader_parameter("max_distance", 200.0)
+	_fog_shader_material.set_shader_parameter("ray_steps", 32)
+	_fog_shader_material.set_shader_parameter("fog_height", 30.0)
+	_fog_shader_material.set_shader_parameter("fog_falloff", 0.05)
 
-	# Create noise texture for the shader
-	var noise := FastNoiseLite.new()
-	noise.noise_type = FastNoiseLite.TYPE_PERLIN
-	noise.frequency = 0.01
-	noise.fractal_octaves = 4
+	_fog_mesh.material_override = _fog_shader_material
 
-	var noise_tex := NoiseTexture2D.new()
-	noise_tex.width = 256
-	noise_tex.height = 256
-	noise_tex.noise = noise
-	noise_tex.seamless = true
-	_fog_shader_material.set_shader_parameter("noise_tex", noise_tex)
+	# Disable shadow casting and ensure it renders on top
+	_fog_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	# Create gradient texture for color variation
-	var gradient := Gradient.new()
-	gradient.set_color(0, Color(0.85, 0.85, 0.9))  # Light blue-white
-	gradient.set_color(1, Color(0.95, 0.95, 1.0))  # Near white
-	var grad_tex := GradientTexture1D.new()
-	grad_tex.gradient = gradient
-	_fog_shader_material.set_shader_parameter("grad_tex", grad_tex)
+	# Add to camera so it's always in view
+	if _camera:
+		_camera.add_child(_fog_mesh)
+		# Position slightly in front of camera near plane
+		_fog_mesh.position = Vector3(0, 0, -1.0)
+	else:
+		add_child(_fog_mesh)
 
-	_fog_volume.material = _fog_shader_material
-
-	add_child(_fog_volume)
-	print("[SnowController] Created FogVolume with animated shader")
+	print("[SnowController] Created screen-space post-process fog mesh")
 
 
 func _cleanup_fog_volume() -> void:
-	if is_instance_valid(_fog_volume):
-		_fog_volume.queue_free()
-		_fog_volume = null
+	if is_instance_valid(_fog_mesh):
+		_fog_mesh.queue_free()
+		_fog_mesh = null
 		_fog_shader_material = null
 
 
@@ -506,18 +539,18 @@ func _update_particle_position() -> void:
 
 
 func _update_fog_position() -> void:
-	# Keep fog volume centered on camera
-	if not is_instance_valid(_fog_volume):
+	# Post-process fog is attached to camera, no position update needed
+	# But ensure it's parented to the camera if not already
+	if not is_instance_valid(_fog_mesh):
 		return
 
 	if not _camera:
 		_camera = get_viewport().get_camera_3d()
 
-	if _camera:
-		var cam_pos := _camera.global_position
-		# Guard against NaN/Inf camera position (prevents "!v.is_finite()" error spam)
-		if cam_pos.is_finite():
-			_fog_volume.global_position = cam_pos
+	# Reparent to camera if needed (camera may have changed)
+	if _camera and _fog_mesh.get_parent() != _camera:
+		_fog_mesh.reparent(_camera)
+		_fog_mesh.position = Vector3(0, 0, -1.0)
 
 
 func _update_wind() -> void:
@@ -544,9 +577,44 @@ func _update_wind() -> void:
 
 		_particle_material.gravity = Vector3(wind_x, -9.8, wind_z)
 
-	# Sync fog shader wind direction so fog drifts same way as snow
+	# Sync fog shader wind direction and speed so fog drifts same way as snow
 	if _fog_shader_material:
 		_fog_shader_material.set_shader_parameter("wind_direction", wind_dir)
+
+		# Smoothly interpolate fog wind speed to prevent hurricane effect during transitions
+		# Target is scaled down (fog moves slower than particles)
+		var target_fog_wind: float = wind_speed * 0.15
+		_smoothed_fog_wind_speed = lerpf(_smoothed_fog_wind_speed, target_fog_wind, 0.02)
+		_fog_shader_material.set_shader_parameter("wind_speed", _smoothed_fog_wind_speed)
+
+	# Sync light tint from Sky3D for sunrise/sunset color matching
+	_update_fog_light_tint()
+
+
+func _update_fog_light_tint() -> void:
+	## Sync fog color tint with Sky3D's sun/ambient color for sunrise/sunset matching.
+	if not _fog_shader_material:
+		return
+	if not sky3d:
+		return
+
+	# Try to get the sun color from Sky3D's DirectionalLight or SkyDome
+	var light_color := Color(1.0, 1.0, 1.0)
+
+	# Check for sun node in Sky3D
+	if "sun" in sky3d and sky3d.sun:
+		var sun_node: Node = sky3d.sun
+		if sun_node is DirectionalLight3D:
+			light_color = sun_node.light_color
+			# Blend with white based on sun energy (low energy = more tinted)
+			var energy: float = sun_node.light_energy
+			var tint_amount: float = clamp(1.0 - energy * 0.5, 0.0, 1.0)
+			_fog_shader_material.set_shader_parameter("light_tint_strength", tint_amount * 0.6)
+	elif _sky_dome and "atm_day_tint" in _sky_dome:
+		# Fallback to atmosphere tint
+		light_color = _sky_dome.atm_day_tint
+
+	_fog_shader_material.set_shader_parameter("light_tint", Vector3(light_color.r, light_color.g, light_color.b))
 
 
 func _apply_transition() -> void:
@@ -604,15 +672,15 @@ func _apply_transition() -> void:
 		_environment.volumetric_fog_albedo = Color(0.9, 0.9, 0.95)
 		_environment.volumetric_fog_emission_energy = 1.0
 
-	# Animated fog shader (localized effect around camera - use config values)
+	# Post-process fog shader (screen-space raymarched effect)
 	if _fog_shader_material:
 		var from_density: float = from_config["fog_shader_density"]
 		var to_density: float = to_config["fog_shader_density"]
-		_fog_shader_material.set_shader_parameter("density", lerpf(from_density, to_density, t))
+		_fog_shader_material.set_shader_parameter("fog_density", lerpf(from_density, to_density, t))
 
 		var from_emission: Vector3 = from_config["fog_shader_emission"]
 		var to_emission: Vector3 = to_config["fog_shader_emission"]
-		_fog_shader_material.set_shader_parameter("emission", from_emission.lerp(to_emission, t))
+		_fog_shader_material.set_shader_parameter("fog_emission", from_emission.lerp(to_emission, t))
 
 	# Camera far plane reduction (use config values)
 	if _camera:
@@ -710,10 +778,10 @@ func _apply_intensity_config(intensity: SnowIntensity) -> void:
 			_environment.volumetric_fog_albedo = Color(0.9, 0.9, 0.95)
 			_environment.volumetric_fog_emission_energy = 1.0
 
-	# Animated fog shader (use config values)
+	# Post-process fog shader (use config values)
 	if _fog_shader_material:
-		_fog_shader_material.set_shader_parameter("density", config["fog_shader_density"])
-		_fog_shader_material.set_shader_parameter("emission", config["fog_shader_emission"])
+		_fog_shader_material.set_shader_parameter("fog_density", config["fog_shader_density"])
+		_fog_shader_material.set_shader_parameter("fog_emission", config["fog_shader_emission"])
 
 	# Camera far plane (use config values)
 	if _camera:

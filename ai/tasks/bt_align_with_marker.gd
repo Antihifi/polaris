@@ -27,6 +27,18 @@ func _tick(_delta: float) -> Status:
 			marker_pos.x, marker_pos.y, marker_pos.z])
 		return FAILURE
 
+	# CRITICAL: Stop movement and physics BEFORE teleporting to prevent drift
+	# Without this, the unit gets teleported then immediately physics pushes it away
+	if agent.has_method("stop"):
+		agent.stop()
+	if "velocity" in agent:
+		agent.velocity = Vector3.ZERO
+	if "is_moving" in agent:
+		agent.is_moving = false
+	# Lock position during the stationary animation phase
+	if "is_animation_locked" in agent:
+		agent.is_animation_locked = true
+
 	# Position at marker
 	agent.global_position = marker_pos
 

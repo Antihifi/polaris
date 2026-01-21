@@ -28,6 +28,9 @@ var sled_panel: Control
 
 
 func _ready() -> void:
+	# Initialize RNG for officer name generation
+	_officer_rng.randomize()
+
 	# Create and add the RTS input handler
 	input_handler = preload("res://src/control/rts_input_handler.gd").new()
 	input_handler.name = "RTSInputHandler"
@@ -100,7 +103,7 @@ func _spawn_test_survivors() -> void:
 
 ## Officer scene for F4 spawning
 var officer_scene: PackedScene = preload("res://src/characters/officers.tscn")
-var spawned_officer_count: int = 0
+var _officer_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -201,8 +204,11 @@ func _spawn_test_officer() -> void:
 
 	# Instantiate officer
 	var officer: Node = officer_scene.instantiate()
-	spawned_officer_count += 1
-	officer.unit_name = "Officer %d" % spawned_officer_count
+
+	# Generate random name using CharacterSpawner name pools
+	var first_name: String = CharacterSpawner.FIRST_NAMES[_officer_rng.randi() % CharacterSpawner.FIRST_NAMES.size()]
+	var last_name: String = CharacterSpawner.LAST_NAMES[_officer_rng.randi() % CharacterSpawner.LAST_NAMES.size()]
+	officer.unit_name = "Lt. %s %s" % [first_name, last_name]
 	officer.movement_speed = 5.0  # Match Men speed (CharacterSpawner sets 5.0)
 
 	# Add to scene tree FIRST (before setting global_position)

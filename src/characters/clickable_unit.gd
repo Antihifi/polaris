@@ -149,12 +149,12 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# =========================================================================
-	# SLED PULLING BEHAVIOR (delegated to component)
-	# Support pullers follow the leader in formation (skip normal movement)
+	# SLED PULLING BEHAVIOR
+	# Support pullers bypass navigation - they just mirror the leader
 	# =========================================================================
 	if sled_puller and sled_puller.should_follow_leader():
 		sled_puller.follow_leader(delta)
-		return  # Support pullers don't use normal navigation
+		return
 
 	if not is_moving:
 		return
@@ -219,9 +219,20 @@ func _physics_process(delta: float) -> void:
 			# Drain energy while walking (delta is already scaled by Engine.time_scale)
 			_drain_walking_energy(delta)
 
-	# Apply gravity (required for move_and_slide to handle slopes - from Terrain3D demo)
-	# Without Y velocity, move_and_slide bumps into slope faces instead of sliding up them
-	velocity.y -= 40.0 * delta
+	# Terrain floor check - handle BEFORE physics for undiscovered units
+	# DYNAMIC_GAME mode only generates collision near camera, so errant units have no floor
+	var terrain := _find_terrain3d()
+	var terrain_height: float = NAN
+	if terrain and "data" in terrain and terrain.data:
+		terrain_height = terrain.data.get_height(global_position)
+
+	# Undiscovered units: snap to terrain, skip physics (no collision available)
+	if not is_discovered and is_finite(terrain_height):
+		global_position.y = terrain_height
+		velocity.y = 0  # No gravity for snapped units
+	else:
+		# Apply gravity (required for move_and_slide to handle slopes - from Terrain3D demo)
+		velocity.y -= 40.0 * delta
 
 	# Use avoidance if enabled, otherwise move directly
 	if navigation_agent.avoidance_enabled:
@@ -229,18 +240,19 @@ func _physics_process(delta: float) -> void:
 	else:
 		_on_velocity_computed(velocity)
 
-	# Terrain floor check (from Terrain3D demo) - ESSENTIAL to prevent falling through terrain
-	# This is a safety net when move_and_slide() collision detection fails
-	var terrain := _find_terrain3d()
-	if terrain and "data" in terrain and terrain.data:
-		var height: float = terrain.data.get_height(global_position)
-		if is_finite(height):
-			global_position.y = maxf(global_position.y, height)
+	# Post-physics terrain safety net for discovered units
+	# Only correct if we've fallen below terrain (don't fight slopes going up)
+	if is_discovered and is_finite(terrain_height):
+		if global_position.y < terrain_height - 0.1:  # Small tolerance to avoid jitter
+			global_position.y = terrain_height
 
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
 	# Skip movement during locked animations (sitting, sleeping, etc.)
 	if is_animation_locked:
+		return
+	# Skip avoidance for support pullers - they mirror leader only
+	if sled_puller and sled_puller.should_follow_leader():
 		return
 	# Only apply X/Z from avoidance (demo pattern)
 	velocity.x = safe_velocity.x
@@ -335,6 +347,10 @@ func move_to(target_position: Vector3) -> void:
 	## Dead units cannot move.
 	if is_dead:
 		return
+
+	# Clear any leftover animation lock from aborted BT sequences
+	# (e.g., BTDynamicSelector aborting SitOnCrate mid-animation)
+	is_animation_locked = false
 
 	navigation_agent.target_position = target_position
 	is_moving = true
@@ -835,10 +851,18 @@ func _clear_player_command() -> void:
 
 
 func get_current_action() -> String:
-	## Returns the current AI action for UI display.
+	## Returns the current action for UI display.
+	## AI-controlled units (Men) delegate to ManAIController.
+	## Player-controlled units (Officers/Captain) check movement state.
 	var ai_controller: Node = get_node_or_null("ManAIController")
 	if ai_controller and ai_controller.has_method("get_current_action"):
 		return ai_controller.get_current_action()
+
+	# Player-controlled units: check movement state
+	if is_moving:
+		return "Moving to a point"
+	if is_pulling_sled():
+		return "Attached to sled"
 	return "Idle"
 
 

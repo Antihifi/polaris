@@ -1,6 +1,4 @@
-[gd_resource type="PhysicsMaterial" format=3 uid="uid://c5sledsnowfriction"]
+[gd_resource type="PhysicsMaterial" format=3 uid="uid://pugq7bcik3q8"]
 
 [resource]
 friction = 0.3
-rough = false
-bounce = 0.0

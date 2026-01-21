@@ -25,7 +25,9 @@ func _setup_collision() -> void:
 	collision_layer = 0
 	collision_mask = 2
 	monitoring = true
-	monitorable = false
+	# Use deferred to avoid "Function blocked during in/out signal" error
+	# when discovery area is created inside a physics callback (discover())
+	set_deferred("monitorable", false)
 
 
 func _connect_signals() -> void:
