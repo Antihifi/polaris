@@ -9,6 +9,7 @@ extends Node
 @export var container_collision_mask: int = 8  # Layer 4 for containers (1 << 3)
 @export var sled_collision_mask: int = 16     # Layer 5 for vehicles/sleds
 @export var workbench_collision_mask: int = 32  # Layer 6 for workbenches
+@export var construction_site_collision_mask: int = 64  # Layer 7 for construction sites
 
 ## Enable multi-selection with shift-click and box select
 @export var multi_select_enabled: bool = true
@@ -18,6 +19,7 @@ signal selection_changed(units: Array)
 signal container_clicked(container: StorageContainer)
 signal sled_clicked(sled: Node)
 signal workbench_clicked(workbench: Node)
+signal construction_site_clicked(site: Node)
 
 # Single selection (legacy support)
 var selected_unit: ClickableUnit = null
@@ -250,6 +252,90 @@ func _raycast_for_workbench(screen_position: Vector2) -> Node:
 	return null
 
 
+func _raycast_for_construction_site(screen_position: Vector2) -> Node:
+	## Raycast to find a construction site at screen position. Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+
+	# Try construction site collision layer first
+	var site_query := PhysicsRayQueryParameters3D.create(from, to, construction_site_collision_mask)
+	site_query.collide_with_areas = true
+	site_query.collide_with_bodies = true
+	var site_result := space_state.intersect_ray(site_query)
+
+	if not site_result.is_empty():
+		var hit: Object = site_result.collider
+		if hit is Node:
+			# Walk up parent chain to find construction site (in "construction_sites" group)
+			var current: Node = hit as Node
+			for i in range(5):
+				if not current:
+					break
+				if current.is_in_group("construction_sites"):
+					return current
+				if current is ConstructionSite:
+					return current
+				current = current.get_parent()
+
+	# Fallback: check construction_sites group via general raycast
+	var general_query := PhysicsRayQueryParameters3D.create(from, to)
+	general_query.collide_with_areas = true
+	general_query.collide_with_bodies = true
+	var general_result := space_state.intersect_ray(general_query)
+
+	if not general_result.is_empty():
+		var hit: Object = general_result.collider
+		if hit is Node:
+			var current: Node = hit as Node
+			for i in range(5):
+				if not current:
+					break
+				if current.is_in_group("construction_sites"):
+					return current
+				if current is ConstructionSite:
+					return current
+				current = current.get_parent()
+
+	return null
+
+
+func _try_assign_officer_to_site(site: Node) -> bool:
+	## Try to assign selected officers to construction site.
+	## Returns true if any officers were assigned.
+	var assigned_any: bool = false
+
+	for unit in selected_units:
+		if not is_instance_valid(unit):
+			continue
+
+		# Check if unit is an officer or captain (rank > 0)
+		if "rank" in unit:
+			var rank: int = unit.rank
+			# UnitRank.MAN = 0, OFFICER = 1, CAPTAIN = 2
+			if rank > 0:
+				# Move officer to site
+				unit.move_to(site.global_position)
+				_set_player_command_active(unit, true)
+				print("[RTSInput] Assigned %s to construction site" % unit.name)
+				assigned_any = true
+
+				# Register with WorkManager if available
+				var work_manager := _get_work_manager()
+				if work_manager:
+					work_manager.assign_worker(unit, 3, site)  # 3 = CONSTRUCTING
+
+	return assigned_any
+
+
+func _get_work_manager() -> Node:
+	## Find the WorkManager autoload.
+	if has_node("/root/WorkManager"):
+		return get_node("/root/WorkManager")
+	return null
+
+
 func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 	## Handle clicking on a unit - single or additive selection.
 	# Check for double-click
@@ -292,7 +378,20 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	## Move selected unit(s) to clicked position on terrain.
 	## If clicking on a sled with units selected, emit sled_clicked signal.
 	## If clicking on a workbench, emit workbench_clicked signal.
+	## If clicking on a construction site, emit construction_site_clicked or assign officer.
 	## Non-lead sled pullers are filtered out - they follow their leader automatically.
+
+	# Check if right-clicking on a construction site
+	var clicked_site := _raycast_for_construction_site(screen_position)
+	if clicked_site:
+		# If officer is selected, assign them to the site
+		if has_selection():
+			var officer_assigned := _try_assign_officer_to_site(clicked_site)
+			if officer_assigned:
+				return
+		# Otherwise show site panel
+		construction_site_clicked.emit(clicked_site)
+		return
 
 	# Check if right-clicking on a workbench
 	var clicked_workbench := _raycast_for_workbench(screen_position)

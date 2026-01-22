@@ -1,10 +1,11 @@
 class_name WorkbenchPanel extends Control
-## UI panel for workbench interaction - allows crafting items with Scrap Wood.
+## UI panel for workbench interaction - allows initiating construction projects.
 ## Shows when right-clicking a workbench.
 ## Positions itself near the workbench in screen space.
 
 signal closed
 signal item_crafted(item_id: String, cost: int)
+signal placement_started(recipe: BuildRecipe)
 
 @onready var panel: Panel = $Panel
 @onready var title_label: Label = $Panel/MarginContainer/VBoxContainer/TitleLabel
@@ -20,6 +21,7 @@ signal item_crafted(item_id: String, cost: int)
 @onready var upgrade_button: Button = $Panel/MarginContainer/VBoxContainer/CraftGrid/UpgradeButton
 
 var _current_workbench: Node = null
+var _workbench_component: WorkbenchComponent = null
 var _camera: Camera3D = null
 
 ## Height offset above workbench in world units
@@ -27,14 +29,14 @@ var _camera: Camera3D = null
 ## Screen space offset to nudge panel position
 @export var screen_offset: Vector2 = Vector2(0, -20)
 
-## Crafting recipes: item_id -> wood_cost
-const RECIPES: Dictionary = {
-	"sled": 5,
-	"tent_frame": 3,
-	"crate": 2,
-	"barrel": 1,
-	"firewood": 1,
-	"upgrade": 10
+## Recipe ID mapping for buttons
+const BUTTON_RECIPES: Dictionary = {
+	"sled": &"sled",
+	"tent_frame": &"tent_frame",
+	"crate": &"crate",
+	"barrel": &"barrel",
+	"firewood": &"firewood_bundle",
+	"upgrade": null  # Not yet implemented
 }
 
 
@@ -84,6 +86,16 @@ func show_for_workbench(workbench: Node, camera: Camera3D = null) -> void:
 
 	_current_workbench = workbench
 
+	# Try to find WorkbenchComponent
+	_workbench_component = _find_workbench_component(workbench)
+
+	# Connect to material changes if component exists
+	if _workbench_component and not _workbench_component.materials_changed.is_connected(_update_display):
+		_workbench_component.materials_changed.connect(_update_display)
+		_workbench_component.placement_started.connect(_on_component_placement_started)
+		_workbench_component.placement_completed.connect(_on_component_placement_completed)
+		_workbench_component.placement_cancelled.connect(_on_component_placement_cancelled)
+
 	if camera:
 		_camera = camera
 	else:
@@ -96,7 +108,19 @@ func show_for_workbench(workbench: Node, camera: Camera3D = null) -> void:
 
 func hide_panel() -> void:
 	## Hide the workbench panel.
+	# Disconnect signals
+	if _workbench_component:
+		if _workbench_component.materials_changed.is_connected(_update_display):
+			_workbench_component.materials_changed.disconnect(_update_display)
+		if _workbench_component.placement_started.is_connected(_on_component_placement_started):
+			_workbench_component.placement_started.disconnect(_on_component_placement_started)
+		if _workbench_component.placement_completed.is_connected(_on_component_placement_completed):
+			_workbench_component.placement_completed.disconnect(_on_component_placement_completed)
+		if _workbench_component.placement_cancelled.is_connected(_on_component_placement_cancelled):
+			_workbench_component.placement_cancelled.disconnect(_on_component_placement_cancelled)
+
 	_current_workbench = null
+	_workbench_component = null
 	visible = false
 	closed.emit()
 
@@ -129,48 +153,124 @@ func _update_display() -> void:
 
 	title_label.text = "Workbench"
 
-	# TODO: Get wood count from nearby containers or unit inventories
+	# Get materials from WorkbenchComponent if available
 	var wood_count: int = _get_available_wood()
-	status_label.text = "Scrap Wood: %d" % wood_count
+	var nail_count: int = _get_available_nails()
+	status_label.text = "Scrap Wood: %d  Nails: %d" % [wood_count, nail_count]
 
-	_update_buttons(wood_count)
+	_update_buttons()
 
 
-func _update_buttons(wood_count: int) -> void:
-	## Enable/disable buttons based on available wood.
-	sled_button.disabled = wood_count < RECIPES["sled"]
-	tent_button.disabled = wood_count < RECIPES["tent_frame"]
-	crate_button.disabled = wood_count < RECIPES["crate"]
-	barrel_button.disabled = wood_count < RECIPES["barrel"]
-	firewood_button.disabled = wood_count < RECIPES["firewood"]
-	upgrade_button.disabled = wood_count < RECIPES["upgrade"]
+func _update_buttons() -> void:
+	## Enable/disable buttons based on available materials.
+	for button_id: String in BUTTON_RECIPES:
+		var recipe_id: Variant = BUTTON_RECIPES[button_id]
+		var button: Button = _get_button_for_id(button_id)
+		if not button:
+			continue
+
+		if recipe_id == null:
+			# Not implemented
+			button.disabled = true
+			continue
+
+		var recipe: BuildRecipe = BuildRecipes.get_recipe(recipe_id as StringName)
+		if not recipe:
+			button.disabled = true
+			continue
+
+		# Check if we have materials
+		if _workbench_component:
+			button.disabled = not _workbench_component.can_build(recipe)
+		else:
+			# Fallback: use local material check
+			var materials: Dictionary = {
+				"scrap_wood": _get_available_wood(),
+				"nails": _get_available_nails()
+			}
+			button.disabled = not recipe.has_all_materials(materials)
+
+
+func _get_button_for_id(button_id: String) -> Button:
+	## Get the button node for a given ID.
+	match button_id:
+		"sled":
+			return sled_button
+		"tent_frame":
+			return tent_button
+		"crate":
+			return crate_button
+		"barrel":
+			return barrel_button
+		"firewood":
+			return firewood_button
+		"upgrade":
+			return upgrade_button
+	return null
 
 
 func _get_available_wood() -> int:
-	## Get total scrap wood available from nearby containers and unit inventories.
-	## For now, returns a placeholder value. Full implementation will check:
-	## - Containers in "containers" group within workbench radius
-	## - Selected units' inventories
-	## - Workbench's own storage (if any)
-
-	# TODO: Implement actual inventory checking
-	# Placeholder: return 10 for testing
-	return 10
+	## Get total scrap wood available.
+	if _workbench_component:
+		return _workbench_component.get_stored_material_count("scrap_wood")
+	# Fallback: return 0 if no component
+	return 0
 
 
-func _on_craft_pressed(item_id: String) -> void:
-	## Handle craft button press.
-	var cost: int = RECIPES.get(item_id, 0)
-	var available: int = _get_available_wood()
+func _get_available_nails() -> int:
+	## Get total nails available.
+	if _workbench_component:
+		return _workbench_component.get_stored_material_count("nails")
+	# Fallback: return 0 if no component
+	return 0
 
-	if available < cost:
-		print("[WorkbenchPanel] Not enough wood for %s (need %d, have %d)" % [item_id, cost, available])
+
+func _on_craft_pressed(button_id: String) -> void:
+	## Handle craft button press - start placement mode.
+	var recipe_id: Variant = BUTTON_RECIPES.get(button_id, null)
+	if recipe_id == null:
+		print("[WorkbenchPanel] Recipe not implemented: %s" % button_id)
 		return
 
-	print("[WorkbenchPanel] Crafting %s (cost: %d wood)" % [item_id, cost])
-	item_crafted.emit(item_id, cost)
+	var recipe: BuildRecipe = BuildRecipes.get_recipe(recipe_id as StringName)
+	if not recipe:
+		print("[WorkbenchPanel] Unknown recipe: %s" % recipe_id)
+		return
 
-	# TODO: Consume wood from inventory
-	# TODO: Spawn crafted item
+	if _workbench_component:
+		if not _workbench_component.can_build(recipe):
+			print("[WorkbenchPanel] Not enough materials for %s" % recipe.display_name)
+			return
+		# Start placement mode through component
+		_workbench_component.start_placement_mode(recipe)
+		# Hide panel during placement
+		hide_panel()
+	else:
+		# Fallback: emit signal for old behavior
+		var cost: int = recipe.get_material_cost("scrap_wood")
+		item_crafted.emit(button_id, cost)
 
-	_update_display()
+
+func _on_component_placement_started(recipe: BuildRecipe) -> void:
+	## Handle placement mode started.
+	placement_started.emit(recipe)
+
+
+func _on_component_placement_completed(_site: ConstructionSite) -> void:
+	## Handle placement completed - show panel again.
+	if _current_workbench:
+		show_for_workbench(_current_workbench, _camera)
+
+
+func _on_component_placement_cancelled() -> void:
+	## Handle placement cancelled - show panel again.
+	if _current_workbench:
+		show_for_workbench(_current_workbench, _camera)
+
+
+func _find_workbench_component(workbench: Node) -> WorkbenchComponent:
+	## Find WorkbenchComponent child of workbench.
+	for child in workbench.get_children():
+		if child is WorkbenchComponent:
+			return child as WorkbenchComponent
+	return null

@@ -1056,3 +1056,39 @@ func get_movement_velocity() -> Vector3:
 	if is_moving:
 		return velocity
 	return Vector3.ZERO
+
+
+# ============================================================================
+# BARK SYSTEM (flavor dialog)
+# ============================================================================
+
+## Cached BarkManager reference
+var _bark_manager: Node = null
+
+func bark(category: String, duration: float = -1.0) -> bool:
+	## Show a random bark from category above this unit.
+	## Returns false if on cooldown or BarkManager unavailable.
+	if not _bark_manager:
+		_bark_manager = get_node_or_null("/root/BarkManager")
+	if _bark_manager:
+		return _bark_manager.bark(self, category, duration)
+	return false
+
+
+func bark_text(text: String, duration: float = -1.0) -> bool:
+	## Show specific bark text above this unit.
+	## Returns false if on cooldown or BarkManager unavailable.
+	if not _bark_manager:
+		_bark_manager = get_node_or_null("/root/BarkManager")
+	if _bark_manager:
+		return _bark_manager.bark_specific(self, text, duration)
+	return false
+
+
+func bark_now(text: String, duration: float = -1.0) -> void:
+	## Show bark immediately, ignoring cooldown.
+	## Use for important events (discovery, etc.)
+	if not _bark_manager:
+		_bark_manager = get_node_or_null("/root/BarkManager")
+	if _bark_manager:
+		_bark_manager.bark_immediate(self, text, duration)

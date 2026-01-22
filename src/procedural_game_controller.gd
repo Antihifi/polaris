@@ -500,14 +500,6 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	var men: Array[Node] = character_spawner.spawn_survivors(men_count, spawn_pos)
 	print("[ProceduralGame] Spawned %d men near captain" % men.size())
 
-	# Spawn test sled directly above captain for visibility testing
-	var sled: Node3D = _sled_scene.instantiate()
-	sled.name = "Sled1"
-	add_child(sled)
-	# Spawn 5m directly above captain so it's impossible to miss
-	sled.global_position = captain.global_position + Vector3(0, 5.0, 0)
-	print("[ProceduralGame] Spawned test sled at %s (above captain)" % sled.global_position)
-
 	# === SHIP ===
 	ship = _ship_scene.instantiate()
 	ship.name = "Ship1"
@@ -526,8 +518,31 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 
 	# NOTE: No player tracking needed - full terrain NavMesh already baked
 
-	# Spawn containers around ship
-	_spawn_containers(ship_pos)
+	# Spawn containers 50m EAST of ship (positive X)
+	var container_spawn_center := ship_pos + Vector3(50.0, 0, 0)
+	_spawn_containers(container_spawn_center)
+
+	# Spawn sled 10m SOUTH of captain (positive Z)
+	var sled_spawn_pos := spawn_pos + Vector3(0, 0, 10.0)
+	var sled: RigidBody3D = _sled_scene.instantiate()
+	sled.name = "Sled1"
+	add_child(sled)
+	# Get terrain height at sled position, spawn slightly above to avoid clipping
+	var sled_height := sled_spawn_pos.y
+	if terrain and "data" in terrain and terrain.data:
+		var sled_terrain_height: float = terrain.data.get_height(Vector3(sled_spawn_pos.x, 0, sled_spawn_pos.z))
+		if not is_nan(sled_terrain_height):
+			sled_height = sled_terrain_height + 0.5  # Spawn 0.5m above terrain
+	sled.global_position = Vector3(sled_spawn_pos.x, sled_height, sled_spawn_pos.z)
+	# Freeze sled temporarily to let terrain collision initialize
+	sled.freeze = true
+	print("[ProceduralGame] Spawned sled at %s (frozen, 10m S of captain)" % sled.global_position)
+	# Unfreeze after 1 second
+	get_tree().create_timer(1.0).timeout.connect(func():
+		if is_instance_valid(sled):
+			sled.freeze = false
+			print("[ProceduralGame] Sled unfrozen")
+	)
 
 	# === ERRANT GROUPS (GDD: 2-3 groups along north coast) ===
 	_spawn_errant_groups(rng, ship_pos)

@@ -31,6 +31,25 @@ var _camera_original_zoom_speed: float = 20.0
 var _stat_sliders: Dictionary = {}  # stat_name -> HSlider
 var _stat_value_labels: Dictionary = {}  # stat_name -> Label
 
+# Resource controls
+var _resource_dropdown: OptionButton = null
+var _resource_amount_input: SpinBox = null
+var _resource_status_label: Label = null
+
+const RESOURCE_OPTIONS: Dictionary = {
+	"scrap_wood": "Scrap Wood",
+	"nails": "Nails",
+	"firewood": "Firewood",
+	"coal": "Coal",
+	"hardtack": "Hardtack",
+	"salt_pork": "Salt Pork",
+	"pemmican": "Pemmican",
+	"tinned_meat": "Tinned Meat",
+	"rum": "Rum",
+	"knife": "Knife",
+	"hatchet": "Hatchet"
+}
+
 # Scene mode detection
 var _is_procedural_mode: bool = false
 var _debug_override_unlocked: bool = false
@@ -335,6 +354,62 @@ func _create_full_debug_content(vbox: VBoxContainer) -> void:
 
 	vbox.add_child(HSeparator.new())
 
+	# Resources controls
+	var resources_header := Label.new()
+	resources_header.text = "RESOURCES (WORKBENCH)"
+	resources_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(resources_header)
+
+	# Resource dropdown
+	var resource_row := HBoxContainer.new()
+	resource_row.add_theme_constant_override("separation", 5)
+	vbox.add_child(resource_row)
+
+	var resource_label := Label.new()
+	resource_label.text = "Type:"
+	resource_row.add_child(resource_label)
+
+	_resource_dropdown = OptionButton.new()
+	_resource_dropdown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var idx: int = 0
+	for resource_id: String in RESOURCE_OPTIONS:
+		_resource_dropdown.add_item(RESOURCE_OPTIONS[resource_id], idx)
+		_resource_dropdown.set_item_metadata(idx, resource_id)
+		idx += 1
+	resource_row.add_child(_resource_dropdown)
+
+	# Amount row
+	var amount_row := HBoxContainer.new()
+	amount_row.add_theme_constant_override("separation", 5)
+	vbox.add_child(amount_row)
+
+	var amount_label := Label.new()
+	amount_label.text = "Amount:"
+	amount_row.add_child(amount_label)
+
+	_resource_amount_input = SpinBox.new()
+	_resource_amount_input.min_value = 1
+	_resource_amount_input.max_value = 100
+	_resource_amount_input.value = 10
+	_resource_amount_input.step = 1
+	_resource_amount_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	amount_row.add_child(_resource_amount_input)
+
+	var add_btn := Button.new()
+	add_btn.text = "ADD"
+	add_btn.custom_minimum_size.x = 60
+	add_btn.pressed.connect(_on_add_resource_pressed)
+	amount_row.add_child(add_btn)
+
+	# Status label
+	_resource_status_label = Label.new()
+	_resource_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_resource_status_label.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
+	_resource_status_label.text = ""
+	vbox.add_child(_resource_status_label)
+
+	vbox.add_child(HSeparator.new())
+
 	_add_button(vbox, "RESUME", _close_menu)
 
 	# Add Quit to Main Menu button for procedural mode with override unlocked
@@ -406,6 +481,9 @@ func _rebuild_panel() -> void:
 	_stat_value_labels.clear()
 	_override_input = null
 	_override_container = null
+	_resource_dropdown = null
+	_resource_amount_input = null
+	_resource_status_label = null
 	# Recreate with new content
 	_create_panel()
 	_panel.visible = true
@@ -885,3 +963,67 @@ func _apply_stat_to_all_units(stat_name: String) -> void:
 			count += 1
 
 	print("[DebugMenu] Set %s to %.0f on %d survivors" % [stat_name, value, count])
+
+
+# --- Resource Controls ---
+
+func _on_add_resource_pressed() -> void:
+	## Add selected resource to the first workbench found.
+	if not _resource_dropdown or not _resource_amount_input:
+		return
+
+	var selected_idx: int = _resource_dropdown.selected
+	if selected_idx < 0:
+		_update_resource_status("Select a resource type", Color.YELLOW)
+		return
+
+	var resource_id: String = _resource_dropdown.get_item_metadata(selected_idx)
+	var amount: int = int(_resource_amount_input.value)
+
+	# Find workbench with WorkbenchComponent
+	var workbench_component: Node = _find_workbench_component()
+	if not workbench_component:
+		_update_resource_status("No workbench found!", Color.RED)
+		return
+
+	# Only add materials that workbench supports (scrap_wood, nails)
+	if resource_id in ["scrap_wood", "nails"]:
+		workbench_component.deposit_material(resource_id, amount)
+		_update_resource_status("Added %d %s" % [amount, RESOURCE_OPTIONS[resource_id]], Color.GREEN)
+	else:
+		# For other items, we'd need an inventory system
+		_update_resource_status("Only Scrap Wood/Nails supported", Color.YELLOW)
+
+	print("[DebugMenu] Added %d %s to workbench" % [amount, resource_id])
+
+
+func _find_workbench_component() -> Node:
+	## Find first workbench with a WorkbenchComponent child.
+	var workbenches := get_tree().get_nodes_in_group("workbenches")
+	for workbench in workbenches:
+		# Check direct child named WorkbenchComponent
+		var component := workbench.get_node_or_null("WorkbenchComponent")
+		if component:
+			return component
+		# Search children for WorkbenchComponent class
+		for child in workbench.get_children():
+			if child is WorkbenchComponent:
+				return child
+			# Check by script name as fallback
+			if child.get_script():
+				var script_path: String = child.get_script().resource_path
+				if "workbench_component" in script_path.to_lower():
+					return child
+	return null
+
+
+func _update_resource_status(text: String, color: Color = Color.WHITE) -> void:
+	## Update the resource status label.
+	if _resource_status_label:
+		_resource_status_label.text = text
+		_resource_status_label.add_theme_color_override("font_color", color)
+		# Clear after a few seconds
+		get_tree().create_timer(3.0).timeout.connect(func():
+			if _resource_status_label:
+				_resource_status_label.text = ""
+		)

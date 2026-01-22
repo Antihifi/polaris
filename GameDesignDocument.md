@@ -412,6 +412,51 @@ Characters autonomously:
 - Rest when exhausted
 - Flee danger if Coward trait
 
+### Autonomous Work Behavior
+
+Men contribute to construction tasks autonomously when their condition allows:
+
+**Task Types (max 2 workers each):**
+| Task | Description |
+|------|-------------|
+| Gathering | Collect raw materials from stricken ship |
+| Preparing | Process materials at workbench |
+| Hauling | Transport materials between locations |
+| Constructing | Work at construction sites |
+
+**Work Conditions:**
+- All core stats (hunger, warmth, energy, morale) must be above 50%
+- If any stat falls below 50%, men prioritize recovery
+- If no recovery resource available, men are incapacitated (starving, hypothermic, exhausted, desperate)
+- Work discovered via proximity (within 30m of workbench or construction site)
+
+**Efficiency Bonuses:**
+- Each additional worker: +25% speed
+- Carpenter trait: +25% construction speed
+- Builder trait: +15% construction speed
+- Beast of Burden trait: +50% carry capacity
+- Resourceful trait: +25% gathering yield
+
+**Officers:**
+- Can be directly assigned to any task via right-click
+- Have same skill buff potential as men (randomly assigned)
+- Not subject to autonomous work behavior (player controlled)
+
+**Construction Timeline:**
+| Item | Days |
+|------|------|
+| Crate | 2 |
+| Barrel | 3 |
+| Tent Frame | 4 |
+| Firewood Bundle | 1 |
+| Sled | 10 |
+
+**Build Placement:**
+- Must be within 75m of workbench
+- Must be on relatively flat ground (slope < 10%)
+- Ghost preview shows pale olive green when valid, red when invalid
+- Invalid reasons: collision, slope too steep, out of bounds, insufficient materials
+
 ---
 
 ## Controls

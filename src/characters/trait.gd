@@ -186,6 +186,50 @@ static func create_medic() -> SurvivorTrait:
 	return new_trait
 
 
+static func create_carpenter() -> SurvivorTrait:
+	var new_trait := SurvivorTrait.new()
+	new_trait.id = "carpenter"
+	new_trait.display_name = "Former Carpenter"
+	new_trait.description = "Builds structures 25% faster."
+	new_trait.trait_type = TraitType.SKILL
+	new_trait.is_positive = true
+	new_trait.construction_bonus = 25.0
+	return new_trait
+
+
+static func create_builder() -> SurvivorTrait:
+	var new_trait := SurvivorTrait.new()
+	new_trait.id = "builder"
+	new_trait.display_name = "Former Builder"
+	new_trait.description = "Builds structures 15% faster."
+	new_trait.trait_type = TraitType.SKILL
+	new_trait.is_positive = true
+	new_trait.construction_bonus = 15.0
+	return new_trait
+
+
+static func create_beast_of_burden() -> SurvivorTrait:
+	var new_trait := SurvivorTrait.new()
+	new_trait.id = "beast_of_burden"
+	new_trait.display_name = "Beast of Burden"
+	new_trait.description = "Carries 50% more materials when hauling."
+	new_trait.trait_type = TraitType.PHYSICAL
+	new_trait.is_positive = true
+	new_trait.carry_capacity_modifier = 1.5
+	return new_trait
+
+
+static func create_resourceful() -> SurvivorTrait:
+	var new_trait := SurvivorTrait.new()
+	new_trait.id = "resourceful"
+	new_trait.display_name = "Resourceful"
+	new_trait.description = "Gathers 25% more materials per trip."
+	new_trait.trait_type = TraitType.SKILL
+	new_trait.is_positive = true
+	new_trait.survival_bonus = 25.0  # Used as gathering efficiency
+	return new_trait
+
+
 static func get_all_traits() -> Array[SurvivorTrait]:
 	## Returns an array of all available traits for random selection.
 	return [
@@ -200,7 +244,11 @@ static func get_all_traits() -> Array[SurvivorTrait]:
 		create_leader(),
 		create_skilled_hunter(),
 		create_navigator(),
-		create_medic()
+		create_medic(),
+		create_carpenter(),
+		create_builder(),
+		create_beast_of_burden(),
+		create_resourceful()
 	]
 
 

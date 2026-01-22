@@ -25,6 +25,8 @@ SelectionManager="*res://src/control/selection_manager.gd"
 GameManager="*res://src/game_manager.gd"
 SoundManager="*res://addons/sound_manager/sound_manager.gd"
 DebugMenu="*res://ui/debug_menu.gd"
+BarkManager="*res://src/systems/bark_manager.gd"
+SaveManager="*res://src/systems/save_manager.gd"
 
 [display]
 

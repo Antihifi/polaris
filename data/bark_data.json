@@ -1,0 +1,98 @@
+{
+	"idle": [
+		"Wonder how long till rescue comes...",
+		"Cold out here.",
+		"Could use a warm meal.",
+		"Reminds me of home... in the worst way.",
+		"Keep moving, keep warm.",
+		"At least the stars are beautiful.",
+		"One foot in front of the other.",
+		"We'll make it. We have to.",
+		"Heard something out there...",
+		"Miss the ship, truth be told.",
+		"How far south now, d'you reckon?",
+		"My feet are numb again."
+	],
+	"affirmation": [
+		"Aye, captain.",
+		"Right away, sir.",
+		"Understood.",
+		"At once.",
+		"Aye aye.",
+		"Will do.",
+		"On it.",
+		"Yes sir.",
+		"As you command."
+	],
+	"cold": [
+		"Freezing!",
+		"Can't feel my fingers...",
+		"Lord, it's bitter cold.",
+		"Need to find shelter soon.",
+		"This wind cuts right through.",
+		"Frostbite's setting in.",
+		"Can barely move my hands.",
+		"So cold... so cold..."
+	],
+	"darkness": [
+		"Can't see a thing out here.",
+		"Pitch black...",
+		"When will the sun return?",
+		"This darkness... it's unnatural.",
+		"Need more light.",
+		"The polar night weighs heavy.",
+		"Stars are our only light now."
+	],
+	"discovery": [
+		"Someone's alive!",
+		"Over here! I found someone!",
+		"Thank God, survivors!",
+		"We're not alone out here!",
+		"They made it!",
+		"It's {rank}{name}!"
+	],
+	"hunger": [
+		"Stomach's growling...",
+		"When did we last eat?",
+		"Need food... soon.",
+		"So hungry...",
+		"Rations are getting thin.",
+		"Could eat a whole seal right now."
+	],
+	"exhaustion": [
+		"Need rest...",
+		"Can barely keep my eyes open.",
+		"Just a short rest...",
+		"Legs won't carry me much further.",
+		"Exhausted...",
+		"Must... keep going..."
+	],
+	"morale_low": [
+		"What's the point?",
+		"We're all going to die here.",
+		"Should've stayed with the ship.",
+		"No one's coming for us.",
+		"This is hopeless...",
+		"God has abandoned us."
+	],
+	"morale_high": [
+		"We can do this!",
+		"Stay strong, lads!",
+		"Rescue will come.",
+		"One more day closer to home.",
+		"The south shore awaits!",
+		"We've survived worse."
+	],
+	"work_complete": [
+		"Done.",
+		"Finished.",
+		"That's that.",
+		"All done here."
+	],
+	"spotted_danger": [
+		"What was that?!",
+		"Something's out there!",
+		"Did you see that?",
+		"Stay alert!"
+	]
+}
