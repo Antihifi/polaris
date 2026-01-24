@@ -83,12 +83,12 @@ func is_exhausted(material_id: String) -> bool:
 	return material_pool.get(material_id, 0) <= 0
 
 
-func is_all_exhausted() -> bool:
-	## Check if all materials are exhausted.
+func has_resources() -> bool:
+	## Check if ship has any resources available.
 	for mat_id: String in material_pool:
 		if material_pool[mat_id] > 0:
-			return false
-	return true
+			return true
+	return false
 
 
 func add_material(material_id: String, amount: int) -> void:

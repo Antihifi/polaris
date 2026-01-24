@@ -12,6 +12,23 @@ Key sections:
 
 ---
 
+## MANDATORY: Before ANY AI/BT Work
+
+**STOP AND CHECK:**
+
+1. **Read existing tasks:** `ls ai/tasks/` - understand what exists
+2. **Study man_bt.tres patterns:** Open in Godot, examine SeekFood/SeekWarmth sequences
+3. **Check LimboAI built-ins:** Can BTPlayAnimation, BTWait, BTSetAgentProperty do this?
+4. **Reuse via composition:** BTSequence in .tres, NOT state machines in code
+
+**Task design:**
+- ~50 lines max, ONE responsibility
+- NO navigation (use BTMoveToBlackboard)
+- NO animations (use BTPlayAnimation in BT)
+- NO waits (use BTWait/BTRandomWait in BT)
+
+---
+
 ## Critical Rules
 
 ### 1. NEVER Edit .tres or Blackboard Files Programmatically

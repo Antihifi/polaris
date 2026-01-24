@@ -1,0 +1,47 @@
+[gd_resource type="BehaviorTree" load_steps=13 format=3 uid="uid://s25vaiv53h8r"]
+
+[ext_resource type="Script" uid="uid://d1t0pcuknhrdp" path="res://ai/tasks/bt_check_idle.gd" id="1_0tgqy"]
+[ext_resource type="Script" uid="uid://csuh7vuvgudd5" path="res://ai/tasks/bt_eat_from_inventory.gd" id="2_27mdt"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_pbgsp"]
+
+[sub_resource type="BTCondition" id="BTCondition_yp43i"]
+script = ExtResource("1_0tgqy")
+
+[sub_resource type="BBVariant" id="BBVariant_5vunk"]
+type = 3
+saved_value = 60.0
+resource_name = "60.0"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_rxmcr"]
+property = &"hunger"
+check_type = 1
+value = SubResource("BBVariant_5vunk")
+
+[sub_resource type="BBVariant" id="BBVariant_ql3t2"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_p8nnf"]
+property = &"inventory_has_food"
+value = SubResource("BBVariant_ql3t2")
+
+[sub_resource type="BTAction" id="BTAction_yeqhi"]
+script = ExtResource("2_27mdt")
+
+[sub_resource type="BTSequence" id="BTSequence_macxb"]
+custom_name = "EatFrominventory"
+children = [SubResource("BTCondition_yp43i"), SubResource("BTCheckAgentProperty_rxmcr"), SubResource("BTCheckAgentProperty_p8nnf"), SubResource("BTAction_yeqhi")]
+
+[sub_resource type="BTCooldown" id="BTCooldown_0tgqy"]
+duration = 5.0
+trigger_on_failure = true
+children = [SubResource("BTSequence_macxb")]
+
+[sub_resource type="BTSelector" id="BTSelector_u2f5x"]
+children = [SubResource("BTCooldown_0tgqy")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_pbgsp")
+root_task = SubResource("BTSelector_u2f5x")

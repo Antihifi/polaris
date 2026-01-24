@@ -410,6 +410,26 @@ func _create_full_debug_content(vbox: VBoxContainer) -> void:
 
 	vbox.add_child(HSeparator.new())
 
+	# Ship pieces controls
+	var ship_pieces_header := Label.new()
+	ship_pieces_header.text = "SHIP PIECES"
+	ship_pieces_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(ship_pieces_header)
+
+	_add_button(vbox, "Unfreeze Ship Pieces", _on_unfreeze_ship_pieces)
+
+	vbox.add_child(HSeparator.new())
+
+	# Bark system test
+	var bark_header := Label.new()
+	bark_header.text = "DIALOG"
+	bark_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(bark_header)
+
+	_add_button(vbox, "Test Bark (Random Unit)", _on_test_bark)
+
+	vbox.add_child(HSeparator.new())
+
 	_add_button(vbox, "RESUME", _close_menu)
 
 	# Add Quit to Main Menu button for procedural mode with override unlocked
@@ -1027,3 +1047,87 @@ func _update_resource_status(text: String, color: Color = Color.WHITE) -> void:
 			if _resource_status_label:
 				_resource_status_label.text = ""
 		)
+
+
+# --- Ship Pieces (Erebus) ---
+
+var _wood_crash_sound: AudioStream = preload("res://sounds/wood-crashing.mp3")
+var _ground_crash_sound: AudioStream = preload("res://sounds/crash_on_ground.mp3")
+var _ground_impact_detected: bool = false
+
+func _on_unfreeze_ship_pieces() -> void:
+	## Unfreeze all RigidBody3D nodes in erebus_pieces scene with dramatic effects.
+	var scene := get_tree().current_scene
+	if not scene:
+		print("[DebugMenu] No current scene")
+		return
+
+	var erebus_pieces := scene.get_node_or_null("erebus_pieces")
+	if not erebus_pieces:
+		erebus_pieces = scene.find_child("erebus_pieces", true, false)
+
+	if not erebus_pieces:
+		print("[DebugMenu] erebus_pieces not found in scene")
+		return
+
+	# Reset impact detection for this unfreeze
+	_ground_impact_detected = false
+
+	# Get camera for screen shake
+	var camera := get_viewport().get_camera_3d()
+
+	# Play wood splintering sound (30% quieter) and initial small shake
+	var wood_player := SoundManager.play_sound(_wood_crash_sound)
+	wood_player.volume_db = -3.1  # 30% quieter (linear 0.7)
+	if camera and camera.has_method("shake"):
+		camera.shake(0.15, 0.4)  # Small shake: intensity 0.15, duration 0.4s
+
+	var unfrozen_count: int = 0
+	for child in erebus_pieces.get_children():
+		if child is RigidBody3D:
+			# Enable contact monitoring to detect ground impact
+			child.contact_monitor = true
+			child.max_contacts_reported = 1
+			# Connect body_entered signal to detect ground collision
+			if not child.body_entered.is_connected(_on_ship_piece_hit_ground):
+				child.body_entered.connect(_on_ship_piece_hit_ground.bind(camera))
+			child.freeze = false
+			unfrozen_count += 1
+
+	print("[DebugMenu] Unfroze %d RigidBody3D nodes in erebus_pieces" % unfrozen_count)
+
+
+func _on_ship_piece_hit_ground(body: Node, camera: Camera3D) -> void:
+	## Called when a ship piece collides with something (terrain).
+	## Only triggers effects on the first impact.
+	if _ground_impact_detected:
+		return  # Already played the crash effect
+
+	_ground_impact_detected = true
+
+	# Play ground crash sound (1.75x louder)
+	var ground_player := SoundManager.play_sound(_ground_crash_sound)
+	ground_player.volume_db = 4.9  # 1.75x louder
+
+	# Large screen shake for dramatic impact
+	if camera and camera.has_method("shake"):
+		camera.shake(0.5, 0.8)  # Large shake: intensity 0.5, duration 0.8s
+
+	print("[DebugMenu] Ship pieces hit ground - crash effect triggered")
+
+
+# --- Bark System ---
+
+func _on_test_bark() -> void:
+	## Trigger a test bark on a random survivor.
+	var survivors := get_tree().get_nodes_in_group("survivors")
+	if survivors.is_empty():
+		print("[DebugMenu] No survivors found for bark test")
+		return
+
+	var unit: Node = survivors[randi() % survivors.size()]
+	if unit.has_method("bark"):
+		var success: bool = unit.bark("idle")
+		print("[DebugMenu] Triggered bark on %s: %s" % [unit.name, "success" if success else "on cooldown"])
+	else:
+		print("[DebugMenu] Unit %s has no bark method" % unit.name)

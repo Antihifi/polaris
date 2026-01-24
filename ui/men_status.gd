@@ -16,6 +16,11 @@ var _update_timer: float = 0.0
 const UPDATE_INTERVAL: float = 0.5  # Update twice per second, not every frame
 const HIGHLIGHT_COLOR := Color(1.0, 1.0, 1.0, 0.15)  # Semi-transparent white highlight
 
+# State display colors
+const STATE_COLOR_CRITICAL := Color(0.9, 0.3, 0.3)  # Red for critical conditions
+const STATE_COLOR_WARNING := Color(0.9, 0.8, 0.3)   # Yellow for warning conditions
+const STATE_COLOR_NONE := Color(0.5, 0.5, 0.5)      # Gray for no special state
+
 
 func _ready() -> void:
 	men_button.pressed.connect(_on_men_button_pressed)
@@ -152,6 +157,17 @@ func _add_unit_row(unit: Node) -> void:
 	action_label.name = "ActionLabel"
 	row.add_child(action_label)
 
+	# State label (shows critical/warning conditions)
+	var state_label := Label.new()
+	var state_info: Dictionary = _get_unit_state(unit)
+	state_label.text = state_info.text
+	state_label.custom_minimum_size.x = 100
+	state_label.size_flags_horizontal = Control.SIZE_SHRINK_END
+	state_label.add_theme_font_size_override("font_size", 11)
+	state_label.add_theme_color_override("font_color", state_info.color)
+	state_label.name = "StateLabel"
+	row.add_child(state_label)
+
 	container.add_child(row)
 
 	# Store reference for updates
@@ -183,6 +199,50 @@ func _get_unit_action(unit: Node) -> String:
 	return "Idle"
 
 
+func _get_unit_state(unit: Node) -> Dictionary:
+	## Get the most critical state for display. Returns dict with text and color.
+	## Priority: dying conditions first, then critical stats, then warnings.
+	if not "stats" in unit or not unit.stats:
+		return {"text": "—", "color": STATE_COLOR_NONE}
+
+	var stats: SurvivorStats = unit.stats
+
+	# Check for dying condition first (most severe)
+	if stats.is_dead():
+		return {"text": "DEAD", "color": STATE_COLOR_CRITICAL}
+	if stats.is_dying():
+		return {"text": "Dying", "color": STATE_COLOR_CRITICAL}
+
+	# Critical states (red) - check each stat at critical threshold
+	if stats.health <= SurvivorStats.CRITICAL_THRESHOLD:
+		return {"text": "Dying", "color": STATE_COLOR_CRITICAL}
+	if stats.hunger <= SurvivorStats.CRITICAL_THRESHOLD:
+		return {"text": "Starving", "color": STATE_COLOR_CRITICAL}
+	if stats.warmth <= SurvivorStats.CRITICAL_THRESHOLD:
+		return {"text": "Hypothermic", "color": STATE_COLOR_CRITICAL}
+	if stats.energy <= SurvivorStats.CRITICAL_THRESHOLD:
+		return {"text": "Exhausted", "color": STATE_COLOR_CRITICAL}
+	if stats.morale <= SurvivorStats.CRITICAL_THRESHOLD:
+		return {"text": "On The Brink", "color": STATE_COLOR_CRITICAL}
+
+	# Warning states (yellow) - check each stat at low threshold
+	if stats.health <= SurvivorStats.LOW_THRESHOLD:
+		return {"text": "Injured", "color": STATE_COLOR_WARNING}
+	if stats.hunger <= SurvivorStats.LOW_THRESHOLD:
+		return {"text": "Hungry", "color": STATE_COLOR_WARNING}
+	if stats.warmth <= SurvivorStats.LOW_THRESHOLD:
+		return {"text": "Cold", "color": STATE_COLOR_WARNING}
+	if stats.energy <= SurvivorStats.LOW_THRESHOLD:
+		return {"text": "Tired", "color": STATE_COLOR_WARNING}
+	if stats.morale <= SurvivorStats.LOW_THRESHOLD:
+		return {"text": "Despairing", "color": STATE_COLOR_WARNING}
+	if stats.is_weakened():
+		return {"text": "Weakened", "color": STATE_COLOR_WARNING}
+
+	# No critical state
+	return {"text": "—", "color": STATE_COLOR_NONE}
+
+
 func _build_stats_tooltip(unit: Node) -> String:
 	## Build a tooltip showing unit's survival stats.
 	if not "stats" in unit or not unit.stats:
@@ -210,7 +270,7 @@ func _build_stats_tooltip(unit: Node) -> String:
 
 
 func _update_actions() -> void:
-	## Update action labels and tooltips for all units.
+	## Update action labels, state labels, and tooltips for all units.
 	for unit in _unit_rows:
 		if not is_instance_valid(unit):
 			continue
@@ -218,6 +278,12 @@ func _update_actions() -> void:
 		var action_label: Label = row.get_node_or_null("ActionLabel")
 		if action_label:
 			action_label.text = _get_unit_action(unit)
+		# Update state label
+		var state_label: Label = row.get_node_or_null("StateLabel")
+		if state_label:
+			var state_info: Dictionary = _get_unit_state(unit)
+			state_label.text = state_info.text
+			state_label.add_theme_color_override("font_color", state_info.color)
 		# Update tooltip with current stats
 		row.tooltip_text = _build_stats_tooltip(unit)
 

@@ -79,6 +79,12 @@ var _is_focusing: bool = false       # Smooth transition in progress
 var _focus_destination: Vector3 = Vector3.ZERO
 var _terrain: Node = null            # Cached Terrain3D reference for collision
 
+# Screen shake state
+var _shake_intensity: float = 0.0
+var _shake_duration: float = 0.0
+var _shake_timer: float = 0.0
+var _shake_offset: Vector3 = Vector3.ZERO
+
 func _ready() -> void:
 	# Find Terrain3D for collision checking
 	_find_terrain()
@@ -88,6 +94,20 @@ func _ready() -> void:
 	_update_camera_position()
 
 func _process(delta: float) -> void:
+	# Handle screen shake
+	if _shake_timer > 0.0:
+		_shake_timer -= delta
+		var shake_progress := _shake_timer / _shake_duration if _shake_duration > 0.0 else 0.0
+		var current_intensity := _shake_intensity * shake_progress  # Fade out
+		_shake_offset = Vector3(
+			randf_range(-current_intensity, current_intensity),
+			randf_range(-current_intensity, current_intensity) * 0.5,  # Less vertical shake
+			randf_range(-current_intensity, current_intensity)
+		)
+		_update_camera_position()  # Apply shake offset to camera
+	else:
+		_shake_offset = Vector3.ZERO
+
 	# Handle smooth focus transition
 	if _is_focusing:
 		orbit_center = orbit_center.lerp(_focus_destination, focus_lerp_speed * delta)
@@ -263,7 +283,7 @@ func _update_camera_position() -> void:
 		if new_pos.y < min_y:
 			new_pos.y = min_y
 
-	position = new_pos
+	position = new_pos + _shake_offset
 	look_at(orbit_center, Vector3.UP)
 
 	# Derived values (useful if other systems read them)
@@ -312,6 +332,15 @@ func clear_focus_target() -> void:
 
 func get_focus_target() -> Node3D:
 	return _focus_target
+
+
+func shake(intensity: float, duration: float) -> void:
+	## Apply screen shake effect.
+	## intensity: Maximum shake offset in world units (0.1 = subtle, 0.5 = strong)
+	## duration: How long the shake lasts in seconds
+	_shake_intensity = intensity
+	_shake_duration = duration
+	_shake_timer = duration
 
 
 func get_zoom_ratio() -> float:

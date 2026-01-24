@@ -10,6 +10,7 @@ extends Node
 @export var sled_collision_mask: int = 16     # Layer 5 for vehicles/sleds
 @export var workbench_collision_mask: int = 32  # Layer 6 for workbenches
 @export var construction_site_collision_mask: int = 64  # Layer 7 for construction sites
+@export var ship_collision_mask: int = 128  # Layer 8 for ships
 
 ## Enable multi-selection with shift-click and box select
 @export var multi_select_enabled: bool = true
@@ -20,6 +21,7 @@ signal container_clicked(container: StorageContainer)
 signal sled_clicked(sled: Node)
 signal workbench_clicked(workbench: Node)
 signal construction_site_clicked(site: Node)
+signal ship_clicked(ship: Node)
 
 # Single selection (legacy support)
 var selected_unit: ClickableUnit = null
@@ -301,6 +303,51 @@ func _raycast_for_construction_site(screen_position: Vector2) -> Node:
 	return null
 
 
+func _raycast_for_ship(screen_position: Vector2) -> Node:
+	## Raycast to find a ship at screen position. Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+
+	# Try ship collision layer first
+	var ship_query := PhysicsRayQueryParameters3D.create(from, to, ship_collision_mask)
+	ship_query.collide_with_areas = true
+	ship_query.collide_with_bodies = true
+	var ship_result := space_state.intersect_ray(ship_query)
+
+	if not ship_result.is_empty():
+		var hit: Object = ship_result.collider
+		if hit is Node:
+			# Walk up parent chain to find ship root (in "ship_resources" group)
+			var current: Node = hit as Node
+			for i in range(5):
+				if not current:
+					break
+				if current.is_in_group("ship_resources"):
+					return current
+				current = current.get_parent()
+
+	# Fallback: general raycast and check for ship_resources group
+	var general_query := PhysicsRayQueryParameters3D.create(from, to)
+	general_query.collide_with_areas = true
+	general_query.collide_with_bodies = true
+	var general_result := space_state.intersect_ray(general_query)
+
+	if not general_result.is_empty():
+		var hit: Object = general_result.collider
+		if hit is Node:
+			var current: Node = hit as Node
+			for i in range(5):
+				if not current:
+					break
+				if current.is_in_group("ship_resources"):
+					return current
+				current = current.get_parent()
+
+	return null
+
+
 func _try_assign_officer_to_site(site: Node) -> bool:
 	## Try to assign selected officers to construction site.
 	## Returns true if any officers were assigned.
@@ -397,6 +444,12 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	var clicked_workbench := _raycast_for_workbench(screen_position)
 	if clicked_workbench:
 		workbench_clicked.emit(clicked_workbench)
+		return
+
+	# Check if right-clicking on a ship
+	var clicked_ship := _raycast_for_ship(screen_position)
+	if clicked_ship:
+		ship_clicked.emit(clicked_ship)
 		return
 
 	# Check if right-clicking on a sled (only if we have units selected)

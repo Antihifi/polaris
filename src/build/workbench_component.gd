@@ -123,12 +123,7 @@ func get_all_materials() -> Dictionary:
 
 func _on_placement_confirmed(position: Vector3, rotation_y: float, recipe: BuildRecipe) -> void:
 	## Handle confirmed placement - create construction site.
-	# Withdraw materials from storage.
-	for mat_id: String in recipe.required_materials:
-		var amount: int = recipe.required_materials[mat_id]
-		withdraw_material(mat_id, amount)
-
-	# Create construction site.
+	## Sites start empty - units must haul materials to them.
 	var site := _create_construction_site(position, rotation_y, recipe)
 	active_sites.append(site)
 
@@ -153,16 +148,15 @@ func _create_construction_site(position: Vector3, rotation_y: float, recipe: Bui
 	site.rotation.y = rotation_y
 
 	# Create visual from actual scene or fallback box.
-	_create_site_visual(site, recipe)
+	var visual: Node3D = _create_site_visual(site, recipe)
+
+	# Add click collision area based on visual bounds.
+	_add_click_collision(site, visual)
 
 	# Add progress bar.
 	var progress_bar := ProgressBar3D.new()
 	site.add_child(progress_bar)
 	site.set_progress_bar(progress_bar)
-
-	# Mark materials as already deposited (we withdrew from workbench).
-	for mat_id: String in recipe.required_materials:
-		site.materials_deposited[mat_id] = recipe.required_materials[mat_id]
 
 	# Register with WorkManager.
 	var work_manager := _get_work_manager()
@@ -176,8 +170,9 @@ func _create_construction_site(position: Vector3, rotation_y: float, recipe: Bui
 	return site
 
 
-func _create_site_visual(site: ConstructionSite, recipe: BuildRecipe) -> void:
+func _create_site_visual(site: ConstructionSite, recipe: BuildRecipe) -> Node3D:
 	## Create the visual representation of the construction site.
+	## Returns the visual node for bounds calculation.
 	var visual: Node3D = null
 
 	# Try to instantiate the actual scene.
@@ -205,6 +200,52 @@ func _create_site_visual(site: ConstructionSite, recipe: BuildRecipe) -> void:
 		visual = mesh_instance
 
 	site.add_child(visual)
+	return visual
+
+
+func _add_click_collision(site: ConstructionSite, visual: Node3D) -> void:
+	## Add click collision area centered on the visual's bounds.
+	var aabb: AABB = _get_combined_aabb(visual)
+	if aabb.size == Vector3.ZERO:
+		aabb = AABB(Vector3(-1.5, 0, -1.5), Vector3(3, 2, 3))
+
+	var click_area := Area3D.new()
+	click_area.name = "ClickArea"
+	click_area.collision_layer = 64  # Layer 7 for construction sites
+	click_area.collision_mask = 0
+
+	var click_shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = aabb.size
+	click_shape.shape = box
+	click_shape.position = aabb.position + aabb.size * 0.5  # Center of AABB
+	click_area.add_child(click_shape)
+	site.add_child(click_area)
+
+
+func _get_combined_aabb(node: Node3D) -> AABB:
+	## Get combined AABB of all MeshInstance3D children.
+	var result: AABB = AABB()
+	var found_mesh: bool = false
+
+	if node is MeshInstance3D:
+		var mi: MeshInstance3D = node
+		if mi.mesh:
+			result = mi.mesh.get_aabb()
+			result.position = mi.position + result.position
+			found_mesh = true
+
+	for child in node.get_children():
+		if child is Node3D:
+			var child_aabb: AABB = _get_combined_aabb(child as Node3D)
+			if child_aabb.size != Vector3.ZERO:
+				if found_mesh:
+					result = result.merge(child_aabb)
+				else:
+					result = child_aabb
+					found_mesh = true
+
+	return result
 
 
 func _apply_construction_shader(node: Node) -> void:

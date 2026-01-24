@@ -3,7 +3,7 @@ extends BTAction
 class_name BTFindNearestResource
 ## Finds the nearest resource node in a group and stores it in the blackboard.
 
-@export_enum("shelters", "heat_sources", "containers", "barrels", "crates", "beds", "seats", "fire_positions", "barrel_positions", "bed_positions") var resource_group: String = "shelters"
+@export_enum("shelters", "heat_sources", "containers", "barrels", "crates", "beds", "seats", "fire_positions", "barrel_positions", "bed_positions", "ship_scrap_wood", "ship_nails", "ship_rope", "ship_sail_cloth", "workbenches", "construction_sites") var resource_group: String = "shelters"
 @export var target_position_var: StringName = &"target_position"
 @export var target_node_var: StringName = &"target_node"
 
@@ -42,27 +42,28 @@ func _tick(_delta: float) -> Status:
 			if not agent.is_within_leash(node.global_position):
 				continue
 
-		# Skip occupied positions (another survivor within 1.5m OR already en-route)
-		# The en-route check prevents race conditions at game start where multiple
-		# units all pick the same "unoccupied" position simultaneously
-		var occupied := false
-		for survivor in agent.get_tree().get_nodes_in_group("survivors"):
-			if survivor == agent:
-				continue
-			if not survivor is Node3D:
-				continue
-			# Check if already at position
-			if survivor.global_position.distance_to(node.global_position) < 1.5:
-				occupied = true
-				break
-			# Check if en-route to this position
-			if "is_moving" in survivor and survivor.is_moving:
-				var nav_agent: NavigationAgent3D = survivor.get_node_or_null("NavigationAgent3D")
-				if nav_agent and nav_agent.target_position.distance_to(node.global_position) < 1.5:
+		# Skip occupied positions for single-occupancy resources (beds, seats, etc.)
+		# Workbenches and construction sites support multiple workers, so skip check
+		var skip_occupancy := resource_group in ["workbenches", "construction_sites", "ship_scrap_wood", "ship_nails", "ship_rope", "ship_sail_cloth"]
+		if not skip_occupancy:
+			var occupied := false
+			for survivor in agent.get_tree().get_nodes_in_group("survivors"):
+				if survivor == agent:
+					continue
+				if not survivor is Node3D:
+					continue
+				# Check if already at position
+				if survivor.global_position.distance_to(node.global_position) < 1.5:
 					occupied = true
 					break
-		if occupied:
-			continue
+				# Check if en-route to this position
+				if "is_moving" in survivor and survivor.is_moving:
+					var nav_agent: NavigationAgent3D = survivor.get_node_or_null("NavigationAgent3D")
+					if nav_agent and nav_agent.target_position.distance_to(node.global_position) < 1.5:
+						occupied = true
+						break
+			if occupied:
+				continue
 
 		var dist: float = agent.global_position.distance_to(node.global_position)
 		if dist < nearest_dist:
@@ -88,4 +89,10 @@ func _tick(_delta: float) -> Status:
 				blackboard.set_var(&"current_action", "Seeking " + resource_group)
 		return SUCCESS
 
+	# Log failure with details for debugging
+	var total_nodes: int = agent.get_tree().get_nodes_in_group(resource_group).size()
+	if total_nodes == 0:
+		print("[BTFindResource] FAIL: No nodes in group '%s'" % resource_group)
+	else:
+		print("[BTFindResource] FAIL: %d nodes in '%s' but all occupied" % [total_nodes, resource_group])
 	return FAILURE

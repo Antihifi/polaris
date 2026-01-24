@@ -11,7 +11,17 @@
 		"Heard something out there...",
 		"Miss the ship, truth be told.",
 		"How far south now, d'you reckon?",
-		"My feet are numb again."
+		"My feet are numb again.",
+		"Wonder what they're doing back home...",
+		"Another day in this frozen hell.",
+		"I dream of a warm fire.",
+		"The ice goes on forever.",
+		"God willing, we'll see England again.",
+		"Quiet today.",
+		"At least the wind's died down.",
+		"I can see my breath...",
+		"What I wouldn't give for a hot bath.",
+		"The silence here is deafening."
 	],
 	"affirmation": [
 		"Aye, captain.",
@@ -22,7 +32,10 @@
 		"Will do.",
 		"On it.",
 		"Yes sir.",
-		"As you command."
+		"As you command.",
+		"Consider it done.",
+		"Moving out.",
+		"I'm on it."
 	],
 	"cold": [
 		"Freezing!",
@@ -32,7 +45,14 @@
 		"This wind cuts right through.",
 		"Frostbite's setting in.",
 		"Can barely move my hands.",
-		"So cold... so cold..."
+		"So cold... so cold...",
+		"My toes are going numb.",
+		"Need a fire, badly.",
+		"The cold's in my bones.",
+		"Shivering won't stop...",
+		"How can it get any colder?",
+		"Feels like ice in my veins.",
+		"Can't... stop... shaking..."
 	],
 	"darkness": [
 		"Can't see a thing out here.",
@@ -41,7 +61,11 @@
 		"This darkness... it's unnatural.",
 		"Need more light.",
 		"The polar night weighs heavy.",
-		"Stars are our only light now."
+		"Stars are our only light now.",
+		"How long has it been dark?",
+		"I miss the sun.",
+		"The darkness plays tricks on the mind.",
+		"Another night without end."
 	],
 	"discovery": [
 		"Someone's alive!",
@@ -57,7 +81,15 @@
 		"Need food... soon.",
 		"So hungry...",
 		"Rations are getting thin.",
-		"Could eat a whole seal right now."
+		"Could eat a whole seal right now.",
+		"My belly aches.",
+		"Food... need food...",
+		"Can't remember my last meal.",
+		"Lightheaded from hunger.",
+		"The hunger gnaws at me.",
+		"I'd kill for a proper meal.",
+		"Getting weaker without food.",
+		"Even hardtack sounds good now."
 	],
 	"exhaustion": [
 		"Need rest...",
@@ -65,7 +97,16 @@
 		"Just a short rest...",
 		"Legs won't carry me much further.",
 		"Exhausted...",
-		"Must... keep going..."
+		"Must... keep going...",
+		"So tired...",
+		"Can't go on like this.",
+		"Every step is agony.",
+		"Running on fumes.",
+		"Body's giving out.",
+		"Need to sit down...",
+		"My legs are lead.",
+		"Sleep... need sleep...",
+		"Haven't slept in days."
 	],
 	"morale_low": [
 		"What's the point?",
@@ -73,7 +114,15 @@
 		"Should've stayed with the ship.",
 		"No one's coming for us.",
 		"This is hopeless...",
-		"God has abandoned us."
+		"God has abandoned us.",
+		"Why do we even try?",
+		"I've lost hope.",
+		"We're doomed, aren't we?",
+		"Franklin led us to our graves.",
+		"I'll never see home again.",
+		"The ice will take us all.",
+		"Death would be a mercy.",
+		"What did we do to deserve this?"
 	],
 	"morale_high": [
 		"We can do this!",
@@ -81,18 +130,111 @@
 		"Rescue will come.",
 		"One more day closer to home.",
 		"The south shore awaits!",
-		"We've survived worse."
+		"We've survived worse.",
+		"Keep faith, men!",
+		"We're going to make it.",
+		"I believe in us.",
+		"England expects every man.",
+		"We're Royal Navy, dammit!",
+		"Together we'll see this through.",
+		"The worst is behind us."
+	],
+	"health_low": [
+		"I don't feel well...",
+		"Something's wrong with me.",
+		"Feeling weak...",
+		"My body's failing me.",
+		"Need medicine...",
+		"The sickness is spreading.",
+		"Can't shake this illness.",
+		"My gums are bleeding.",
+		"Scurvy's setting in.",
+		"Everything hurts.",
+		"I may not last much longer.",
+		"Getting worse by the day."
+	],
+	"health_critical": [
+		"I'm dying...",
+		"This is the end for me.",
+		"Tell my family I love them.",
+		"Leave me... save yourselves.",
+		"Can't... go on...",
+		"God have mercy on my soul."
+	],
+	"strength_low": [
+		"Feeling weak...",
+		"No strength left.",
+		"Can barely lift my arms.",
+		"Muscles ache...",
+		"Getting feebler by the day.",
+		"I used to be stronger than this.",
+		"My body's betraying me."
+	],
+	"warming_up": [
+		"Ah, warmth at last.",
+		"The fire feels wonderful.",
+		"Finally, some heat.",
+		"Getting feeling back in my hands.",
+		"Blessed warmth...",
+		"This fire's a godsend.",
+		"Thawing out nicely."
+	],
+	"eating": [
+		"At least it's something.",
+		"Food at last!",
+		"This will do.",
+		"Better than nothing.",
+		"Fills the belly.",
+		"Thank God for provisions.",
+		"Not much, but it'll keep me going."
+	],
+	"resting": [
+		"Ah, rest at last.",
+		"Just a moment's peace.",
+		"Feels good to sit.",
+		"My legs thank me.",
+		"Taking a breather.",
+		"Need this rest."
+	],
+	"work_start": [
+		"Right, let's get to it.",
+		"Work to be done.",
+		"On the job.",
+		"Starting now.",
+		"Here we go."
 	],
 	"work_complete": [
 		"Done.",
 		"Finished.",
 		"That's that.",
-		"All done here."
+		"All done here.",
+		"Job's done.",
+		"Completed.",
+		"There we are."
 	],
 	"spotted_danger": [
 		"What was that?!",
 		"Something's out there!",
 		"Did you see that?",
-		"Stay alert!"
+		"Stay alert!",
+		"Movement in the ice!",
+		"We're not alone.",
+		"Eyes open, men!"
+	],
+	"blizzard": [
+		"Get to shelter!",
+		"Blizzard coming!",
+		"Can't see anything!",
+		"The storm's upon us!",
+		"Find cover, now!",
+		"This storm will kill us!"
+	],
+	"death_nearby": [
+		"No... not him.",
+		"He's gone.",
+		"God rest his soul.",
+		"Another one lost.",
+		"May he find peace.",
+		"We've lost another."
 	]
 }

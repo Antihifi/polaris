@@ -1,4 +1,4 @@
-[gd_resource type="AnimationLibrary" load_steps=37 format=3 uid="uid://b0ge5cs2gvvmk"]
+[gd_resource type="AnimationLibrary" load_steps=38 format=3 uid="uid://b0ge5cs2gvvmk"]
 
 [ext_resource type="Animation" uid="uid://d4e6787ptogww" path="res://characters/captain/zombie_dying.res" id="1_q6ypb"]
 [ext_resource type="Animation" uid="uid://bd8l0twbfypc3" path="res://characters/captain/walking.res" id="2_is6yv"]
@@ -35,6 +35,7 @@
 [ext_resource type="Animation" uid="uid://cyxq5brvgrdey" path="res://characters/captain/crouching_idle.res" id="33_0ihd7"]
 [ext_resource type="Animation" uid="uid://bvegxpverp0jb" path="res://characters/captain/crouch_to_stand.res" id="34_3vrv4"]
 [ext_resource type="Animation" uid="uid://dxvbyd4xup4my" path="res://characters/captain/stand_up_from_laying_down.res" id="35_is6yv"]
+[ext_resource type="Animation" uid="uid://ciyguj4e5cmmp" path="res://characters/captain/carry_walk.res" id="36_8ewem"]
 
 [sub_resource type="Animation" id="Animation_60dg1"]
 resource_name = "mixamo_com"
@@ -248,6 +249,7 @@ tracks/28/keys = PackedFloat32Array(0, 1, 0.31650126, -0.03156267, -0.04007384, 
 _data = {
 &"bash": ExtResource("3_8ewem"),
 &"being_carried": ExtResource("4_rl0u2"),
+&"carry_walk": ExtResource("36_8ewem"),
 &"carrying": ExtResource("5_gm4up"),
 &"carrying_turn": ExtResource("6_kfw5d"),
 &"closing_a_lid": ExtResource("7_6rhfq"),

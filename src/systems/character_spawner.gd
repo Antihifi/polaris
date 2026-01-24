@@ -245,7 +245,7 @@ func _randomize_stats(unit: Node) -> void:
 
 	# Non-critical stats with some variation
 	stats.health = _vary_value(60.0, 0.08)
-	stats.morale = _vary_value(55.0, 0.15)
+	stats.morale = _vary_value(87.5, 0.086)
 
 	# Vary skills significantly
 	stats.hunting_skill = _vary_value(25.0, 0.5)

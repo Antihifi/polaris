@@ -16,6 +16,9 @@ cat "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.lo
 ### Scene Creation
 **NEVER programmatically generate .tscn files.** ASK the user to create scenes in Godot editor.
 
+### No Impossible Fallbacks
+**NEVER create fallbacks to unreachable positions.** If a task can't find a valid target, FAIL immediately and let the behavior tree handle it. Don't send units to ship centers, object origins, or other positions inside collision meshes.
+
 ---
 
 ## Project Overview
@@ -64,6 +67,22 @@ See `GameDesignDocument.md` for design specs.
 |-------|---------|
 | **LimboAI** | Behavior trees for AI |
 | **Sky3D** | Day/night cycle, atmosphere |
+
+### LimboAI Task Rules
+
+**BEFORE creating any BT task:**
+1. Run `ls ai/tasks/` and READ what exists
+2. Each task does ONE thing (~50-100 lines max)
+3. Use BTSequence in .tres to compose tasks, NOT state machines in code
+4. Tasks should NOT do navigation - use `BTMoveToBlackboard` for that
+5. `BTFindNearestResource` + `BTMoveToBlackboard` handles most "go to X" patterns
+
+**Task patterns:**
+| Need | Tasks to compose |
+|------|------------------|
+| Go to resource | `BTFindNearestResource` → `BTMoveToBlackboard` |
+| Gather from ship | `BTFindNearestResource [ship_scrap_wood]` → `BTMoveToBlackboard` → `BTGatherFromShip` |
+| Deposit materials | `BTFindNearestResource [workbenches]` → `BTMoveToBlackboard` → `BTDepositMaterials` |
 | **Terrain3D** | Large terrain, procedural generation |
 | **indie_blueprint_rpg** | Health, loot, crafting |
 

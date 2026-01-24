@@ -4,15 +4,18 @@ class_name ObjectSpawner extends Node
 
 signal containers_spawned(count: int)
 signal ship_spawned(ship: Node3D)
+signal workbench_spawned(workbench: Node3D)
 
 ## Scenes to instantiate
 var barrel_scene: PackedScene
 var crate_scene: PackedScene
 var ship_scene: PackedScene
 var fire_scene: PackedScene
+var workbench_scene: PackedScene
 
-## Spawned ship reference
+## Spawned object references
 var spawned_ship: Node3D = null
+var spawned_workbench: Node3D = null
 
 ## Spawn configuration
 @export var spawn_radius: float = 15.0
@@ -37,6 +40,7 @@ func _ready() -> void:
 	crate_scene = preload("res://objects/storage_crate_small.tscn")
 	ship_scene = preload("res://objects/ship1/ship_1.tscn")
 	fire_scene = preload("res://objects/campfire_1.tscn")
+	workbench_scene = preload("res://objects/workbench1/workbench_1.tscn")
 
 
 func spawn_containers(barrel_count: int, crate_count: int, fire_count: int, center: Vector3) -> Array[Node]:
@@ -241,6 +245,31 @@ func spawn_ship(position: Vector3, rotation_y: float = 0.0) -> Node3D:
 	return spawned_ship
 
 
+func spawn_workbench(position: Vector3, rotation_y: float = 0.0) -> Node3D:
+	## Spawn a workbench at the given position.
+	## Used for procedurally generated terrain where workbench isn't pre-placed.
+	## Workbench scene already has WorkbenchComponent as a child node.
+	if spawned_workbench and is_instance_valid(spawned_workbench):
+		print("[ObjectSpawner] Workbench already spawned, skipping")
+		return spawned_workbench
+
+	spawned_workbench = workbench_scene.instantiate()
+	spawned_workbench.name = "Workbench1"
+	get_tree().current_scene.add_child(spawned_workbench)
+
+	# Position workbench on terrain
+	var workbench_height := _get_terrain_height(position)
+	spawned_workbench.global_position = Vector3(position.x, workbench_height, position.z)
+	spawned_workbench.rotation.y = rotation_y
+
+	# Add to workbenches group for discovery by debug menu and other systems
+	spawned_workbench.add_to_group("workbenches")
+
+	print("[ObjectSpawner] Spawned workbench at %s" % spawned_workbench.global_position)
+	workbench_spawned.emit(spawned_workbench)
+	return spawned_workbench
+
+
 func get_ship() -> Node3D:
 	## Get the spawned ship, or find existing ship in scene.
 	if spawned_ship and is_instance_valid(spawned_ship):
@@ -256,6 +285,25 @@ func get_ship() -> Node3D:
 	var ship := scene.find_child("Ship1", true, false)
 	if ship:
 		return ship as Node3D
+
+	return null
+
+
+func get_workbench() -> Node3D:
+	## Get the spawned workbench, or find existing workbench in scene.
+	if spawned_workbench and is_instance_valid(spawned_workbench):
+		return spawned_workbench
+
+	# Check if workbench already exists in scene (from pre-made terrain)
+	var existing := get_tree().get_nodes_in_group("workbenches")
+	if existing.size() > 0:
+		return existing[0] as Node3D
+
+	# Search by name as fallback
+	var scene := get_tree().current_scene
+	var workbench := scene.find_child("Workbench1", true, false)
+	if workbench:
+		return workbench as Node3D
 
 	return null
 

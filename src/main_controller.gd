@@ -26,6 +26,8 @@ var object_spawner: Node
 var inventory_hud: CanvasLayer
 var sled_panel: Control
 var workbench_panel: Control
+var ship_resource_panel: Control
+var construction_site_panel: Control
 
 
 func _ready() -> void:
@@ -78,6 +80,22 @@ func _ready() -> void:
 
 	# Connect workbench click to workbench panel
 	input_handler.workbench_clicked.connect(_on_workbench_clicked)
+
+	# Create ship resource panel
+	var ship_resource_panel_scene := preload("res://ui/ship_resource_panel.tscn")
+	ship_resource_panel = ship_resource_panel_scene.instantiate()
+	add_child(ship_resource_panel)
+
+	# Connect ship click to ship resource panel
+	input_handler.ship_clicked.connect(_on_ship_clicked)
+
+	# Create construction site panel
+	var construction_site_panel_scene := preload("res://ui/construction_site_panel.tscn")
+	construction_site_panel = construction_site_panel_scene.instantiate()
+	add_child(construction_site_panel)
+
+	# Connect construction site click to construction site panel
+	input_handler.construction_site_clicked.connect(_on_construction_site_clicked)
 
 	# Captain is player-controlled only - no AI controller
 
@@ -188,6 +206,22 @@ func _on_workbench_clicked(workbench: Node) -> void:
 	if not workbench or not workbench_panel:
 		return
 	workbench_panel.show_for_workbench(workbench, rts_camera)
+
+
+func _on_ship_clicked(clicked_ship: Node) -> void:
+	## Handle ship right-click - show ship resource panel.
+	if not clicked_ship or not ship_resource_panel:
+		return
+	if ship_resource_panel.has_method("show_for_ship"):
+		ship_resource_panel.show_for_ship(clicked_ship)
+
+
+func _on_construction_site_clicked(site: Node) -> void:
+	## Handle construction site right-click - show construction site panel.
+	if not site or not construction_site_panel:
+		return
+	if construction_site_panel.has_method("show_for_site"):
+		construction_site_panel.show_for_site(site, rts_camera)
 
 
 func _add_ai_controller(unit: Node) -> void:

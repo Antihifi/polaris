@@ -10,6 +10,8 @@ var _hud_scene: PackedScene = preload("res://ui/game_hud.tscn")
 var _inventory_hud_scene: PackedScene = preload("res://ui/inventory_hud.tscn")
 var _sled_panel_scene: PackedScene = preload("res://ui/sled_panel.tscn")
 var _workbench_panel_scene: PackedScene = preload("res://ui/workbench_panel.tscn")
+var _ship_resource_panel_scene: PackedScene = preload("res://ui/ship_resource_panel.tscn")
+var _construction_site_panel_scene: PackedScene = preload("res://ui/construction_site_panel.tscn")
 var _sled_scene: PackedScene = preload("res://objects/sled1/sled_1.tscn")
 var _ship_scene: PackedScene = preload("res://objects/ship1/ship_1.tscn")
 var _sky3d_scene: PackedScene = preload("res://sky_3d.tscn")
@@ -36,6 +38,8 @@ var ship: Node3D = null  # The frozen ship
 var rts_camera: Camera3D = null
 var sled_panel: Control = null  # Sled interaction UI
 var workbench_panel: Control = null  # Workbench crafting UI
+var ship_resource_panel: Control = null  # Ship resource display UI
+var construction_site_panel: Control = null  # Construction site UI
 var _seed_manager = null  # SeedManager instance
 var character_spawner: Node
 var scenario_panel: ScenarioPanel = null  # Intro screen
@@ -522,6 +526,10 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	var container_spawn_center := ship_pos + Vector3(50.0, 0, 0)
 	_spawn_containers(container_spawn_center)
 
+	# Spawn workbench 10m NORTH of containers (negative Z)
+	var workbench_spawn_pos := container_spawn_center + Vector3(0, 0, -10.0)
+	object_spawner.spawn_workbench(workbench_spawn_pos)
+
 	# Spawn sled 10m SOUTH of captain (positive Z)
 	var sled_spawn_pos := spawn_pos + Vector3(0, 0, 10.0)
 	var sled: RigidBody3D = _sled_scene.instantiate()
@@ -821,6 +829,28 @@ func _setup_game_ui() -> void:
 		input_handler.workbench_clicked.connect(func(workbench):
 			if workbench_panel.has_method("show_for_workbench"):
 				workbench_panel.show_for_workbench(workbench, rts_camera)
+		)
+
+	# Create ship resource panel
+	ship_resource_panel = _ship_resource_panel_scene.instantiate()
+	add_child(ship_resource_panel)
+
+	# Connect ship click to ship resource panel
+	if input_handler.has_signal("ship_clicked"):
+		input_handler.ship_clicked.connect(func(clicked_ship):
+			if ship_resource_panel.has_method("show_for_ship"):
+				ship_resource_panel.show_for_ship(clicked_ship)
+		)
+
+	# Create construction site panel
+	construction_site_panel = _construction_site_panel_scene.instantiate()
+	add_child(construction_site_panel)
+
+	# Connect construction site click to construction site panel
+	if input_handler.has_signal("construction_site_clicked"):
+		input_handler.construction_site_clicked.connect(func(site):
+			if construction_site_panel.has_method("show_for_site"):
+				construction_site_panel.show_for_site(site, rts_camera)
 		)
 
 	print("[ProceduralGame] UI setup complete")

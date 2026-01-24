@@ -16,7 +16,7 @@ extends Node
 signal bark_started(unit: Node, text: String)
 signal bark_finished(unit: Node)
 
-## Bark popup scene
+## Bark popup scene (themed 2D Control)
 var _bark_scene: PackedScene = preload("res://ui/bark_popup.tscn")
 
 ## Bark data loaded from JSON
@@ -24,6 +24,9 @@ var _bark_data: Dictionary = {}
 
 ## Active barks per unit (to prevent spam)
 var _active_barks: Dictionary = {}  # unit_id -> popup_node
+
+## Track unit references for position updates
+var _bark_units: Dictionary = {}  # unit_id -> unit_node
 
 ## Cooldown tracking per unit
 var _cooldowns: Dictionary = {}  # unit_id -> timestamp
@@ -40,6 +43,10 @@ var _cooldowns: Dictionary = {}  # unit_id -> timestamp
 
 func _ready() -> void:
 	_load_bark_data()
+
+
+func _process(_delta: float) -> void:
+	_update_bark_positions()
 
 
 func _load_bark_data() -> void:
@@ -115,19 +122,20 @@ func bark_immediate(unit: Node, text: String, duration: float = -1.0) -> void:
 	if duration < 0:
 		duration = default_duration
 
-	# Cancel existing bark if any
+	# Cancel existing bark if any (also done in _show_bark, but explicit here)
 	var unit_id := unit.get_instance_id()
 	if _active_barks.has(unit_id):
 		var old_popup: Node = _active_barks[unit_id]
 		if is_instance_valid(old_popup):
 			old_popup.queue_free()
 		_active_barks.erase(unit_id)
+		_bark_units.erase(unit_id)
 
 	_show_bark(unit, text, duration)
 
 
 func _show_bark(unit: Node, text: String, duration: float) -> void:
-	## Internal: create and animate bark popup.
+	## Internal: create and animate themed bark popup.
 	var camera := unit.get_viewport().get_camera_3d()
 	if not camera:
 		return
@@ -143,7 +151,7 @@ func _show_bark(unit: Node, text: String, duration: float) -> void:
 		if is_instance_valid(old_popup):
 			old_popup.queue_free()
 
-	# Create popup
+	# Create popup from themed scene
 	var popup: Control = _bark_scene.instantiate()
 
 	# Set text
@@ -151,9 +159,10 @@ func _show_bark(unit: Node, text: String, duration: float) -> void:
 	if label:
 		label.text = text
 
-	# Add to scene
+	# Add to scene tree
 	unit.get_tree().current_scene.add_child(popup)
 	_active_barks[unit_id] = popup
+	_bark_units[unit_id] = unit
 
 	# Position above unit head
 	var world_pos: Vector3 = unit.global_position + Vector3(0, 2.5, 0)
@@ -167,23 +176,24 @@ func _show_bark(unit: Node, text: String, duration: float) -> void:
 
 	bark_started.emit(unit, text)
 
-	# Animate: fade in, hold, fade out (no float - reserved for skill ups/status/discovery)
+	# Animate: fade in, hold, fade out
 	popup.modulate.a = 0.0
 	var tween := popup.create_tween()
 
-	# Fade in (0.2s)
+	# Fade in
 	tween.tween_property(popup, "modulate:a", 1.0, 0.2)
 
-	# Hold (duration - 0.7s for fade in/out)
+	# Hold
 	var hold_time := maxf(0.1, duration - 0.7)
 	tween.tween_interval(hold_time)
 
-	# Fade out only (0.5s)
+	# Fade out
 	tween.tween_property(popup, "modulate:a", 0.0, 0.5).set_ease(Tween.EASE_IN)
 
 	# Cleanup
 	tween.tween_callback(func():
 		_active_barks.erase(unit_id)
+		_bark_units.erase(unit_id)
 		bark_finished.emit(unit)
 		popup.queue_free()
 	)
@@ -232,6 +242,8 @@ func _enforce_bark_limit() -> void:
 		var popup: Node = _active_barks[unit_id]
 		if is_instance_valid(popup):
 			valid_barks[unit_id] = popup
+		else:
+			_bark_units.erase(unit_id)
 	_active_barks = valid_barks
 
 	# Remove oldest if over limit (simple approach: remove first)
@@ -241,6 +253,30 @@ func _enforce_bark_limit() -> void:
 		if is_instance_valid(oldest):
 			oldest.queue_free()
 		_active_barks.erase(first_key)
+		_bark_units.erase(first_key)
+
+
+func _update_bark_positions() -> void:
+	## Update all bark popups to track their units each frame.
+	if _active_barks.is_empty():
+		return
+
+	var camera := get_viewport().get_camera_3d()
+	if not camera:
+		return
+
+	for unit_id: int in _active_barks:
+		var popup: Control = _active_barks[unit_id]
+		var unit: Node = _bark_units.get(unit_id)
+
+		if not is_instance_valid(popup) or not is_instance_valid(unit):
+			continue
+
+		var panel: Control = popup.get_node_or_null("Panel")
+		if panel:
+			var world_pos: Vector3 = unit.global_position + Vector3(0, 2.5, 0)
+			var screen_pos := camera.unproject_position(world_pos)
+			panel.position = screen_pos - panel.size / 2.0
 
 
 # ============================================================================
@@ -283,3 +319,41 @@ func trigger_affirmation_bark(unit: Node) -> void:
 func trigger_idle_bark(unit: Node) -> void:
 	## Trigger random idle chatter.
 	bark(unit, "idle")
+
+
+func trigger_health_bark(unit: Node) -> void:
+	## Trigger when unit health drops below threshold.
+	if "health" in unit and unit.health < 15.0:
+		bark(unit, "health_critical")
+	else:
+		bark(unit, "health_low")
+
+
+func trigger_blizzard_bark(unit: Node) -> void:
+	## Trigger during blizzard conditions.
+	bark(unit, "blizzard")
+
+
+func trigger_warming_bark(unit: Node) -> void:
+	## Trigger when unit gets near fire.
+	bark(unit, "warming_up")
+
+
+func trigger_eating_bark(unit: Node) -> void:
+	## Trigger when unit eats food.
+	bark(unit, "eating")
+
+
+func trigger_resting_bark(unit: Node) -> void:
+	## Trigger when unit sits/rests.
+	bark(unit, "resting")
+
+
+func trigger_work_start_bark(unit: Node) -> void:
+	## Trigger when unit starts a work task.
+	bark(unit, "work_start")
+
+
+func trigger_death_nearby_bark(unit: Node) -> void:
+	## Trigger when another unit dies nearby.
+	bark_immediate(unit, _get_random_line("death_nearby", unit), 4.0)

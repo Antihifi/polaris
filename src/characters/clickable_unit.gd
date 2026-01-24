@@ -68,6 +68,8 @@ var is_animation_locked: bool = false
 var _time_manager: Node = null
 var _last_energy_signal: float = 100.0  # Track last energy value for signal emission
 var _terrain_cache: Node = null  # Cached Terrain3D reference for floor checks
+var _last_nav_warning_target: Vector3 = Vector3.INF  # Rate-limit nav warnings
+var _nav_finish_warned: bool = false  # Only warn once per navigation attempt
 
 ## Animation offset (0-1) to desync animations between units
 var animation_offset: float = 0.0
@@ -125,6 +127,11 @@ func _ready() -> void:
 	# Captain and discovered officers can discover errant units
 	if rank == UnitRank.CAPTAIN or (rank == UnitRank.OFFICER and is_discovered):
 		_setup_discovery_area()
+
+	# Add passive AI for player-controlled units (Captain, discovered Officers)
+	# Men have ManAIController; undiscovered officers get PassiveAI when discovered
+	if _should_have_passive_ai():
+		call_deferred("_add_passive_ai_controller")
 
 	# Get TimeManager reference for time scale
 	_time_manager = get_node_or_null("/root/TimeManager")
@@ -186,29 +193,21 @@ func _physics_process(delta: float) -> void:
 		if navigation_agent.is_navigation_finished():
 			# Debug: Check if we actually reached the target or gave up early
 			var dist_to_target := global_position.distance_to(navigation_agent.target_position)
-			if dist_to_target > 5.0:
+			if dist_to_target > 5.0 and not _nav_finish_warned:
 				print("[%s] NAV FINISHED but %.1fm from target! Pos: %s Target: %s" % [
 					unit_name, dist_to_target, global_position, navigation_agent.target_position])
+				_nav_finish_warned = true
 			velocity.x = 0.0
 			velocity.z = 0.0
 			is_moving = false
-			_play_animation("idle")
+			# Stay in carry pose if still carrying, otherwise idle
+			if not is_carrying():
+				_play_animation("idle")
 			_stop_footsteps()
 			reached_destination.emit()
 		else:
 			var next_pos: Vector3 = navigation_agent.get_next_path_position()
 			var dist_to_next := global_position.distance_to(next_pos)
-
-			# DEBUG: Log navigation state every frame when moving
-			var path_info := navigation_agent.get_current_navigation_path()
-			if Engine.get_physics_frames() % 60 == 0:  # Log once per second
-				print("[%s] NAV: path_points=%d next_pos=%s dist=%.2f target=%s" % [
-					unit_name, path_info.size(), next_pos, dist_to_next, navigation_agent.target_position])
-
-			# DEBUG: Detect potential stuck state (path position too close)
-			if dist_to_next < 0.1:
-				print("[%s] STUCK: next_pos=%.3fm away! pos=%s next=%s path_points=%d" % [
-					unit_name, dist_to_next, global_position, next_pos, path_info.size()])
 
 			# Note: Engine.time_scale handles speed scaling via move_and_slide() delta
 			var velocity_xz := (next_pos - global_position).normalized() * movement_speed
@@ -261,15 +260,6 @@ func _on_velocity_computed(safe_velocity: Vector3) -> void:
 	velocity.x = safe_velocity.x
 	velocity.z = safe_velocity.z
 	move_and_slide()
-
-	# DEBUG: Check if we actually moved (detect collision blocking)
-	# Note: At 1 m/s and 60fps, expect ~0.017m per frame. Threshold adjusted accordingly.
-	if is_moving and velocity.length() > 0.1:
-		var moved := get_position_delta().length()
-		var expected := velocity.length() / 60.0  # Rough expected movement per frame
-		if moved < expected * 0.1 and Engine.get_physics_frames() % 60 == 0:  # Less than 10% of expected = truly blocked
-			print("[%s] BLOCKED: velocity=%.2f but moved=%.3fm (expected ~%.3fm) on_floor=%s on_wall=%s" % [
-				unit_name, velocity.length(), moved, expected, is_on_floor(), is_on_wall()])
 
 
 func _on_navigation_finished() -> void:
@@ -357,22 +347,31 @@ func move_to(target_position: Vector3) -> void:
 	# (e.g., BTDynamicSelector aborting SitOnCrate mid-animation)
 	is_animation_locked = false
 
+	# Reset nav warning flag for new navigation attempt
+	_nav_finish_warned = false
+
 	navigation_agent.target_position = target_position
 	is_moving = true
-	_play_animation("walking")
+	# Use carry animation if carrying something
+	if is_carrying():
+		_play_animation("carry_walk")
+	else:
+		_play_animation("walking")
 	_start_footsteps()
 	_update_speed_scale()
 
-	# Debug: Log path info to diagnose NavMesh issues
+	# Debug: Log path info to diagnose NavMesh issues (rate-limited per unique target)
 	var nav_map := navigation_agent.get_navigation_map()
 	if nav_map.is_valid():
 		var closest_on_nav := NavigationServer3D.map_get_closest_point(nav_map, target_position)
 		var snap_distance := target_position.distance_to(closest_on_nav)
-		if snap_distance > 1.0:
+		# Only warn once per unique target (within 0.5m tolerance)
+		if snap_distance > 1.0 and target_position.distance_to(_last_nav_warning_target) > 0.5:
+			_last_nav_warning_target = target_position
 			print("[%s] WARNING: Target snapped %.1fm! Clicked: %s -> NavMesh: %s" % [
 				unit_name, snap_distance, target_position, closest_on_nav])
 		var path := NavigationServer3D.map_get_path(nav_map, global_position, target_position, true)
-		if path.size() < 2:
+		if path.size() < 2 and target_position.distance_to(_last_nav_warning_target) > 0.5:
 			print("[%s] ERROR: No path found to target!" % unit_name)
 
 
@@ -384,7 +383,9 @@ func stop() -> void:
 	# Setting velocity to zero stops avoidance computation.
 	navigation_agent.target_position = global_position
 	navigation_agent.set_velocity(Vector3.ZERO)
-	_play_animation("idle")
+	# Stay in carry pose if still carrying, otherwise idle
+	if not is_carrying():
+		_play_animation("idle")
 	_stop_footsteps()
 
 
@@ -676,6 +677,44 @@ func eat_food_item(item: InventoryItem) -> void:
 	stats_changed.emit()
 	print("[ClickableUnit] %s ate %s (+%.0f hunger)" % [unit_name, item.get_property("name", "food"), nutrition])
 
+
+## Computed property for BT stat checks - exposes has_food_in_inventory() as property
+var inventory_has_food: bool:
+	get: return has_food_in_inventory()
+
+
+func has_item_by_category(category: String) -> bool:
+	## Check if unit has any item of the specified category.
+	## Used for item prerequisite checks (e.g., "tool" for melee combat).
+	if not inventory:
+		return false
+	for item in inventory.get_items():
+		if item.get_property("category", "misc") == category:
+			return true
+	return false
+
+
+func has_item_by_id(prototype_id: String) -> bool:
+	## Check if unit has a specific item by prototype ID.
+	## Used for item prerequisite checks (e.g., "knife" for cannibalism).
+	if not inventory:
+		return false
+	for item in inventory.get_items():
+		if item.prototype_id == prototype_id:
+			return true
+	return false
+
+
+func get_item_by_id(prototype_id: String) -> InventoryItem:
+	## Get first item matching prototype ID, or null if not found.
+	if not inventory:
+		return null
+	for item in inventory.get_items():
+		if item.prototype_id == prototype_id:
+			return item
+	return null
+
+
 # --- Environmental Detection (Warmth/Shelter) ---
 # Tracking is populated by WarmthArea/ShelterArea body_entered/exited signals.
 
@@ -800,6 +839,13 @@ func discover() -> void:
 	# Show discovery UI popup
 	_show_discovery_popup()
 
+	# Discovery bark from the found unit
+	var rank_prefix := ""
+	match rank:
+		UnitRank.OFFICER: rank_prefix = "Lt. "
+		UnitRank.CAPTAIN: rank_prefix = "Captain "
+	bark_now("It's %s%s! We're saved!" % [rank_prefix, unit_name], 4.0)
+
 	discovered.emit(self)
 	print("[ClickableUnit] %s has been discovered and recruited!" % unit_name)
 
@@ -807,10 +853,41 @@ func discover() -> void:
 func _transition_to_player_control() -> void:
 	## Remove AI controller from officer when discovered.
 	## Officers become directly controllable like captain.
+	## Add passive AI for self-care behaviors (eating from inventory).
 	var ai_controller := get_node_or_null("ManAIController")
 	if ai_controller:
 		ai_controller.queue_free()
 		print("[ClickableUnit] %s transitioned to player control" % unit_name)
+
+	# Add passive AI controller for self-care (eating when hungry)
+	_add_passive_ai_controller()
+
+
+func _should_have_passive_ai() -> bool:
+	## Returns true if unit should have PassiveAIController.
+	## Captain and discovered officers are player-controlled and need passive AI.
+	## Men have ManAIController; undiscovered officers get it when discovered.
+	if rank == UnitRank.CAPTAIN:
+		return true
+	if rank == UnitRank.OFFICER and is_discovered:
+		# Only if no ManAIController (spawned directly as discovered officer)
+		return get_node_or_null("ManAIController") == null
+	return false
+
+
+func _add_passive_ai_controller() -> void:
+	## Add PassiveAIController for self-care behaviors (eating when hungry).
+	## Skip if already present.
+	if get_node_or_null("PassiveAIController"):
+		return
+
+	var passive_script: GDScript = load("res://ai/passive_ai_controller.gd")
+	if passive_script:
+		var passive_controller := Node.new()
+		passive_controller.name = "PassiveAIController"
+		passive_controller.set_script(passive_script)
+		add_child(passive_controller)
+		print("[ClickableUnit] %s now has passive AI" % unit_name)
 
 
 func _show_discovery_popup() -> void:
@@ -903,10 +980,18 @@ func _clear_player_command() -> void:
 func get_current_action() -> String:
 	## Returns the current action for UI display.
 	## AI-controlled units (Men) delegate to ManAIController.
-	## Player-controlled units (Officers/Captain) check movement state.
+	## Player-controlled units (Officers/Captain) check PassiveAIController first,
+	## then fall back to movement state.
 	var ai_controller: Node = get_node_or_null("ManAIController")
 	if ai_controller and ai_controller.has_method("get_current_action"):
 		return ai_controller.get_current_action()
+
+	# Check passive AI controller (Officers/Captain self-care behaviors)
+	var passive_controller: Node = get_node_or_null("PassiveAIController")
+	if passive_controller and passive_controller.has_method("get_current_action"):
+		var action: String = passive_controller.get_current_action()
+		if action != "Idle":
+			return action
 
 	# Player-controlled units: check movement state
 	if is_moving:
@@ -1065,6 +1150,21 @@ func get_movement_velocity() -> Vector3:
 ## Cached BarkManager reference
 var _bark_manager: Node = null
 
+# ============================================================================
+# CARRY SYSTEM (hauling materials)
+# ============================================================================
+
+## Currently carried item (attached to hands)
+var _carried_item: Node3D = null
+## Material being carried (for BT tasks)
+var _carried_material_id: String = ""
+var _carried_amount: int = 0
+## Bone attachments for carrying (found at runtime)
+var _right_hand_attachment: BoneAttachment3D = null
+var _left_hand_attachment: BoneAttachment3D = null
+## Plank scene for hauling wood
+var _plank_scene: PackedScene = preload("res://objects/wood_planks/plank_1.tscn")
+
 func bark(category: String, duration: float = -1.0) -> bool:
 	## Show a random bark from category above this unit.
 	## Returns false if on cooldown or BarkManager unavailable.
@@ -1092,3 +1192,188 @@ func bark_now(text: String, duration: float = -1.0) -> void:
 		_bark_manager = get_node_or_null("/root/BarkManager")
 	if _bark_manager:
 		_bark_manager.bark_immediate(self, text, duration)
+
+
+# ============================================================================
+# CARRY SYSTEM METHODS
+# ============================================================================
+
+func _find_hand_attachments() -> void:
+	## Find bone attachments for hands (called lazily on first carry).
+	if _right_hand_attachment and _left_hand_attachment:
+		return
+
+	# Look for UnitModel/Skeleton/RightHand and LeftHand
+	var skeleton: Node = get_node_or_null("UnitModel/Skeleton")
+	if skeleton:
+		_right_hand_attachment = skeleton.get_node_or_null("RightHand") as BoneAttachment3D
+		_left_hand_attachment = skeleton.get_node_or_null("LeftHand") as BoneAttachment3D
+
+
+func start_carrying(material_id: String, amount: int) -> void:
+	## Start carrying materials - instantiates visual and plays carry animation.
+	## Called by BT haul tasks after gathering.
+	if _carried_item:
+		return
+
+	_carried_material_id = material_id
+	_carried_amount = amount
+	_find_hand_attachments()
+
+	var item: Node3D = _create_carried_item(material_id)
+	if not item:
+		return
+
+	_carried_item = item
+
+	# Cradle carry - attach to character at chest height for two-handed carry animation.
+	add_child(item)
+	item.position = Vector3(0, 1.0, 0.35)  # Chest height, slightly forward
+	item.rotation_degrees = Vector3(0, 0, 0)  # Horizontal plank
+	item.scale = Vector3(0.6, 0.6, 0.6)
+
+	_disable_item_collision(item)
+	_play_animation("carry_walk")
+	print("[%s] Started carrying %s x%d" % [unit_name, material_id, amount])
+
+
+func stop_carrying() -> Dictionary:
+	## Stop carrying and return what was carried.
+	## Returns {"material_id": String, "amount": int}
+	var result: Dictionary = {
+		"material_id": _carried_material_id,
+		"amount": _carried_amount
+	}
+
+	# Remove visual
+	if _carried_item and is_instance_valid(_carried_item):
+		_carried_item.queue_free()
+	_carried_item = null
+
+	# Clear state
+	_carried_material_id = ""
+	_carried_amount = 0
+
+	# Return to normal animation
+	if is_moving:
+		_play_animation("walking")
+	else:
+		_play_animation("idle")
+
+	print("[%s] Stopped carrying" % unit_name)
+	return result
+
+
+func is_carrying() -> bool:
+	## Check if unit is currently carrying something.
+	return _carried_item != null and is_instance_valid(_carried_item)
+
+
+func get_carried_material() -> Dictionary:
+	## Get info about what's being carried.
+	return {
+		"material_id": _carried_material_id,
+		"amount": _carried_amount
+	}
+
+
+func pick_up_item(item: Node3D) -> void:
+	## Pick up an existing item from the world (generalized carry).
+	if _carried_item:
+		drop_item()
+
+	_find_hand_attachments()
+	_carried_item = item
+
+	var attachment: BoneAttachment3D = _right_hand_attachment if _right_hand_attachment else _left_hand_attachment
+	if attachment:
+		item.reparent(attachment)
+		item.transform = Transform3D.IDENTITY
+	else:
+		item.reparent(self)
+		item.position = Vector3(0, 1.5, 0.3)
+
+	_disable_item_collision(item)
+	_play_animation("carry_walk")
+
+
+func drop_item() -> Node3D:
+	## Drop carried item in front of unit. Returns the dropped item.
+	if not _carried_item or not is_instance_valid(_carried_item):
+		_carried_item = null
+		return null
+
+	var item: Node3D = _carried_item
+	_carried_item = null
+	_carried_material_id = ""
+	_carried_amount = 0
+
+	# Reparent to scene and position in front
+	item.reparent(get_tree().current_scene)
+	var forward: Vector3 = -global_transform.basis.z.normalized()
+	item.global_position = global_position + forward * 1.0 + Vector3(0, 0.5, 0)
+
+	# Re-enable collision
+	_enable_item_collision(item)
+
+	if is_moving:
+		_play_animation("walking")
+	else:
+		_play_animation("idle")
+
+	return item
+
+
+func _create_carried_item(material_id: String) -> Node3D:
+	## Create visual for carried material.
+	match material_id:
+		"scrap_wood", "wood", "planks":
+			if _plank_scene:
+				return _plank_scene.instantiate()
+		"nails":
+			# Could add a nail box visual later
+			pass
+
+	# Fallback: simple box mesh
+	var mesh_instance := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.3, 0.1, 0.6)
+	mesh_instance.mesh = box
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.6, 0.4, 0.2)  # Brown for generic material
+	mesh_instance.material_override = mat
+	return mesh_instance
+
+
+func _disable_item_collision(item: Node) -> void:
+	## Recursively disable collision on carried item.
+	if item is CollisionShape3D:
+		(item as CollisionShape3D).disabled = true
+	elif item is CollisionPolygon3D:
+		(item as CollisionPolygon3D).disabled = true
+	elif item is StaticBody3D:
+		(item as StaticBody3D).collision_layer = 0
+		(item as StaticBody3D).collision_mask = 0
+	elif item is RigidBody3D:
+		var rb: RigidBody3D = item as RigidBody3D
+		rb.collision_layer = 0
+		rb.collision_mask = 0
+		rb.freeze = true
+	elif item is Area3D:
+		(item as Area3D).collision_layer = 0
+		(item as Area3D).collision_mask = 0
+
+	for child in item.get_children():
+		_disable_item_collision(child)
+
+
+func _enable_item_collision(item: Node) -> void:
+	## Re-enable collision on dropped item.
+	if item is CollisionShape3D:
+		(item as CollisionShape3D).disabled = false
+	elif item is RigidBody3D:
+		var rb: RigidBody3D = item as RigidBody3D
+		rb.freeze = false
+
+	for child in item.get_children():
+		_enable_item_collision(child)

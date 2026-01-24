@@ -303,6 +303,9 @@ func _update_survivor_needs() -> void:
 				near_fire = node.is_near_fire()
 			node.update_needs(1.0, in_shelter, near_fire, temp, in_sunlight, blizzard)
 
+	# Trigger ambient barks (Kenshi-style flavor dialog)
+	_trigger_ambient_barks(survivors)
+
 
 # --- Time Control ---
 
@@ -518,3 +521,88 @@ func reduce_rescue_timer(days: int) -> void:
 	## Reduce days until rescue (from expedition signals, etc.).
 	days_until_rescue = maxi(1, days_until_rescue - days)
 	rescue_approaching.emit(days_until_rescue)
+
+
+# --- Ambient Bark System ---
+
+## Chance (0.0-1.0) that any bark triggers each hour
+@export var bark_chance_per_hour: float = 0.4
+
+func _trigger_ambient_barks(survivors: Array) -> void:
+	## Trigger ambient barks from 1-2 random units each hour.
+	## Barks reflect current conditions (cold, hungry, etc.) or idle chatter.
+	if survivors.is_empty():
+		return
+
+	# Random chance to trigger barks this hour
+	if randf() > bark_chance_per_hour:
+		return
+
+	# Pick 1-2 random units to bark
+	var bark_count := randi_range(1, 2)
+	var shuffled: Array = survivors.duplicate()
+	shuffled.shuffle()
+
+	for i in mini(bark_count, shuffled.size()):
+		var unit: Node = shuffled[i]
+		if not unit.has_method("bark"):
+			continue
+
+		# Skip dead units
+		if "is_dead" in unit and unit.is_dead:
+			continue
+
+		var category := _pick_bark_category(unit)
+		unit.bark(category)
+
+
+func _pick_bark_category(unit: Node) -> String:
+	## Choose bark category based on unit's current state.
+	## Prioritizes urgent/critical conditions over idle chatter.
+
+	# Critical health - highest priority
+	if "health" in unit and unit.health < 15.0:
+		return "health_critical"
+
+	# Critical stats (< 20)
+	if "warmth" in unit and unit.warmth < 20.0:
+		return "cold"
+	if "hunger" in unit and unit.hunger < 20.0:
+		return "hunger"
+	if "energy" in unit and unit.energy < 20.0:
+		return "exhaustion"
+
+	# Low health
+	if "health" in unit and unit.health < 40.0:
+		return "health_low"
+
+	# Low stats (< 35)
+	if "warmth" in unit and unit.warmth < 35.0:
+		return "cold"
+	if "hunger" in unit and unit.hunger < 35.0:
+		return "hunger"
+	if "energy" in unit and unit.energy < 35.0:
+		return "exhaustion"
+	if "morale" in unit and unit.morale < 35.0:
+		return "morale_low"
+
+	# Blizzard check
+	if is_blizzard() and randf() < 0.5:
+		return "blizzard"
+
+	# Night-specific barks
+	if is_nighttime() and randf() < 0.25:
+		return "darkness"
+
+	# Positive states (high morale)
+	if "morale" in unit and unit.morale > 75.0:
+		if randf() < 0.3:
+			return "morale_high"
+
+	# Near fire - warming up
+	if unit.has_method("is_near_fire") and unit.is_near_fire():
+		if randf() < 0.3:
+			return "warming_up"
+
+	# Default to idle chatter
+	return "idle"

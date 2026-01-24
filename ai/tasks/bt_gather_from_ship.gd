@@ -1,23 +1,17 @@
 @tool
 extends BTAction
 class_name BTGatherFromShip
-## Moves to ship and gathers materials from ship's resource pool.
-## Returns RUNNING while moving/gathering, SUCCESS when done.
+## Gathers materials from ship's resource pool.
+## ASSUMES agent is already at the ship (use BTMoveToBlackboard first).
+## Returns SUCCESS after gathering, FAILURE if ship exhausted.
 
-## Blackboard variable for target position.
-@export var target_position_var: StringName = &"target_position"
 ## Blackboard variable for work target (ship).
 @export var work_target_var: StringName = &"work_target"
-## Blackboard variable for carried materials.
-@export var carried_materials_var: StringName = &"carried_materials"
-## Distance to consider "arrived" at ship.
-@export var arrival_distance: float = 5.0
 ## Time to spend gathering (seconds).
-@export var gather_time: float = 3.0
+@export var gather_time: float = 2.0
 
-var _gathering: bool = false
 var _gather_timer: float = 0.0
-var _moving: bool = false
+var _started: bool = false
 
 
 func _generate_name() -> String:
@@ -25,9 +19,8 @@ func _generate_name() -> String:
 
 
 func _enter() -> void:
-	_gathering = false
 	_gather_timer = 0.0
-	_moving = false
+	_started = false
 
 
 func _tick(delta: float) -> Status:
@@ -35,64 +28,63 @@ func _tick(delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var ship: Node3D = blackboard.get_var(work_target_var, null) as Node3D
+	# Get ship from target_node (set by BTFindNearestResource).
+	var target_node: Node3D = blackboard.get_var(&"target_node", null)
+	var ship: Node3D = _find_ship_from_node(target_node)
 	if not ship:
 		return FAILURE
 
-	var agent_pos: Vector3 = agent.global_position
-	var ship_pos: Vector3 = ship.global_position
-	var dist: float = agent_pos.distance_to(ship_pos)
+	# Start gathering.
+	if not _started:
+		if agent.has_method("stop"):
+			agent.stop()
+		_started = true
+		blackboard.set_var(&"current_action", "Gathering")
 
-	# Phase 1: Move to ship
-	if dist > arrival_distance:
-		if not _moving:
-			agent.move_to(ship_pos)
-			_moving = true
-			blackboard.set_var(&"current_action", "Walking to ship")
-		return RUNNING
-
-	# Phase 2: Stop and gather
-	if not _gathering:
-		agent.stop()
-		_gathering = true
-		_gather_timer = 0.0
-		blackboard.set_var(&"current_action", "Gathering materials")
-
-	# Wait for gather time
+	# Wait for gather time.
 	_gather_timer += delta
 	if _gather_timer < gather_time:
 		return RUNNING
 
-	# Phase 3: Actually gather materials
+	# Gather materials.
 	var ship_resource: Node = _find_ship_resource(ship)
 	if not ship_resource:
 		return FAILURE
 
-	# Calculate efficiency (Resourceful trait = 1.25)
 	var efficiency: float = _get_gather_efficiency(agent)
-
-	# Gather materials
 	var gathered: Dictionary = {}
-	if ship_resource.has_method("gather_any_material"):
-		gathered = ship_resource.gather_any_material(efficiency)
-	elif ship_resource.has_method("gather_material"):
-		gathered = ship_resource.gather_material("scrap_wood", 5, efficiency)
+
+	if ship_resource.has_method("gather_material"):
+		gathered = ship_resource.gather_material("scrap_wood", 1, efficiency)
 
 	if gathered.is_empty() or gathered.get("amount", 0) <= 0:
-		# Ship exhausted
 		blackboard.set_var(&"current_action", "Ship exhausted")
 		return FAILURE
 
-	# Store gathered materials in blackboard
-	var carried: Dictionary = blackboard.get_var(carried_materials_var, {})
+	# Start carrying.
 	var mat_id: String = gathered.get("material_id", "")
 	var amount: int = gathered.get("amount", 0)
-	carried[mat_id] = carried.get(mat_id, 0) + amount
-	blackboard.set_var(carried_materials_var, carried)
+	if agent.has_method("start_carrying"):
+		agent.start_carrying(mat_id, amount)
 
-	print("[BTGatherFromShip] Gathered %d %s" % [amount, mat_id])
-
+	blackboard.set_var(&"current_action", "Carrying " + mat_id)
 	return SUCCESS
+
+
+func _find_ship_from_node(node: Node3D) -> Node3D:
+	## Find ship Node3D from Area3D node (traverse up to find ship_resources group).
+	if not node:
+		return null
+	var current: Node = node
+	while current:
+		if current.is_in_group("ship_resources"):
+			if current is Node3D:
+				return current as Node3D
+			var parent: Node = current.get_parent()
+			if parent is Node3D:
+				return parent as Node3D
+		current = current.get_parent()
+	return null
 
 
 func _find_ship_resource(ship: Node) -> Node:
@@ -106,11 +98,8 @@ func _find_ship_resource(ship: Node) -> Node:
 func _get_gather_efficiency(agent: Node) -> float:
 	## Get gathering efficiency from traits.
 	var efficiency: float = 1.0
-
 	if "stats" in agent and agent.stats:
-		# Check for Resourceful trait
 		if agent.stats.has_method("has_trait"):
 			if agent.stats.has_trait("resourceful"):
 				efficiency *= 1.25
-
 	return efficiency
