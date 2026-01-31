@@ -173,7 +173,7 @@ Skills are displayed as icons and are earned by surviving in the arctic. These a
 |-------|--------|--------|
 | **Captain's Presence** | LARGE morale buff to units in LARGE proximity | N/A (Captain only) |
 | **Well Liked** | Morale buff to units in proximity | Single level |
-| **Polar Navigation** | Compensates for unreliable compass; at higher levels provides pathfinding hints for routes through ice fields/mountains | 3 levels |
+| **Polar Navigation** | +0.05m camera view height per skill point (max +5m); compensates for unreliable compass; at higher levels provides pathfinding hints for routes through ice fields/mountains | 3 levels |
 
 **Skill Acquisition:**
 - Skills are unlocked based on time survived
@@ -466,6 +466,10 @@ Men contribute to construction tasks autonomously when their condition allows:
 - **Zoom:** Mouse wheel
 - **Rotation:** Middle mouse drag (yaw/pitch orbit)
 - **Speed Boost:** Hold Shift
+- **Focus:** Only Officers and Captain can be camera-focused. Selecting Men does not move the camera.
+- **View Distance:** Camera max height is restricted based on the focused officer's navigation equipment:
+  - Base: 25m | Spyglass: +10m | Sextant: +10m | Navigation skill: up to +5m
+  - Maximum possible: 50m (both items + max skill). Creates exploration progression.
 
 ### Selection
 - **Single Select:** Left click character
@@ -589,7 +593,20 @@ At new game start:
 - Blizzard (extreme cold, no visibility, no travel)
 - Fog (reduced visibility)
 - Clear skies (normal conditions)
-- Aurora (morale boost)
+- Aurora borealis (see below)
+
+### Aurora Borealis
+- **Visual:** Raymarched volumetric green/teal glow in the night sky using a BoxMesh with a spatial shader
+- **Conditions:** Clear night sky only — cannot occur during snow/blizzard (would be hidden anyway)
+- **Probability:** ~15% base chance per eligible hour, modified by season and temperature:
+  - Winter: 2x multiplier
+  - Autumn/Spring: 1.3x multiplier
+  - Summer: 0.3x multiplier (rare but possible in arctic)
+  - Temperature below -25°C: 1.5x boost
+  - Temperature below -35°C: 2x boost
+- **Duration:** 2-6 game hours per occurrence
+- **Effect:** Morale boost to all survivors while visible (+2 morale/hour)
+- **Implementation:** `AuroraController` in `src/effects/`, integrates with `TimeManager` and `DynamicWeatherController`
 
 ---
 
@@ -637,6 +654,8 @@ At new game start:
 - Saw (construction)
 - Hunting Rifle (hunting, combat)
 - Harpoon (hunting)
+- Spyglass (navigation — +10m camera view height when held by focused officer)
+- Sextant (navigation — +10m camera view height when held by focused officer)
 
 **Weapons:**
 - Rifle (ranged)
@@ -646,6 +665,88 @@ At new game start:
 ### Inventory System
 - **Personal Inventory:** Each survivor carries items (weight limit based on Strength)
 - **Stockpile:** Shared camp storage, survivors haul to/from
+
+### Gradual Ship Destruction
+
+**Purpose:** Both cinematic/historical authenticity and a gameplay timer that encourages players to maximize resource extraction early.
+
+**Overview:** The Erebus will be gradually crushed by ice and claimed by the sea over the course of the game. This creates urgency around salvage operations and provides dramatic set-piece moments as the ship breaks apart.
+
+#### Ship Object Groups
+
+The Erebus is divided into approximately 20 major object groups representing ship systems:
+
+| Object Group | Destruction Order | Resources |
+|--------------|-------------------|-----------|
+| Fore Rigging | Early | Rope, Canvas |
+| Aft Rigging | Early | Rope, Canvas |
+| Bowsprit | Early-Mid | Wood |
+| Foremast | Mid | Wood, Rope |
+| Mainmast | Mid | Wood, Rope |
+| Aftmast | Mid | Wood, Rope |
+| Upper Deck | Mid-Late | Wood Planks, Nails |
+| Lower Deck | Late | Wood Planks, Nails |
+| Left Hull | Late | Wood, Nails, Scrap Metal |
+| Right Hull | Late | Wood, Nails, Scrap Metal |
+| Stern | Late | Wood, Nails |
+| Bow | Late | Wood, Scrap Metal |
+| Captain's Quarters | Late | Wood, Canvas, Furniture |
+| Cargo Hold | Final | Remaining supplies |
+
+#### Destruction Sequence
+
+The ship breaks apart in a realistic sequence:
+
+1. **Rigging Failure** - Ice pressure snaps ropes and tears canvas; masts become unstable
+2. **Mast Collapse** - Weakened masts break and fall, damaging deck sections
+3. **Hull Breach** - Ice pierces the hull; wood splinters and fractures
+4. **Deck Collapse** - Structural integrity fails; decks cave in
+5. **Final Sinking** - Remaining hull sections succumb; ship is claimed by the sea
+
+#### Physics & Performance
+
+Each object group is fractured into 30-100 individual physics objects using cell fracture techniques. Performance optimization strategies:
+
+| Technique | Description |
+|-----------|-------------|
+| **LOD Swapping** | Erebus initially renders as a single low-poly model. As each group begins destruction, it swaps to the fractured version minus already-destroyed sections |
+| **Pre-baked Physics** | Fracture simulations computed in background during gameplay. When destruction triggers, physics playback is cheap |
+| **Async Computation** | Fracture calculations happen during normal gameplay, queued for when needed |
+| **Object Pooling** | Debris objects are pooled and recycled to minimize instantiation costs |
+
+**Fracture Tools (Implementation Options):**
+- **Cell Fracture (Blender)** - Pre-computed fractures baked into assets
+- **[godot-smashthemesh](https://github.com/cloudofoz/godot-smashthemesh/)** - Runtime fracturing if visually appealing and performant
+
+#### Gameplay Implications
+
+**Temporary Resource Boon:**
+- Ship fragments that fall become harvestable debris
+- Rich in wood, nails, sailcloth, food, and other salvage
+- Fragments are scattered unpredictably - creates scramble to collect before weather/wildlife claims them
+
+**Non-Renewable Resource:**
+- The ship cannot be repaired or restored
+- Once gone, its resources are gone forever
+- Unlike traditional survival games, there are **no trees** on the island, **little to hunt**
+- Forces careful long-term resource management from day one
+
+**Strategic Pressure:**
+- Early game: Race to salvage before destruction events
+- Mid game: Ship provides diminishing returns as sections are lost
+- Late game: Ship is gone; players must survive on what they've stockpiled and scavenged
+
+**Cinematic Value:**
+- Each destruction event is a visual spectacle
+- Provides narrative beats matching historical accounts of ships crushed by ice
+- Reinforces the hopelessness and urgency of the survivors' situation
+
+**Implementation Details:**
+See [tools/CLAUDE.md](tools/CLAUDE.md) for detailed technical documentation including:
+- DemolitionTestController (staged destruction with key controls)
+- ShipSinkController (sinking animation with rumble sounds)
+- Sound integration (wood crashing, ground impacts, continuous creaking)
+- Test scene: `objects/erebus4/erebus_physics_test.tscn`
 
 ---
 
@@ -850,6 +951,58 @@ Requires: Sled (crafted at Workshop)
 - Day/night lighting
 - Weather particles (snow)
 - Smooth 60fps on mid-range hardware
+
+---
+
+## Demo / Quickplay Mode
+
+A condensed, showable version of the full game designed for indie dev nights and demos.
+
+### Demo Overview
+- **Map Size:** 2x2km procedurally-generated island (random seed each play)
+- **Crew:** 8-12 men + 1-2 officers at base camp, plus 1-2 errant groups scattered 500-900m from ship
+- **Duration:** ~7 in-game days before the ship is fully destroyed
+- **Objective:** Build a sled and reach open water at the south coast before the ship sinks and resources run out
+
+### Ship Destruction Timeline
+The trapped ship is actively being crushed by ice and sinking. Destruction is automated and progressive:
+
+| Days | Phase | Events Per Day |
+|------|-------|----------------|
+| 1-2 | Rigging & Shrouds | 1-3 explosive events, rigging snaps and falls |
+| 2-4 | Shrouds & Masts | 1-3 explosive events, masts shake and collapse top-down |
+| 3-5 | Hull & Deck | 1-3 explosive events, hull pieces blown outward |
+| 3-7 | Sinking | 0-1 sink events, ship descends incrementally with roll/pitch |
+| 7 | Final | Ship fully degraded, remaining structure collapses |
+
+Ship resources (wood, nails, sailcloth) remain gatherable at ground level as the ship sinks, allowing continued salvage operations until destruction is complete.
+
+### Win Condition
+Get a built sled from the starting area to the open water Area3D at the south coast. The sled must be constructed by the player (not pre-spawned).
+
+**Sled Recipe (Demo):** 10 scrap_wood + 5 nails, 3-day build time (reduced from full game's 10 days)
+
+### Scoring
+Additional points awarded based on camp management:
+
+| Metric | Points | Description |
+|--------|--------|-------------|
+| Survivors alive | 500 each | Total living crew at win |
+| Men in good condition | 200 each | All 5 core stats above 50% |
+| Errant men found | 300 each | Discovered and recruited scattered groups |
+| Tents built | 150 each | Completed tent constructions |
+| Food stockpiled | 50 each | Individual food items in containers |
+
+### Lose Condition
+All survivors dead.
+
+### Key Differences from Full Game
+- 2km island vs 10km (faster terrain generation, tighter gameplay)
+- Ship actively sinking (creates urgent resource extraction pressure)
+- No pre-built sled (forces engagement with crafting/construction system)
+- Shorter build times (3-day sled vs 10-day)
+- Smaller crew (more manageable for new players/spectators)
+- Clear win objective (reach open water) vs full game's long-term survival
 
 ---
 

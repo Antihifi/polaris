@@ -24,6 +24,8 @@ enum UnitRank { MAN, OFFICER, CAPTAIN }
 ## Movement speed in units/second. Also controls animation and footstep sound speed.
 @export var movement_speed: float = 1.0
 @export var rotation_speed: float = 10.0
+## Speed multiplier (set by BT for carrying penalty, etc.)
+var speed_multiplier: float = 1.0
 
 @export_category("Debug")
 ## DEBUG: Bypass navigation and walk in facing direction. Used to isolate physics vs navigation issues.
@@ -167,7 +169,14 @@ func _physics_process(delta: float) -> void:
 		return
 
 	if not is_moving:
+		# Reset speed multiplier when idle
+		if speed_multiplier != 1.0 and not _is_encumbered():
+			speed_multiplier = 1.0
+			_update_speed_scale()
 		return
+
+	# Update speed multiplier for encumbrance (sled pulling or carrying)
+	_update_encumbrance_speed()
 
 	# =========================================================================
 	# DEBUG MODE: Bypass navigation, walk in facing direction
@@ -210,7 +219,7 @@ func _physics_process(delta: float) -> void:
 			var dist_to_next := global_position.distance_to(next_pos)
 
 			# Note: Engine.time_scale handles speed scaling via move_and_slide() delta
-			var velocity_xz := (next_pos - global_position).normalized() * movement_speed
+			var velocity_xz := (next_pos - global_position).normalized() * movement_speed * speed_multiplier
 			velocity.x = velocity_xz.x
 			velocity.z = velocity_xz.z
 
@@ -513,13 +522,13 @@ func _update_speed_scale() -> void:
 	# Animation: scale by both movement speed and time scale
 	# Animation speed_scale can be 0 (paused), but we use maxf to prevent negative values
 	if animation_player:
-		animation_player.speed_scale = maxf(0.0, base_animation_speed * movement_speed * time_scale)
+		animation_player.speed_scale = maxf(0.0, base_animation_speed * movement_speed * speed_multiplier * time_scale)
 
 	# Footsteps: scale pitch by both movement speed and time scale
 	# IMPORTANT: pitch_scale must be > 0 or Godot throws an error
 	# When paused (time_scale=0), we stop footsteps instead of setting pitch to 0
 	if is_instance_valid(_footstep_player):
-		var pitch := base_footstep_speed * movement_speed * time_scale
+		var pitch := base_footstep_speed * movement_speed * speed_multiplier * time_scale
 		if pitch > 0.01:  # Minimum viable pitch
 			_footstep_player.pitch_scale = pitch
 		else:
@@ -530,13 +539,25 @@ func _update_speed_scale() -> void:
 
 # --- Survival Needs ---
 
+## Carry weights (kg) for encumbrance calculations
+const CARRY_WEIGHTS: Dictionary = {
+	"scrap_wood": 15.0, "wood": 15.0, "planks": 15.0,
+	"nails": 5.0, "nails_box": 5.0,
+	"scrap_sails": 10.0, "sails": 10.0, "sail_cloth": 10.0,
+}
+
 ## Energy drain per real second of walking at 1x time scale and perfect condition.
 ## Walking for 1 real minute at 1x = 0.5 energy. 1 hour real time = 30 energy.
 ## At 4x speed, delta is scaled by Engine.time_scale, so drain is automatically 4x faster.
 const BASE_WALKING_ENERGY_DRAIN: float = 0.5
 
+## Base hunger drain per real second while walking encumbered (sled or carrying heavy items)
+const BASE_WALKING_HUNGER_DRAIN: float = 0.1
+
 func _drain_walking_energy(delta: float) -> void:
 	## Drain energy while walking. Delta is already scaled by Engine.time_scale.
+	## Encumbered units (sled pulling or carrying) drain 15-25% more energy
+	## and also drain hunger while walking.
 	if not stats or delta <= 0.0:
 		return
 
@@ -546,13 +567,76 @@ func _drain_walking_energy(delta: float) -> void:
 	# Multiply by condition-based drain modifier
 	drain *= stats.get_energy_drain_multiplier()
 
+	# Encumbrance penalty: 15-25% extra energy drain when pulling sled or carrying
+	var encumbrance_mult := _get_encumbrance_multiplier()
+	drain *= encumbrance_mult
+
 	# Apply the drain
 	stats.energy -= drain
+
+	# Encumbered walking also drains hunger (hauling burns more calories)
+	if encumbrance_mult > 1.0:
+		var hunger_drain := BASE_WALKING_HUNGER_DRAIN * delta * encumbrance_mult
+		stats.hunger -= hunger_drain
 
 	# Emit signal if significant change (every 1 energy lost) to update UI
 	if absf(stats.energy - _last_energy_signal) >= 1.0:
 		_last_energy_signal = stats.energy
 		stats_changed.emit()
+
+
+func _is_encumbered() -> bool:
+	## Returns true if unit is pulling a sled or carrying heavy items.
+	if sled_puller and sled_puller.is_pulling():
+		return true
+	if is_carrying() and _carried_item_weight > 0.0:
+		return true
+	return false
+
+
+func _get_encumbrance_multiplier() -> float:
+	## Returns energy/hunger drain multiplier for encumbered state.
+	## 1.0 = not encumbered. 1.15-1.25 = pulling sled or carrying heavy items.
+	## Scales with both current strength and item weight.
+	if not stats:
+		return 1.0
+
+	if sled_puller and sled_puller.is_pulling():
+		# Sled: scale with strength only (sled is inherently heavy)
+		var str_weakness: float = 1.0 - stats.current_strength / 100.0
+		return 1.0 + lerpf(0.15, 0.25, str_weakness)
+
+	if is_carrying() and _carried_item_weight > 0.0:
+		# Carrying: combine strength weakness and weight burden
+		var str_weakness: float = 1.0 - stats.current_strength / 100.0
+		var weight_burden: float = _carried_item_weight / 15.0  # 15kg = max carry weight
+		var combined: float = (str_weakness + weight_burden) / 2.0
+		return 1.0 + lerpf(0.15, 0.25, clampf(combined, 0.0, 1.0))
+
+	return 1.0
+
+
+func _update_encumbrance_speed() -> void:
+	## Recalculate speed_multiplier based on encumbrance state.
+	## Called each physics frame to keep speed in sync with strength changes.
+	var new_mult: float = 1.0
+
+	if sled_puller and sled_puller.is_pulling():
+		# Sled pulling: group speed based on weakest puller
+		if sled_puller.attached_sled and sled_puller.attached_sled.has_method("get_group_speed_multiplier"):
+			new_mult = sled_puller.attached_sled.get_group_speed_multiplier()
+		else:
+			new_mult = stats.current_strength / 100.0 if stats else 1.0
+	elif is_carrying() and _carried_item_weight > 0.0:
+		# Carrying: strength factor * weight factor
+		var str_factor: float = stats.current_strength / 100.0 if stats else 1.0
+		var weight_factor: float = 1.0 - (_carried_item_weight / 50.0)
+		new_mult = str_factor * weight_factor
+
+	# Only update animation if multiplier changed significantly
+	if not is_equal_approx(speed_multiplier, new_mult):
+		speed_multiplier = new_mult
+		_update_speed_scale()
 
 
 func update_needs(delta_hours: float, in_shelter: bool, near_fire: bool, ambient_temp: float, in_sunlight: bool = true, is_blizzard: bool = false) -> void:
@@ -699,20 +783,14 @@ func has_item_by_id(prototype_id: String) -> bool:
 	## Used for item prerequisite checks (e.g., "knife" for cannibalism).
 	if not inventory:
 		return false
-	for item in inventory.get_items():
-		if item.prototype_id == prototype_id:
-			return true
-	return false
+	return inventory.has_item_with_prototype_id(prototype_id)
 
 
 func get_item_by_id(prototype_id: String) -> InventoryItem:
 	## Get first item matching prototype ID, or null if not found.
 	if not inventory:
 		return null
-	for item in inventory.get_items():
-		if item.prototype_id == prototype_id:
-			return item
-	return null
+	return inventory.get_item_with_prototype_id(prototype_id)
 
 
 # --- Environmental Detection (Warmth/Shelter) ---
@@ -1159,11 +1237,15 @@ var _carried_item: Node3D = null
 ## Material being carried (for BT tasks)
 var _carried_material_id: String = ""
 var _carried_amount: int = 0
+## Weight of currently carried item (kg) - used for encumbrance debuffs
+var _carried_item_weight: float = 0.0
 ## Bone attachments for carrying (found at runtime)
 var _right_hand_attachment: BoneAttachment3D = null
 var _left_hand_attachment: BoneAttachment3D = null
-## Plank scene for hauling wood
+## Scenes for hauling materials
 var _plank_scene: PackedScene = preload("res://objects/wood_planks/plank_1.tscn")
+var _nails_box_scene: PackedScene = preload("res://objects/nails_box1/nails_box1.tscn")
+var _bundled_sails_scene: PackedScene = preload("res://objects/bundled_sails1/bundled_sails1.tscn")
 
 func bark(category: String, duration: float = -1.0) -> bool:
 	## Show a random bark from category above this unit.
@@ -1218,6 +1300,7 @@ func start_carrying(material_id: String, amount: int) -> void:
 
 	_carried_material_id = material_id
 	_carried_amount = amount
+	_carried_item_weight = CARRY_WEIGHTS.get(material_id, 0.0)
 	_find_hand_attachments()
 
 	var item: Node3D = _create_carried_item(material_id)
@@ -1226,14 +1309,19 @@ func start_carrying(material_id: String, amount: int) -> void:
 
 	_carried_item = item
 
-	# Cradle carry - attach to character at chest height for two-handed carry animation.
-	add_child(item)
-	item.position = Vector3(0, 1.0, 0.35)  # Chest height, slightly forward
-	item.rotation_degrees = Vector3(0, 0, 0)  # Horizontal plank
+	# Attach to bone for realistic hand-following movement.
+	if _right_hand_attachment:
+		_right_hand_attachment.add_child(item)
+		item.position = Vector3(0.0, 0.0, 0.1)
+		item.rotation_degrees = Vector3(0, 90, 0)
+	else:
+		# Fallback to fixed position if no bone attachment
+		add_child(item)
+		item.position = Vector3(0, 1.0, 0.35)
+		item.rotation_degrees = Vector3(0, 0, 0)
 	item.scale = Vector3(0.6, 0.6, 0.6)
 
 	_disable_item_collision(item)
-	_play_animation("carry_walk")
 	print("[%s] Started carrying %s x%d" % [unit_name, material_id, amount])
 
 
@@ -1253,6 +1341,8 @@ func stop_carrying() -> Dictionary:
 	# Clear state
 	_carried_material_id = ""
 	_carried_amount = 0
+	_carried_item_weight = 0.0
+	speed_multiplier = 1.0
 
 	# Return to normal animation
 	if is_moving:
@@ -1262,6 +1352,10 @@ func stop_carrying() -> Dictionary:
 
 	print("[%s] Stopped carrying" % unit_name)
 	return result
+
+## Property wrapper for BTCheckAgentProperty.
+var carrying: bool:
+	get: return is_carrying()
 
 
 func is_carrying() -> bool:
@@ -1307,6 +1401,8 @@ func drop_item() -> Node3D:
 	_carried_item = null
 	_carried_material_id = ""
 	_carried_amount = 0
+	_carried_item_weight = 0.0
+	speed_multiplier = 1.0
 
 	# Reparent to scene and position in front
 	item.reparent(get_tree().current_scene)
@@ -1330,9 +1426,12 @@ func _create_carried_item(material_id: String) -> Node3D:
 		"scrap_wood", "wood", "planks":
 			if _plank_scene:
 				return _plank_scene.instantiate()
-		"nails":
-			# Could add a nail box visual later
-			pass
+		"nails", "nails_box":
+			if _nails_box_scene:
+				return _nails_box_scene.instantiate()
+		"scrap_sails", "sails", "sail_cloth":
+			if _bundled_sails_scene:
+				return _bundled_sails_scene.instantiate()
 
 	# Fallback: simple box mesh
 	var mesh_instance := MeshInstance3D.new()

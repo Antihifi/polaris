@@ -17,7 +17,6 @@ const BASE_TERRAIN_AMPLITUDE: float = 25.0  # Gentle base variation
 const DETAIL_AMPLITUDE: float = 3.0  # Micro-terrain
 const SEA_LEVEL: float = 0.0
 const ICE_LEVEL: float = -2.0  # Surrounding ice slightly below sea level
-const BEACH_HEIGHT: float = 8.0  # Southern beaches
 
 ## Noise configuration
 const BASE_FREQUENCY: float = 0.004  # Smooth base terrain
@@ -33,7 +32,6 @@ const LACUNARITY: float = 2.0
 const MOUNTAIN_BAND_CENTER: float = 0.4  # Mountains concentrated in central-north
 const MOUNTAIN_BAND_WIDTH: float = 0.3  # Width of mountain band (increased for coverage)
 const FLAT_PLAINS_START: float = 0.65  # Where flat plains begin (south-central)
-const BEACH_START: float = 0.88  # Where beaches begin (southern edge)
 
 ## Mountain peak positions (2-3 distinct peaks as per GDD)
 ## These are normalized positions (0-1) where mountain peaks will be placed
@@ -77,7 +75,7 @@ static func generate_heightmap(
 	var cfg_base_terrain_amplitude: float = config.base_terrain_amplitude if config else BASE_TERRAIN_AMPLITUDE
 	var cfg_detail_amplitude: float = config.detail_amplitude if config else DETAIL_AMPLITUDE
 	var cfg_ice_level: float = config.ice_level if config else ICE_LEVEL
-	var cfg_beach_height: float = config.beach_height if config else BEACH_HEIGHT
+
 
 	var cfg_base_frequency: float = config.base_frequency if config else BASE_FREQUENCY
 	var cfg_hill_frequency: float = config.hill_frequency if config else HILL_FREQUENCY
@@ -101,7 +99,6 @@ static func generate_heightmap(
 	var cfg_mountain_band_center: float = config.mountain_band_center if config else MOUNTAIN_BAND_CENTER
 	var cfg_mountain_band_width: float = config.mountain_band_width if config else MOUNTAIN_BAND_WIDTH
 	var cfg_flat_plains_start: float = config.flat_plains_start if config else FLAT_PLAINS_START
-	var cfg_beach_start: float = config.beach_start if config else BEACH_START
 	var cfg_midland_start: float = config.midland_start if config else 0.35
 	var cfg_midland_hill_smoothing: float = config.midland_hill_smoothing if config else 0.7
 
@@ -334,22 +331,13 @@ static func generate_heightmap(
 				north_factor = north_factor * north_factor * (3.0 - 2.0 * north_factor)
 				north_boost = north_factor * 50.0 * mask_value  # +50m max at north edge
 
-			# 7. Southern slope and beach (gentle descent)
-			# Use warped NY for organic south transition
+			# 7. Southern slope (gentle descent into frozen sea)
 			var south_reduction := 0.0
 			if ny_warped > cfg_flat_plains_start:
 				var south_factor := (ny_warped - cfg_flat_plains_start) / (1.0 - cfg_flat_plains_start)
 				south_factor = clampf(south_factor, 0.0, 1.0)
-				# Smoothstep for gradual transition
 				south_factor = south_factor * south_factor * (3.0 - 2.0 * south_factor)
-				south_reduction = south_factor * 0.5  # Reduce height by up to 50%
-
-				# Beach zone: flatten even more (use warped)
-				if ny_warped > cfg_beach_start:
-					var beach_factor := (ny_warped - cfg_beach_start) / (1.0 - cfg_beach_start)
-					beach_factor = clampf(beach_factor, 0.0, 1.0)
-					beach_factor = beach_factor * beach_factor * (3.0 - 2.0 * beach_factor)
-					south_reduction = lerpf(south_reduction, 0.85, beach_factor)
+				south_reduction = south_factor * 1.0
 
 			# 8. Detail noise (micro-terrain, subtle)
 			var detail := detail_noise.get_noise_2d(float(x), float(y)) * cfg_detail_amplitude
@@ -365,18 +353,11 @@ static func generate_heightmap(
 			# Apply southern slope reduction
 			height *= (1.0 - south_reduction)
 
-			# Beach zone: lerp towards beach height (use warped for organic coastline)
-			if ny_warped > cfg_beach_start:
-				var beach_blend := (ny_warped - cfg_beach_start) / (1.0 - cfg_beach_start)
-				beach_blend = clampf(beach_blend, 0.0, 1.0)
-				beach_blend = beach_blend * beach_blend  # Smooth transition
-				height = lerpf(height, cfg_beach_height, beach_blend * 0.7)
-
 			# Fade to ice level at island edges using mask
 			height = lerpf(cfg_ice_level, height, mask_value)
 
-			# Ensure minimum walkable height on solid island
-			if mask_value > 0.5:
+			# Ensure minimum walkable height on solid island (skip in southern plains)
+			if mask_value > 0.5 and ny_warped <= cfg_flat_plains_start:
 				height = maxf(height, 2.0)
 
 			heightmap.set_pixel(x, y, Color(height, 0.0, 0.0, 1.0))
@@ -392,10 +373,16 @@ static func generate_heightmap(
 static func carve_inlet(
 	heightmap: Image,
 	island_mask: Image,
-	inlet_rng: RandomNumberGenerator
+	inlet_rng: RandomNumberGenerator,
+	meters_per_pixel: float = -1.0,
+	inlet_width_px: int = INLET_WIDTH_PIXELS,
+	inlet_length_px: int = INLET_LENGTH_PIXELS
 ) -> Dictionary:
 	var img_width := heightmap.get_width()
 	var img_height := heightmap.get_height()
+
+	# Resolve meters_per_pixel: use parameter if provided, otherwise fall back to TerrainGenerator
+	var _mpp: float = meters_per_pixel if meters_per_pixel > 0.0 else TerrainGenerator.METERS_PER_PIXEL
 
 	# Get inlet position from island shape analysis
 	var inlet_info := IslandShape.find_inlet_position(island_mask, inlet_rng)
@@ -413,11 +400,12 @@ static func carve_inlet(
 	base_direction = base_direction.normalized()
 
 	# Calculate START POINT - extend PAST coastline into frozen sea
-	var sea_extension := 150  # ~375m out into frozen sea
+	# Scale sea extension proportionally to inlet length
+	var sea_extension := int(float(inlet_length_px) * 0.25)
 	var sea_start := Vector2(coastline_pixel) - base_direction * float(sea_extension)
 
 	# Total length of the channel
-	var total_length := float(INLET_LENGTH_PIXELS) + float(sea_extension)
+	var total_length := float(inlet_length_px) + float(sea_extension)
 
 	# === GENERATE MEANDERING WAYPOINTS ===
 	# Create a series of waypoints that curve naturally
@@ -450,7 +438,7 @@ static func carve_inlet(
 		waypoints.append(base_pos + offset)
 
 	# Calculate bounding box for the channel (with generous margin for meandering)
-	var margin := INLET_WIDTH_PIXELS + INLET_BLEND_RADIUS * 2 + int(meander_amplitude)
+	var margin := inlet_width_px + INLET_BLEND_RADIUS * 2 + int(meander_amplitude)
 	var min_x := img_width
 	var max_x := 0
 	var min_y := img_height
@@ -505,14 +493,14 @@ static func carve_inlet(
 					best_progress = seg_progress + within_seg
 
 			# Skip pixels too far from the channel - extended for softer blending
-			var max_channel_dist := float(INLET_WIDTH_PIXELS) + float(INLET_BLEND_RADIUS) * 3.0
+			var max_channel_dist := float(inlet_width_px) + float(INLET_BLEND_RADIUS) * 3.0
 			if min_dist > max_channel_dist:
 				continue
 
 			# Channel width varies: widest at mouth, tapers to point inland (fjord shape)
 			# 0.85 taper = 100% width at mouth, 15% width at inland terminus
 			var width_factor := 1.0 - best_progress * 0.85
-			var half_width := float(INLET_WIDTH_PIXELS) * width_factor * 0.5
+			var half_width := float(inlet_width_px) * width_factor * 0.5
 
 			# Floor height: rises gently from sea to inland
 			var floor_height: float
@@ -567,7 +555,7 @@ static func carve_inlet(
 	var ramp_start := waypoints[waypoints.size() - 1]  # Inland terminus
 	var ramp_direction := base_direction  # Continue in same general direction
 	var ramp_length := 180.0  # ~450m ramp for smoother terminus blending
-	var ramp_width := float(INLET_WIDTH_PIXELS) * 0.8  # Slightly narrower than channel
+	var ramp_width := float(inlet_width_px) * 0.8  # Slightly narrower than channel
 
 	_carve_walkable_ramp(heightmap, ramp_start, ramp_direction, ramp_length, ramp_width, inlet_rng)
 
@@ -592,9 +580,8 @@ static func carve_inlet(
 	#   - At low elevation (proper "trapped in ice" aesthetic)
 	var ship_waypoint_index := int(waypoints.size() * 0.55)  # 55% = deeper inside inlet, trapped in ice
 	var ship_waypoint := waypoints[ship_waypoint_index]
-	var meters_per_pixel: float = TerrainGenerator.METERS_PER_PIXEL
-	var world_x := (ship_waypoint.x - float(img_width) / 2.0) * meters_per_pixel
-	var world_z := (ship_waypoint.y - float(img_height) / 2.0) * meters_per_pixel
+	var world_x := (ship_waypoint.x - float(img_width) / 2.0) * _mpp
+	var world_z := (ship_waypoint.y - float(img_height) / 2.0) * _mpp
 	# Ship sits at frozen sea level (not the higher inland floor height)
 	var world_y := FROZEN_SEA_HEIGHT + 2.0
 
@@ -607,7 +594,7 @@ static func carve_inlet(
 		"coastline_pixel": coastline_pixel,
 		"sea_start_pixel": Vector2i(int(sea_start.x), int(sea_start.y)),
 		"east_side": east_side,
-		"cove_width_meters": INLET_WIDTH_PIXELS * meters_per_pixel,
+		"cove_width_meters": inlet_width_px * _mpp,
 		"waypoints": waypoints,
 		"inland_terminus": Vector2i(int(inland_terminus.x), int(inland_terminus.y))
 	}
@@ -752,7 +739,7 @@ static func _ensure_flat_frozen_sea(heightmap: Image, island_mask: Image) -> voi
 			elif mask_value < 0.3:
 				var current_height: float = heightmap.get_pixel(x, y).r
 				var blend := (0.3 - mask_value) / 0.2  # 1.0 at mask=0.1, 0.0 at mask=0.3
-				var new_height := lerpf(current_height, FROZEN_SEA_HEIGHT, blend * 0.8)
+				var new_height := lerpf(current_height, FROZEN_SEA_HEIGHT, blend)
 				heightmap.set_pixel(x, y, Color(new_height, 0.0, 0.0, 1.0))
 
 

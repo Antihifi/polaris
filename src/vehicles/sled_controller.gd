@@ -203,6 +203,23 @@ func _reassign_formation_offsets() -> void:
 			pullers[i].sled_formation_offset = FORMATION_OFFSETS[i]
 
 
+## Get group speed multiplier based on weakest puller's strength.
+## Returns the MINIMUM (current_strength / 100.0) across all pullers.
+## Weaker pullers slow the entire group.
+func get_group_speed_multiplier() -> float:
+	if pullers.is_empty():
+		return 1.0
+
+	var min_mult: float = 1.0
+	for puller in pullers:
+		if not is_instance_valid(puller):
+			continue
+		if "stats" in puller and puller.stats:
+			var str_mult: float = puller.stats.current_strength / 100.0
+			min_mult = minf(min_mult, str_mult)
+	return min_mult
+
+
 ## Get harness position for external queries (e.g., puller positioning)
 func get_harness_position() -> Vector3:
 	if harness_system:

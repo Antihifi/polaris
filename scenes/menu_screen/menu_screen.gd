@@ -35,6 +35,7 @@ func _ready() -> void:
 	_connect_buttons()
 	_setup_debug_menu()
 	_start_menu_music()
+	_setup_aurora()
 	# Defer camera lock to ensure it happens after camera's _ready completes
 	call_deferred("_lock_camera")
 
@@ -89,10 +90,31 @@ func _setup_debug_menu() -> void:
 	add_child(_debug_menu)
 
 
+func _setup_aurora() -> void:
+	## Enable aurora on the sky material directly, preserving editor-tweaked values.
+	## No AuroraController needed — menu aurora is always-on decoration.
+	var sky3d: Node = get_node_or_null("Sky3D")
+	if sky3d and "sky_material" in sky3d and sky3d.sky_material is ShaderMaterial:
+		var mat: ShaderMaterial = sky3d.sky_material
+		mat.set_shader_parameter("aurora_visible", true)
+		# Create noise texture only if one isn't already assigned from the editor
+		if not mat.get_shader_parameter("aurora_noise"):
+			var noise_tex := NoiseTexture2D.new()
+			noise_tex.width = 512
+			noise_tex.height = 512
+			noise_tex.seamless = true
+			var noise_gen := FastNoiseLite.new()
+			noise_gen.noise_type = FastNoiseLite.TYPE_SIMPLEX
+			noise_gen.frequency = 0.01
+			noise_gen.fractal_octaves = 3
+			noise_tex.noise = noise_gen
+			mat.set_shader_parameter("aurora_noise", noise_tex)
+
+
 func _on_start_pressed() -> void:
-	## Load the premade main scene.
+	## Load the demo scene.
 	_stop_menu_music()
-	get_tree().change_scene_to_file("res://main.tscn")
+	get_tree().change_scene_to_file("res://scenes/demo_game.tscn")
 
 
 func _on_procedural_pressed() -> void:

@@ -102,6 +102,8 @@ Detailed docs in each directory's CLAUDE.md:
 | Items | [src/items/](src/items/CLAUDE.md) | Inventory, protoset |
 | UI | [ui/](ui/CLAUDE.md) | HUD, panels |
 | AI | [ai/](ai/CLAUDE.md) | Behavior trees |
+| Ship Destruction | [tools/](tools/CLAUDE.md) | **Progressive demolition, sinking, sound effects** |
+| Effects | [src/effects/](src/effects/CLAUDE.md) | Aurora borealis, visual FX |
 
 **Planned Systems:** See [docs/DESIGN.md](docs/DESIGN.md) for combat, building, NPCs.
 

@@ -294,16 +294,19 @@ func _on_row_input(event: InputEvent, unit: Node) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
 			unit_clicked.emit(unit)
-			# Focus camera on unit
-			var camera := get_viewport().get_camera_3d()
-			if camera and camera.has_method("focus_on"):
-				camera.focus_on(unit)
 			# Select unit via input handler
 			var input_handler := get_tree().current_scene.get_node_or_null("RTSInputHandler")
 			if input_handler and input_handler.has_method("_deselect_all"):
 				input_handler._deselect_all()
 				if input_handler.has_method("_add_to_selection"):
 					input_handler._add_to_selection(unit)
+			# Focus camera only on officers/captain (rank >= 1)
+			if "rank" in unit and unit.rank >= 1:
+				var camera := get_viewport().get_camera_3d()
+				if camera and camera.has_method("focus_on"):
+					camera.focus_on(unit)
+				if input_handler and input_handler.has_method("_update_camera_height"):
+					input_handler._update_camera_height(unit)
 
 
 func refresh() -> void:

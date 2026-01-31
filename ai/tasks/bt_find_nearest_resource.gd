@@ -3,7 +3,7 @@ extends BTAction
 class_name BTFindNearestResource
 ## Finds the nearest resource node in a group and stores it in the blackboard.
 
-@export_enum("shelters", "heat_sources", "containers", "barrels", "crates", "beds", "seats", "fire_positions", "barrel_positions", "bed_positions", "ship_scrap_wood", "ship_nails", "ship_rope", "ship_sail_cloth", "workbenches", "construction_sites") var resource_group: String = "shelters"
+@export_enum("shelters", "heat_sources", "containers", "barrels", "crates", "beds", "seats", "fire_positions", "barrel_positions", "bed_positions", "ship_scrap_wood", "ship_nails", "ship_rope", "ship_scrap_sails", "workbenches", "construction_sites") var resource_group: String = "shelters"
 @export var target_position_var: StringName = &"target_position"
 @export var target_node_var: StringName = &"target_node"
 
@@ -73,6 +73,9 @@ func _tick(_delta: float) -> Status:
 	if nearest:
 		blackboard.set_var(target_position_var, nearest.global_position)
 		blackboard.set_var(target_node_var, nearest)
+		# Set material_id for ship resources (strip "ship_" prefix)
+		if resource_group.begins_with("ship_"):
+			blackboard.set_var(&"material_id", resource_group.substr(5))
 		# Set action based on resource type
 		match resource_group:
 			"heat_sources":

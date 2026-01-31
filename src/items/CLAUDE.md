@@ -298,6 +298,136 @@ To make food spoil:
 2. In TimeManager hourly update, check age vs `spoil_time`
 3. Either remove item or convert to "spoiled_food" variant
 
+## Adding Gatherable Ship Resources (Full Workflow)
+
+Complete A-Z workflow for adding a new material that units can gather from the ship, carry, and deposit at workbenches.
+
+### Step 1: Create 3D Asset
+
+In Blender:
+1. Model the item (e.g., a box of nails, bundle of rope)
+2. **CRITICAL**: Set origin to center of geometry: `Object > Set Origin > Origin to Geometry`
+3. Position object at world origin (0, 0, 0)
+4. Apply all transforms: `Ctrl+A > All Transforms`
+5. Export as `.glb` to `objects/<item_name>/`
+
+### Step 2: Set Up Scene in Godot
+
+1. Create scene at `objects/<item_name>/<item_name>.tscn`
+2. Structure:
+```
+ItemRoot (Node3D)
+└── MeshInstance3D
+    └── StaticBody3D
+        └── CollisionShape3D
+```
+3. Verify transform is at origin (position 0,0,0)
+4. If mesh appears offset, it wasn't exported correctly - fix in Blender
+
+### Step 3: Add Item Definition
+
+Add to `data/items_protoset.json`:
+```json
+"scrap_sails": {
+    "name": "Sail Cloth Scrap",
+    "image": "res://inventory_icons/scrap_sails.png",
+    "size": "Vector2i(2, 2)",
+    "category": "material",
+    "max_stack_size": 1,
+    "weight": 5.0
+}
+```
+
+### Step 4: Add to Ship Resource Pool
+
+In `src/build/ship_resource_component.gd`, add to `material_pool`:
+```gdscript
+@export var material_pool: Dictionary = {
+    "scrap_wood": 500,
+    "nails": 200,
+    "scrap_sails": 20   # ← Add new material
+}
+```
+
+### Step 5: Add Carried Item Visual
+
+In `src/characters/clickable_unit.gd`:
+
+1. Add preload (~line 1168):
+```gdscript
+var _bundled_sails_scene: PackedScene = preload("res://objects/bundled_sails1/bundled_sails1.tscn")
+```
+
+2. Update `_create_carried_item()` match block (~line 1340):
+```gdscript
+match material_id:
+    "scrap_wood", "wood", "planks":
+        if _plank_scene:
+            return _plank_scene.instantiate()
+    "scrap_sails":   # ← Add new case
+        if _bundled_sails_scene:
+            return _bundled_sails_scene.instantiate()
+```
+
+### Step 6: Add BT Group Enum
+
+In `ai/tasks/bt_find_nearest_resource.gd`, add to export_enum:
+```gdscript
+@export_enum("...", "ship_scrap_wood", "ship_nails", "ship_scrap_sails", "...") var resource_group
+```
+
+**IMPORTANT**: The group name must be `ship_<material_id>`. The `ship_` prefix is stripped to get the material_id for gathering.
+
+### Step 7: Add Gathering Points in Scene
+
+In your ship scene (Godot editor):
+1. Create/select Node3D markers where units should gather this material
+2. Add to group `ship_scrap_sails` (Inspector > Node > Groups)
+3. Multiple nodes can share the same group
+
+### Step 8: Update Behavior Tree (Optional)
+
+If using RandomSelector for material variety in `ai/man_bt.tres`:
+```
+RandomSelector
+├── FindNearest [ship_scrap_wood]
+├── FindNearest [ship_nails]
+└── FindNearest [ship_scrap_sails]   ← Add new option
+```
+
+### Naming Chain Reference
+
+All names must match through the pipeline:
+
+| Location | Key/Value | Example |
+|----------|-----------|---------|
+| `material_pool` key | `<material_id>` | `"scrap_sails"` |
+| BT group name | `ship_<material_id>` | `"ship_scrap_sails"` |
+| Scene group | `ship_<material_id>` | `"ship_scrap_sails"` |
+| `_create_carried_item` match | `<material_id>` | `"scrap_sails"` |
+| `items_protoset.json` key | `<material_id>` | `"scrap_sails"` |
+
+### Verification Checklist
+
+- [ ] 3D scene loads without errors
+- [ ] Transform is at origin (no offset)
+- [ ] Item appears in protoset
+- [ ] Material exists in ship's `material_pool`
+- [ ] Carried visual scene preloaded
+- [ ] Match case added for material_id
+- [ ] BT enum includes `ship_<material_id>`
+- [ ] Scene nodes added to `ship_<material_id>` group
+- [ ] Units successfully gather, carry, and deposit
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| "No nodes in group" log spam | No nodes in scene have the group | Add group to gathering point nodes |
+| Item gathers but no visual | Match case missing or scene null | Check `_create_carried_item()` |
+| Visual appears far from character | Scene origin not at center | Fix in Blender, re-export |
+| Gathering fails silently | material_id not in pool | Ensure names match exactly |
+
 ## Troubleshooting
 
 ### Container clicks not working

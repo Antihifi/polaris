@@ -412,9 +412,11 @@ func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 	if unit is ClickableUnit:
 		selected_unit = unit
 
-	# Set camera focus
-	if camera and camera.has_method("set_focus_target"):
-		camera.set_focus_target(unit)
+	# Set camera focus (officers/captain only)
+	var focus: Node = _get_focusable_unit(unit)
+	if focus and camera and camera.has_method("set_focus_target"):
+		camera.set_focus_target(focus)
+		_update_camera_height(focus)
 
 	# Emit double-click signal
 	if is_double_click:
@@ -655,9 +657,13 @@ func _deselect_all() -> void:
 	selected_units.clear()
 	selected_unit = null
 
-	# Clear camera focus target
+	# Clear camera focus target and height limit
 	if camera and camera.has_method("clear_focus_target"):
 		camera.clear_focus_target()
+	if camera and "max_camera_height" in camera:
+		camera.max_camera_height = 15.0
+	if camera and "max_camera_distance" in camera:
+		camera.max_camera_distance = 20.0
 
 	selection_changed.emit(selected_units)
 
@@ -705,6 +711,12 @@ func _finish_box_selection() -> void:
 
 	for unit in units_in_box:
 		_add_to_selection(unit)
+
+	# Focus camera on best officer/captain in selection
+	var focus: Node = _get_focusable_unit(null)
+	if focus and camera and camera.has_method("set_focus_target"):
+		camera.set_focus_target(focus)
+		_update_camera_height(focus)
 
 	print("[RTSInput] Box selected %d units" % units_in_box.size())
 
@@ -786,6 +798,36 @@ func get_box_selection_rect() -> Rect2:
 		abs(box_current.x - box_start.x),
 		abs(box_current.y - box_start.y)
 	)
+
+
+func _get_focusable_unit(preferred: Node) -> Node:
+	## Return preferred if it's an officer/captain, else find the best one in selection.
+	if preferred and "rank" in preferred and preferred.rank >= 1:
+		return preferred
+	var best: Node = null
+	var best_rank: int = 0
+	for unit in selected_units:
+		if not is_instance_valid(unit):
+			continue
+		if "rank" in unit and unit.rank >= 1 and unit.rank > best_rank:
+			best_rank = unit.rank
+			best = unit
+	return best
+
+
+func _update_camera_height(unit: Node) -> void:
+	## Compute max camera height from unit's navigation equipment and skill.
+	if not camera or not "max_camera_height" in camera:
+		return
+	var height: float = 15.0
+	if unit.has_method("has_item_by_id"):
+		if unit.has_item_by_id("spyglass"):
+			height += 10.0
+		if unit.has_item_by_id("sextant"):
+			height += 10.0
+	if "stats" in unit and unit.stats and "navigation_skill" in unit.stats:
+		height += unit.stats.navigation_skill * 0.05
+	camera.max_camera_height = height
 
 
 func _set_player_command_active(unit: Node, active: bool) -> void:

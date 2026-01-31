@@ -39,6 +39,12 @@ signal zoom_changed(zoom_level: float, zoom_ratio: float)
 @export_category("Focus")
 @export var focus_lerp_speed: float = 5.0  # Speed of smooth focus transition
 @export var follow_selected: bool = false   # Auto-follow selected unit
+## Maximum camera height above orbit center. 0 = no limit.
+## Set by RTSInputHandler based on focused unit's navigation equipment.
+var max_camera_height: float = 15.0
+## Maximum orbit distance from focus point. 0 = no limit.
+## TODO: Increase with navigation equipment/skills.
+var max_camera_distance: float = 20.0
 
 # =========================
 # Movement bounds
@@ -179,7 +185,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_update_camera_position()
 			_emit_zoom_changed()
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			orbit_distance = min(camera_zoom_max, orbit_distance + zoom_amount)
+			var effective_max: float = camera_zoom_max
+			if max_camera_distance > 0.0:
+				effective_max = minf(effective_max, max_camera_distance)
+			if max_camera_height > 0.0:
+				var sp: float = sin(_pitch)
+				if sp > 0.02:
+					effective_max = minf(effective_max, max_camera_height / sp)
+			orbit_distance = minf(effective_max, orbit_distance + zoom_amount)
 			_update_camera_position()
 			_emit_zoom_changed()
 
@@ -212,7 +225,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var pmin := deg_to_rad(pitch_min_deg)
 		var pmax := deg_to_rad(pitch_max_deg)
 		_pitch = clamp(_pitch, pmin, pmax)
-
+		_apply_height_constraint()
 		_update_camera_position()
 
 # =========================
@@ -256,7 +269,20 @@ func _constrain_to_units(pos: Vector3) -> Vector3:
 	return Vector3(constrained_xz.x, pos.y, constrained_xz.y)
 
 
+func _apply_height_constraint() -> void:
+	## Clamp orbit_distance by height limit and distance limit.
+	var cap: float = camera_zoom_max
+	if max_camera_distance > 0.0:
+		cap = minf(cap, max_camera_distance)
+	if max_camera_height > 0.0:
+		var sin_pitch: float = sin(_pitch)
+		if sin_pitch > 0.02:
+			cap = minf(cap, max_camera_height / sin_pitch)
+	orbit_distance = minf(orbit_distance, cap)
+
+
 func _update_camera_position() -> void:
+	_apply_height_constraint()
 	# Adjust orbit center Y to follow terrain height (smooth interpolation)
 	if terrain_follow_enabled:
 		var target_terrain_height := _get_terrain_height(orbit_center)

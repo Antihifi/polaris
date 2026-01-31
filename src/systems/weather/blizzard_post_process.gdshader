@@ -22,6 +22,7 @@ uniform float detail_scale : hint_range(0.01, 0.2) = 0.03;
 uniform float wind_speed : hint_range(0.0, 20.0) = 7.0;
 uniform float wind_direction : hint_range(-3.14159, 3.14159) = 0.0;
 uniform float vertical_drift : hint_range(0.0, 3.0) = 0.5;
+uniform vec2 wind_offset = vec2(0.0, 0.0);
 
 // Wave turbulence for organic band shapes
 uniform float wave_amplitude : hint_range(0.0, 10.0) = 3.0;
@@ -79,11 +80,8 @@ float triangle_noise_3d(vec3 p) {
 float fogmap(vec3 world_pos, float time_val) {
 	vec3 p = world_pos;
 
-	// Wind direction vector (negated to match particle visual direction)
-	vec2 wind_dir = vec2(-sin(wind_direction), -cos(wind_direction));
-
-	// Horizontal wind drift - fog moves with the wind
-	p.xz -= time_val * wind_speed * wind_dir;
+	// Wind drift using pre-accumulated offset (prevents reversal during speed transitions)
+	p.xz -= wind_offset;
 
 	// Add wave turbulence for organic movement
 	// Use original world position for wave offset so bands sweep across terrain

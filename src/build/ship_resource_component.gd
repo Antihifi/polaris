@@ -9,7 +9,9 @@ signal material_depleted(material_id: String)
 ## Material pool available on the ship.
 @export var material_pool: Dictionary = {
 	"scrap_wood": 500,
-	"nails": 200
+	"nails": 200,
+	"nails_box": 50,
+	"scrap_sails": 20
 }
 
 ## Base amount gathered per gathering action.

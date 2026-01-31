@@ -8,11 +8,9 @@ signal pulling_started
 signal pulling_stopped
 
 ## Rope length in meters - pullers beyond this distance will pull the sled
-@export var rope_length: float = 6.0
+@export var rope_length: float = 4.0
 ## Base pull force per puller in Newtons
 @export var pull_force_per_puller: float = 400.0
-## Maximum sled speed when being pulled (m/s) - matches unit walk speed
-@export var max_pull_speed: float = 5.0
 ## How much support pullers contribute (0-1)
 @export var support_efficiency: float = 0.7
 
@@ -28,7 +26,7 @@ func _ready() -> void:
 		push_error("[HarnessPullSystem] Parent must be a RigidBody3D")
 		return
 
-	print("[HarnessPullSystem] Initialized with rope_length=%.1fm, max_speed=%.1fm/s" % [rope_length, max_pull_speed])
+	print("[HarnessPullSystem] Initialized with rope_length=%.1fm" % [rope_length])
 
 
 func _physics_process(delta: float) -> void:
@@ -48,43 +46,50 @@ func _physics_process(delta: float) -> void:
 	to_puller.y = 0.0  # Ignore vertical for pulling direction
 	var distance: float = to_puller.length()
 
-	# Only pull if rope is taut (puller beyond rope length)
-	if distance < rope_length * 0.9:  # Small slack zone
+	# Damp sled velocity based on proximity to pullers
+	# Closer = more damping. At rope_length: no damping. At 0: full stop.
+	var tension: float = clampf(distance / rope_length, 0.0, 1.0)
+	var damp_factor: float = tension * tension  # Exponential falloff
+	sled.linear_velocity.x *= damp_factor
+	sled.linear_velocity.z *= damp_factor
+
+	# Only apply pull force if rope is taut
+	if distance < rope_length * 0.8:
 		_stop_pulling()
-		# Apply friction/drag to slow down when not being pulled
-		sled.linear_velocity.x = lerpf(sled.linear_velocity.x, 0.0, 3.0 * delta)
-		sled.linear_velocity.z = lerpf(sled.linear_velocity.z, 0.0, 3.0 * delta)
 		return
 
-	# Start pulling
 	if not is_pulling:
 		is_pulling = true
 		pulling_started.emit()
 
-	# Calculate total pull force from all pullers
-	var total_force: float = _calculate_total_pull_force()
+	# Only apply force if lead puller is actually walking
+	if "is_moving" in lead_puller and not lead_puller.is_moving:
+		_stop_pulling()
+		return
 
-	# Get pull direction (toward lead puller)
+	var total_force: float = _calculate_total_pull_force()
 	var pull_direction: Vector3 = to_puller.normalized()
 
-	# Calculate target velocity based on force and mass
-	# More force = faster, heavier sled = slower
-	var force_ratio: float = total_force / (sled.mass * 9.81 * 0.3)  # vs friction force
-	var target_speed: float = clampf(force_ratio * max_pull_speed * 0.5, 0.0, max_pull_speed)
+	var force_vector: Vector3 = pull_direction * total_force
+	force_vector.y = 0.0
+	sled.apply_central_force(force_vector)
 
-	# Target velocity in pull direction
-	var target_velocity: Vector3 = pull_direction * target_speed
+	# Clamp sled speed in pull direction to puller's actual speed
+	var puller_vel: Vector3 = lead_puller.velocity if "velocity" in lead_puller else Vector3.ZERO
+	puller_vel.y = 0.0
+	var puller_speed_in_dir: float = maxf(puller_vel.dot(pull_direction), 0.0)
+	var sled_speed_in_dir: float = Vector3(sled.linear_velocity.x, 0.0, sled.linear_velocity.z).dot(pull_direction)
 
-	# Smoothly accelerate toward target velocity
-	sled.linear_velocity.x = lerpf(sled.linear_velocity.x, target_velocity.x, 5.0 * delta)
-	sled.linear_velocity.z = lerpf(sled.linear_velocity.z, target_velocity.z, 5.0 * delta)
+	if sled_speed_in_dir > puller_speed_in_dir:
+		var excess: float = sled_speed_in_dir - puller_speed_in_dir
+		sled.linear_velocity.x -= pull_direction.x * excess
+		sled.linear_velocity.z -= pull_direction.z * excess
 
-	# Rotate sled so front (-Z) faces the pull direction (slowly align)
-	# Add PI because atan2 gives angle where +Z faces target, but we want -Z (front) to face it
-	if target_speed > 0.1:
+	# Torque to align sled
+	if pull_direction.length() > 0.1:
 		var target_angle: float = atan2(pull_direction.x, pull_direction.z) + PI
-		var current_angle: float = sled.rotation.y
-		sled.rotation.y = lerp_angle(current_angle, target_angle, 2.0 * delta)
+		var angle_diff: float = wrapf(target_angle - sled.rotation.y, -PI, PI)
+		sled.apply_torque(Vector3(0.0, angle_diff * total_force * 0.5, 0.0))
 
 
 func _calculate_total_pull_force() -> float:

@@ -104,6 +104,18 @@ uniform vec4 cumulus_night_color: source_color = vec4(0.09, 0.094, 0.129, 1.0);
 uniform vec3 cumulus_partial_mie_phase = vec3(0.95756, 1.04244, 0.412);
 uniform float cumulus_mie_intensity = 1.0;
 
+group_uniforms aurora;
+uniform bool aurora_visible = false;
+uniform vec4 aurora_color : source_color = vec4(0.15, 0.85, 0.45, 1.0);
+uniform float aurora_intensity : hint_range(0.0, 1.0) = 0.0;
+uniform float aurora_emission : hint_range(0.0, 20.0) = 4.0;
+uniform float aurora_speed : hint_range(0.001, 0.1) = 0.01;
+uniform float aurora_scale : hint_range(0.001, 0.1) = 0.02;
+uniform float aurora_offset : hint_range(-1.0, 1.0) = 0.0;
+uniform float aurora_smoothness : hint_range(0.01, 1.0) = 0.3;
+uniform float aurora_distort : hint_range(0.0, 5.0) = 1.0;
+uniform sampler2D aurora_noise;
+
 group_uniforms overlays;
 uniform bool show_azimuthal_grid = false;
 uniform vec4 azimuthal_grid_color : source_color = vec4(.871, .722, .529, 1.);
@@ -326,6 +338,65 @@ vec4 render_cumulus_clouds(vec3 ro, vec3 rd, float am, vec3 sun_pos, vec3 moon_p
 	return vec4(ret.rgb * cumulus_intensity, a);
 }
 
+// Aurora
+//------------------------------------------------------------------------------
+
+vec3 render_aurora(vec3 dir, float p_time) {
+	if (dir.y <= 0.0) return vec3(0.0);
+
+	float elevation = dir.y;
+
+	// Height band — shifted higher into the atmosphere
+	// Main body: ~25-80 degrees elevation, peak around 40-65 degrees
+	float band = smoothstep(0.2, 0.4, elevation) * smoothstep(0.95, 0.6, elevation);
+	if (band <= 0.0) return vec3(0.0);
+
+	float t = p_time * aurora_speed;
+
+	// Azimuthal coordinate (0 to 1 around the sky)
+	float azimuth = (atan(dir.x, dir.z) + PI) / TAU;
+
+	// Scale controls how many folds repeat around the sky
+	float fold_repeat = aurora_scale * 200.0;
+
+	// Elevation-dependent sway — different heights undulate differently
+	float sway = textureLod(aurora_noise, vec2(elevation * 2.0 + t * 0.7, t * 0.3), 0.0).r;
+	float azimuth_warped = azimuth * fold_repeat + sway * aurora_distort * 0.3;
+
+	// Two noise layers moving at DIFFERENT speeds and directions
+	// so the interference pattern evolves in place, not just scrolling
+	vec2 uv1 = vec2(azimuth_warped + t, elevation * 0.15 + t * 0.2);
+	vec2 uv2 = vec2(azimuth_warped * 0.8 - t * 0.6 + aurora_offset, elevation * 0.15 - t * 0.1);
+
+	float n1 = textureLod(aurora_noise, uv1, 0.0).r;
+	float n2 = textureLod(aurora_noise, uv2, 0.0).r;
+
+	// Curtain shape from noise interaction
+	float curtain = smoothstep(-aurora_smoothness, aurora_smoothness, n1 - n2);
+
+	// Soft brightness — broad glow, NOT sharp edge detection
+	float brightness = smoothstep(0.0, 0.5, curtain) * smoothstep(1.0, 0.5, curtain);
+	brightness = 0.1 + brightness * 0.9;
+
+	// Broad glow layer at lower frequency
+	float glow_n = textureLod(aurora_noise, vec2(azimuth * fold_repeat * 0.5 + t * 0.3, elevation * 0.1), 0.0).r;
+	float glow = smoothstep(0.3, 0.7, glow_n) * 0.35;
+
+	// Cascading streaks — high-frequency noise stretched vertically, drifting downward
+	// Simulates particle-like rays raining down through the curtain
+	float streak_uv_x = azimuth * fold_repeat * 3.0;
+	float streak_uv_y = elevation * 4.0 + t * 1.5; // fast downward drift
+	float streaks = textureLod(aurora_noise, vec2(streak_uv_x, streak_uv_y), 0.0).r;
+	streaks = pow(streaks, 3.0); // sharpen into thin bright streaks
+	streaks *= smoothstep(0.25, 0.5, elevation); // only in upper portion of band
+
+	// Vertical gradient — brighter at top, streaks cascade downward
+	float vert_grad = mix(0.3, 1.0, smoothstep(0.3, 0.7, elevation));
+
+	float density = (brightness + glow + streaks * 0.5) * band * vert_grad * aurora_intensity;
+	return aurora_color.rgb * density * aurora_emission;
+}
+
 // Main
 //------------------------------------------------------------------------------
 
@@ -398,6 +469,11 @@ vec3 render_sky(vec3 world_pos, vec3 clouds_pos, vec3 sun_pos, vec3 moon_pos, fl
 	deep_space.rgb += star_field.rgb * moonMask;
 	deep_space.rgb *= angle_mult.z;
 	col.rgb += sun_disk.rgb + deep_space.rgb * horizonBlend;
+
+	// Aurora (rendered between stars and clouds so it appears behind cloud layers)
+	if (aurora_visible && aurora_intensity > 0.0) {
+		col.rgb += render_aurora(world_pos, p_time) * horizonBlend;
+	}
 
 	// Clouds
 	if (cirrus_visible) {

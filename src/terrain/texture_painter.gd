@@ -53,6 +53,25 @@ static func paint_terrain_post_import(
 	variation_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	variation_noise.frequency = 0.08
 
+	# Boundary noise for warping NY thresholds (breaks ruler-straight biome lines)
+	var boundary_noise := FastNoiseLite.new()
+	boundary_noise.seed = texture_rng.randi()
+	boundary_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	boundary_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	boundary_noise.fractal_octaves = 2
+	boundary_noise.fractal_gain = 0.4
+	boundary_noise.fractal_lacunarity = 2.0
+	boundary_noise.frequency = 0.006
+
+	var boundary_noise_fine := FastNoiseLite.new()
+	boundary_noise_fine.seed = texture_rng.randi()
+	boundary_noise_fine.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	boundary_noise_fine.fractal_type = FastNoiseLite.FRACTAL_FBM
+	boundary_noise_fine.fractal_octaves = 2
+	boundary_noise_fine.fractal_gain = 0.4
+	boundary_noise_fine.fractal_lacunarity = 2.0
+	boundary_noise_fine.frequency = 0.015
+
 	print("[TexturePainter] Painting textures via set_control_base_id (%dx%d)..." % [width, height])
 	var start_time := Time.get_ticks_msec()
 
@@ -72,8 +91,13 @@ static func paint_terrain_post_import(
 			# Normalized Y coordinate (0=north, 1=south)
 			var ny := float(y) / float(height)
 
+			# Warp NY with boundary noise to break ruler-straight biome lines
+			var bw := boundary_noise.get_noise_2d(float(x), float(y)) * 0.08
+			var bw_fine := boundary_noise_fine.get_noise_2d(float(x), float(y)) * 0.03
+			var ny_warped := ny + bw + bw_fine
+
 			# Determine texture
-			var texture_id := _determine_texture(h, slope, mask_value, variation, ny)
+			var texture_id := _determine_texture(h, slope, mask_value, variation, ny_warped)
 
 			# Convert pixel to world position (terrain centered at origin)
 			var world_x := (float(x) - half_width) * vertex_spacing
@@ -133,6 +157,26 @@ static func generate_control_map_for_import(
 	blend_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	blend_noise.frequency = 0.15
 
+	# Boundary noise for warping NY thresholds (breaks ruler-straight biome lines)
+	# Matches HeightmapGenerator frequency/amplitude for consistent organic boundaries
+	var boundary_noise := FastNoiseLite.new()
+	boundary_noise.seed = texture_rng.randi()
+	boundary_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	boundary_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	boundary_noise.fractal_octaves = 2
+	boundary_noise.fractal_gain = 0.4
+	boundary_noise.fractal_lacunarity = 2.0
+	boundary_noise.frequency = 0.006
+
+	var boundary_noise_fine := FastNoiseLite.new()
+	boundary_noise_fine.seed = texture_rng.randi()
+	boundary_noise_fine.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	boundary_noise_fine.fractal_type = FastNoiseLite.FRACTAL_FBM
+	boundary_noise_fine.fractal_octaves = 2
+	boundary_noise_fine.fractal_gain = 0.4
+	boundary_noise_fine.fractal_lacunarity = 2.0
+	boundary_noise_fine.frequency = 0.015
+
 	print("[TexturePainter] Generating control map %dx%d..." % [width, height])
 
 	# Debug: count texture distribution
@@ -150,8 +194,13 @@ static func generate_control_map_for_import(
 			# Normalized Y coordinate (0=north, 1=south) for south coast detection
 			var ny := float(y) / float(height)
 
+			# Warp NY with boundary noise to break ruler-straight biome lines
+			var bw := boundary_noise.get_noise_2d(float(x), float(y)) * 0.08
+			var bw_fine := boundary_noise_fine.get_noise_2d(float(x), float(y)) * 0.03
+			var ny_warped := ny + bw + bw_fine
+
 			# Determine base texture based on terrain properties
-			var base_texture_id := _determine_texture(h, slope, mask_value, variation, ny)
+			var base_texture_id := _determine_texture(h, slope, mask_value, variation, ny_warped)
 
 			# Determine overlay texture for blending (usually adjacent texture type)
 			var overlay_texture_id := _determine_overlay_texture(base_texture_id, h, slope, mask_value)
@@ -163,7 +212,7 @@ static func generate_control_map_for_import(
 
 			# Check if this is an inlet/harbor zone (low elevation, gentle slope, not south coast)
 			# Must match the thresholds in _determine_texture() for consistency
-			var is_inlet_zone := h < 20.0 and slope < 25.0 and ny < 0.85
+			var is_inlet_zone := h < 20.0 and slope < 25.0 and ny_warped < 0.85
 
 			# FROZEN SEA/COASTLINE/INLET: Heavy snow coverage over ice (85-95% snow visible)
 			# This creates the natural arctic look of snow drifts over frozen sea

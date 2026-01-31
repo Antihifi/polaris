@@ -585,9 +585,38 @@ func force_clear_weather() -> void:
 	force_weather("Clear")
 
 
+func get_temperature_modifier() -> float:
+	## Returns temperature drop (negative) based on current weather intensity.
+	## Heavier weather = colder temperatures.
+	## Clear: 0, Very Light: -2, Light: -4, Light-Medium: -7, Medium: -10, Heavy: -15
+	if not _current_event:
+		return 0.0
+	match _current_event.intensity_name:
+		"Very Light":
+			return -2.0
+		"Light":
+			return -4.0
+		"Light-Medium":
+			return -7.0
+		"Medium":
+			return -10.0
+		"Heavy":
+			return -15.0
+		_:
+			return 0.0
+
+
 func is_safe_for_snow() -> bool:
 	## Check if current time is safe for snow (not sunrise/sunset)
 	var hour := _get_current_hour()
 	var is_sunrise := hour >= sunrise_start_hour and hour < sunrise_end_hour
 	var is_sunset := hour >= sunset_start_hour and hour < sunset_end_hour
 	return not is_sunrise and not is_sunset
+
+
+func is_clear_weather() -> bool:
+	## Returns true when current weather is clear (no snow/blizzard).
+	## Used by AuroraController to determine if aurora can be visible.
+	if not _current_event:
+		return true
+	return _current_event.intensity_name == "Clear"

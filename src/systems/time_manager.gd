@@ -47,6 +47,7 @@ var is_paused: bool = false
 # Internal tracking
 var _last_hour: int = -1
 var _last_day: int = -1
+var _weather_controller: Node = null  # DynamicWeatherController reference
 
 # Season configurations (temperature only - Sky3D handles lighting)
 const SEASON_CONFIG: Dictionary = {
@@ -394,7 +395,10 @@ func get_current_temperature() -> float:
 		# Nighttime - colder
 		time_modifier = -5.0
 
-	return base_temp + time_modifier
+	# Weather intensity modifier (heavier snow/blizzard = colder)
+	var weather_modifier := _get_weather_temperature_modifier()
+
+	return base_temp + time_modifier + weather_modifier
 
 
 func is_daytime() -> bool:
@@ -457,6 +461,16 @@ func _find_snow_controller() -> Node:
 		return nodes[0]
 	# Search by name
 	return get_tree().current_scene.find_child("SnowController", true, false)
+
+
+func _get_weather_temperature_modifier() -> float:
+	## Get temperature modifier from DynamicWeatherController.
+	## Heavier weather = colder. Returns 0 to -15.
+	if not _weather_controller:
+		_weather_controller = get_tree().current_scene.find_child("DynamicWeatherController", true, false) if get_tree().current_scene else null
+	if _weather_controller and _weather_controller.has_method("get_temperature_modifier"):
+		return _weather_controller.get_temperature_modifier()
+	return 0.0
 
 
 # --- Getters ---

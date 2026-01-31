@@ -1051,7 +1051,7 @@ func _update_resource_status(text: String, color: Color = Color.WHITE) -> void:
 
 # --- Ship Pieces (Erebus) ---
 
-var _wood_crash_sound: AudioStream = preload("res://sounds/wood-crashing.mp3")
+var _wood_crash_sound: AudioStream = preload("res://sounds/wood_crash.mp3")
 var _ground_crash_sound: AudioStream = preload("res://sounds/crash_on_ground.mp3")
 var _ground_impact_detected: bool = false
 

@@ -306,6 +306,12 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 	var hunger_drain := hunger_decay_rate * get_hunger_drain_multiplier()
 	if is_working:
 		hunger_drain *= 1.5  # Working makes you hungrier
+
+	# Direct cold hunger penalty - body burns more calories in extreme cold
+	if ambient_temperature < -10.0:
+		var cold_x: float = -ambient_temperature - 10.0
+		hunger_drain += 0.003 * cold_x * cold_x  # +0.3/hr at -20, +1.2 at -30, +7.5 at -60
+
 	hunger -= hunger_drain
 
 	# Warmth affected by environment
@@ -317,8 +323,10 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 	if is_in_sunlight and not is_in_shelter:
 		warmth_change += 1.0  # Sunlight provides minor warmth
 
-	# Temperature effect (ambient_temperature in Celsius, negative in arctic)
-	var cold_effect: float = (-ambient_temperature - 10.0) * 0.5  # Stronger effect below -10C
+	# Temperature effect - exponential curve below -10C
+	# Ramps slowly at mild cold, severely at extreme temps (-60C is near-instant death)
+	var cold_degrees: float = maxf(0.0, -ambient_temperature - 10.0)  # degrees below -10C
+	var cold_effect: float = 0.02 * cold_degrees * cold_degrees  # quadratic: 0 at -10, 8 at -30, 50 at -60
 	cold_effect *= (1.0 - cold_resistance / 100.0)  # Resistance reduces effect
 
 	# Nighttime doubles cold effect when below 0C
@@ -353,6 +361,11 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 	# Sunlight bonus to energy recovery
 	if is_in_sunlight and not is_working:
 		energy_change += 0.5
+
+	# Direct cold energy penalty - body uses more energy to maintain warmth
+	if ambient_temperature < -10.0:
+		var cold_x: float = -ambient_temperature - 10.0
+		energy_change -= 0.005 * cold_x * cold_x  # -0.5/hr at -20, -2.0 at -30, -12.5 at -60
 
 	# If energy exceeds max (health dropped), force it down
 	var max_energy := get_max_energy()

@@ -35,7 +35,14 @@ const FALLOFF_INNER: float = 0.85   # Where falloff ends (full island) - narrowe
 ## Generate the island shape mask
 ## Returns Image with FORMAT_RF (32-bit float per pixel)
 ## The island fills most of the terrain with only ~500m ice border on N/E/W edges.
-static func generate_mask(width_px: int, height_px: int, shape_rng: RandomNumberGenerator) -> Image:
+static func generate_mask(
+	width_px: int,
+	height_px: int,
+	shape_rng: RandomNumberGenerator,
+	world_size_meters: float = WORLD_SIZE_METERS,
+	ice_border_meters: float = ICE_BORDER_METERS,
+	north_ice_border_meters: float = NORTH_ICE_BORDER_METERS
+) -> Image:
 	var mask := Image.create(width_px, height_px, false, Image.FORMAT_RF)
 
 	# Create noise for coastline variation
@@ -47,12 +54,12 @@ static func generate_mask(width_px: int, height_px: int, shape_rng: RandomNumber
 	coast_noise.fractal_octaves = 2  # Fewer octaves for less jagged edges
 
 	# Calculate meters per pixel dynamically from terrain size and resolution
-	var meters_per_pixel: float = WORLD_SIZE_METERS / float(width_px)
+	var meters_per_pixel: float = world_size_meters / float(width_px)
 
 	# Ice border in pixels (E/W sides)
-	var ice_border_px: float = ICE_BORDER_METERS / meters_per_pixel
+	var ice_border_px: float = ice_border_meters / meters_per_pixel
 	# North ice border (matching or larger than E/W for consistent wasteland)
-	var north_ice_border_px: float = NORTH_ICE_BORDER_METERS / meters_per_pixel
+	var north_ice_border_px: float = north_ice_border_meters / meters_per_pixel
 
 	# Island fills most of the terrain, with ice border on N/E/W
 	# The island is centered but slightly south (to accommodate larger north ice)

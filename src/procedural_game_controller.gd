@@ -23,6 +23,7 @@ var _tutorial_panel_scene: PackedScene = preload("res://ui/tutorial_panel.tscn")
 ## Load terrain texture configuration (dedicated scene for procedural generation)
 ## Contains Terrain3DAssets with 4 textures: snow (0), rock (1), gravel (2), ice (3)
 var _terrain_config_scene: PackedScene = preload("res://terrain/procedural_terrain_config.tscn")
+var _ui_theme: Theme = preload("res://ui/MinimalUI.tres")
 
 ## Terrain configuration (matches terrain_generator.gd)
 const TERRAIN_RESOLUTION: int = 4096
@@ -202,6 +203,7 @@ func _create_loading_ui() -> void:
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.theme = _ui_theme
 	_loading_canvas.add_child(center)
 
 	var panel := PanelContainer.new()

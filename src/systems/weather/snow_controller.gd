@@ -183,6 +183,9 @@ var _fog_shader_material: ShaderMaterial = null
 ## Smoothed fog wind speed to prevent hurricane effect during transitions
 var _smoothed_fog_wind_speed: float = 0.0
 
+## Accumulated fog wind offset for shader (monotonically grows, prevents reversal)
+var _fog_wind_offset: Vector2 = Vector2.ZERO
+
 ## Original camera far distance
 var _original_camera_far: float = 4000.0
 
@@ -579,18 +582,18 @@ func _update_wind() -> void:
 
 		_particle_material.gravity = Vector3(wind_x, -9.8, wind_z)
 
-	# Sync fog shader wind direction and speed so fog drifts same way as snow
+	# Sync fog shader wind offset so fog drifts same way as snow
 	if _fog_shader_material:
-		_fog_shader_material.set_shader_parameter("wind_direction", wind_dir)
-
-		# Smoothly interpolate fog wind speed to prevent hurricane effect during transitions
-		# Fog moves slower than particles but should still be visible
-		# Heavy blizzard wind ~25 m/s -> fog wind ~5-7 m/s for nice drift
-		var target_fog_wind: float = wind_speed * 0.25
-		# Faster lerp (0.08) so fog reaches target speed in reasonable time
-		# At 60fps: 0.08 per frame reaches 95% of target in ~37 frames (~0.6 seconds)
+		# Smooth wind speed to prevent jitter during transitions
+		var target_fog_wind: float = wind_speed
 		_smoothed_fog_wind_speed = lerpf(_smoothed_fog_wind_speed, target_fog_wind, 0.08)
-		_fog_shader_material.set_shader_parameter("wind_speed", _smoothed_fog_wind_speed)
+
+		# Accumulate wind offset — prevents fog reversal since speed >= 0.
+		# Direction uses (sin, cos) so noise(world - offset) moves in +offset = particle direction.
+		var delta: float = get_process_delta_time()
+		_fog_wind_offset.x += _smoothed_fog_wind_speed * delta * sin(wind_dir)
+		_fog_wind_offset.y += _smoothed_fog_wind_speed * delta * cos(wind_dir)
+		_fog_shader_material.set_shader_parameter("wind_offset", _fog_wind_offset)
 
 	# Sync light tint from Sky3D for sunrise/sunset color matching
 	_update_fog_light_tint()

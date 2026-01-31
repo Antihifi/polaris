@@ -82,6 +82,28 @@
 		"durability": 100.0,
 		"weight": 1.5
 	},
+	"spyglass": {
+		"name": "Spyglass",
+		"image": "res://inventory_icons/spyglass.png",
+		"size": "Vector2i(1, 2)",
+		"category": "tool",
+		"subcategory": "navigation",
+		"max_stack_size": 1,
+		"durability": 100.0,
+		"weight": 0.8,
+		"camera_height_bonus": 10.0
+	},
+	"sextant": {
+		"name": "Sextant",
+		"image": "res://inventory_icons/sextant.png",
+		"size": "Vector2i(1, 2)",
+		"category": "tool",
+		"subcategory": "navigation",
+		"max_stack_size": 1,
+		"durability": 100.0,
+		"weight": 1.2,
+		"camera_height_bonus": 10.0
+	},
 	"human_meat": {
 		"name": "Human Meat",
 		"image": "res://inventory_icons/human_meat.png",
@@ -99,7 +121,7 @@
 		"size": "Vector2i(1, 1)",
 		"category": "material",
 		"max_stack_size": 10,
-		"weight": 1.0
+		"weight": 15.0
 	},
 	"nails": {
 		"name": "Nails",
@@ -108,5 +130,21 @@
 		"category": "material",
 		"max_stack_size": 20,
 		"weight": 0.2
+	},
+	"nails_box": {
+		"name": "Box of Nails",
+		"image": "res://inventory_icons/nails_box.png",
+		"size": "Vector2i(1, 1)",
+		"category": "material",
+		"max_stack_size": 5,
+		"weight": 5.0
+	},
+	"scrap_sails": {
+		"name": "Sail Cloth Scrap",
+		"image": "res://inventory_icons/scrap_sails.png",
+		"size": "Vector2i(2, 2)",
+		"category": "material",
+		"max_stack_size": 1,
+		"weight": 10.0
 	}
 }

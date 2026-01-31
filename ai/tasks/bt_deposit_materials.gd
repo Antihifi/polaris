@@ -57,6 +57,7 @@ func _tick(_delta: float) -> Status:
 		deposited = true
 
 	if deposited:
+		blackboard.set_var(&"is_delivering", false)
 		blackboard.set_var(&"current_action", "Deposited " + mat_id)
 		return SUCCESS
 
