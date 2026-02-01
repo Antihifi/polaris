@@ -28,6 +28,9 @@ var sled_panel: Control
 var workbench_panel: Control
 var ship_resource_panel: Control
 var construction_site_panel: Control
+var tent_panel: Control
+var tent_placement_manager: TentPlacementManager
+var butcher_panel: Control
 
 
 func _ready() -> void:
@@ -96,6 +99,40 @@ func _ready() -> void:
 
 	# Connect construction site click to construction site panel
 	input_handler.construction_site_clicked.connect(_on_construction_site_clicked)
+
+	# Create tent interaction panel and placement manager
+	var tent_panel_scene := preload("res://ui/tent_panel.tscn")
+	tent_panel = tent_panel_scene.instantiate()
+	add_child(tent_panel)
+	input_handler.tent_clicked.connect(_on_tent_clicked)
+
+	tent_placement_manager = TentPlacementManager.new()
+	tent_placement_manager.name = "TentPlacementManager"
+	add_child(tent_placement_manager)
+
+	# Create butcher confirmation panel
+	var butcher_panel_scene := preload("res://ui/butcher_panel.tscn")
+	butcher_panel = butcher_panel_scene.instantiate()
+	add_child(butcher_panel)
+	input_handler.corpse_clicked.connect(_on_corpse_clicked)
+	butcher_panel.butcher_confirmed.connect(_on_butcher_confirmed)
+
+	# Connect inventory item action (e.g. Place Tent from crate, Carve body parts)
+	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	if container_panel:
+		container_panel.item_action_requested.connect(_on_inventory_item_action)
+
+	# Also connect unit panel so carving works from unit inventory
+	var unit_panel: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+	if unit_panel:
+		unit_panel.item_action_requested.connect(_on_inventory_item_action)
+
+	# Enable carve button when unit inventory opens (check if unit has knife)
+	inventory_hud.unit_inventory_opened.connect(_on_unit_inventory_opened)
+
+	# Aurora controller (appearance tuned in aurora_controller.tscn)
+	var aurora_ctrl: Node = preload("res://src/effects/aurora_controller.tscn").instantiate()
+	add_child(aurora_ctrl)
 
 	# Captain is player-controlled only - no AI controller
 
@@ -224,6 +261,110 @@ func _on_construction_site_clicked(site: Node) -> void:
 		construction_site_panel.show_for_site(site, rts_camera)
 
 
+func _on_tent_clicked(tent: Node) -> void:
+	## Handle tent right-click - show tent panel with Store button.
+	if not tent or not tent_panel:
+		return
+	if tent_panel.has_method("show_for_tent"):
+		tent_panel.show_for_tent(tent, rts_camera)
+
+
+func _on_inventory_item_action(item: InventoryItem, action: String) -> void:
+	## Handle inventory item action (e.g. placing a tent, carving body parts).
+	if action == "place" and tent_placement_manager:
+		inventory_hud.close_container()
+		tent_placement_manager.start_tent_placement(item)
+	elif action == "carve":
+		_handle_carve(item)
+
+
+func _on_unit_inventory_opened(unit: ClickableUnit) -> void:
+	## Enable/disable carve button based on whether the unit has a knife.
+	var unit_panel: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+	if unit_panel and unit:
+		var has_knife: bool = unit.has_method("has_item_by_id") and unit.has_item_by_id("knife")
+		unit_panel.set_carve_enabled(has_knife)
+
+
+func _on_corpse_clicked(corpse: Node) -> void:
+	## Handle right-click on dead unit — show butcher panel or corpse inventory.
+	if not corpse or not is_instance_valid(corpse):
+		return
+	# If already butchered, open corpse inventory directly.
+	var corpse_inv: Inventory = corpse.get_node_or_null("CorpseInventory")
+	if corpse_inv:
+		_open_corpse_inventory(corpse, corpse_inv)
+		return
+	# Otherwise show butcher confirmation panel.
+	if not butcher_panel:
+		return
+	var selected: Array[Node] = input_handler.get_selected_units()
+	var butcher: Node = selected[0] if not selected.is_empty() else null
+	var has_axe: bool = butcher and butcher.has_method("has_item_by_id") and butcher.has_item_by_id("hatchet")
+	butcher_panel.show_for_corpse(corpse, has_axe, rts_camera)
+
+
+func _on_butcher_confirmed(corpse: Node3D) -> void:
+	## Create corpse inventory with body parts after butcher confirmation.
+	if not corpse or not is_instance_valid(corpse):
+		return
+	var protoset: JSON = load("res://data/items_protoset.json")
+	var corpse_inv := Inventory.new()
+	corpse_inv.name = "CorpseInventory"
+	corpse_inv.protoset = protoset
+	corpse.add_child(corpse_inv)
+
+	var grid := GridConstraint.new()
+	grid.name = "GridConstraint"
+	grid.size = Vector2i(8, 6)
+	corpse_inv.add_child(grid)
+
+	# Add body parts (stub: full yield regardless of skill).
+	corpse_inv.create_and_add_item("human_head")
+	corpse_inv.create_and_add_item("human_arm")
+	corpse_inv.create_and_add_item("human_arm")
+	corpse_inv.create_and_add_item("human_leg")
+	corpse_inv.create_and_add_item("human_leg")
+	corpse_inv.create_and_add_item("human_torso")
+
+	corpse.add_to_group("butchered")
+	_open_corpse_inventory(corpse, corpse_inv)
+
+	var corpse_name: String = corpse.unit_name if "unit_name" in corpse else "unit"
+	print("[MainController] Butchered %s — body parts created" % corpse_name)
+
+
+func _open_corpse_inventory(corpse: Node, corpse_inv: Inventory) -> void:
+	## Open the corpse inventory in the container panel.
+	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	if not container_panel:
+		return
+	var corpse_name: String = corpse.unit_name if "unit_name" in corpse else "Corpse"
+	container_panel.show_inventory(corpse_inv, "REMAINS OF %s" % corpse_name.to_upper())
+	# Enable/disable carve based on whether selected unit has a knife.
+	var selected: Array[Node] = input_handler.get_selected_units()
+	var butcher: Node = selected[0] if not selected.is_empty() else null
+	var has_knife: bool = butcher and butcher.has_method("has_item_by_id") and butcher.has_item_by_id("knife")
+	container_panel.set_carve_enabled(has_knife)
+
+
+const BUTCHER_MULTIPLIER: float = 1.0  ## Stub: will be replaced by unit's butchering skill.
+
+func _handle_carve(item: InventoryItem) -> void:
+	## Carve a body part into human_meat.
+	if not item or not is_instance_valid(item):
+		return
+	var inv: Inventory = item.get_inventory()
+	if not inv:
+		return
+	var meat_yield: int = int(item.get_property("meat_yield", 1))
+	var total_meat: int = int(floorf(meat_yield * BUTCHER_MULTIPLIER))
+	inv.remove_item(item)
+	for i in range(total_meat):
+		inv.create_and_add_item("human_meat")
+	print("[MainController] Carved body part into %d human meat" % total_meat)
+
+
 func _add_ai_controller(unit: Node) -> void:
 	## Add ManAIController component to a unit for behavior tree AI.
 	if not unit:
@@ -255,13 +396,16 @@ func _spawn_test_officer() -> void:
 	# Instantiate officer
 	var officer: Node = officer_scene.instantiate()
 
+	# Set rank BEFORE add_child so _ready() can configure PassiveAI correctly
+	officer.rank = ClickableUnit.UnitRank.OFFICER
+
 	# Generate random name using CharacterSpawner name pools
 	var first_name: String = CharacterSpawner.FIRST_NAMES[_officer_rng.randi() % CharacterSpawner.FIRST_NAMES.size()]
 	var last_name: String = CharacterSpawner.LAST_NAMES[_officer_rng.randi() % CharacterSpawner.LAST_NAMES.size()]
 	officer.unit_name = "Lt. %s %s" % [first_name, last_name]
 	officer.movement_speed = 5.0  # Match Men speed (CharacterSpawner sets 5.0)
 
-	# Add to scene tree FIRST (before setting global_position)
+	# Add to scene tree (triggers _ready which checks rank for PassiveAI setup)
 	add_child(officer)
 	officer.global_position = spawn_pos
 

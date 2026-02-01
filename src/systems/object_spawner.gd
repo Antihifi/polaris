@@ -23,7 +23,7 @@ var spawned_workbench: Node3D = null
 
 ## Item pools for random population
 const BARREL_ITEMS: Array[String] = ["hardtack", "salt_pork", "pemmican", "tinned_meat", "rum"]
-const CRATE_ITEMS: Array[String] = ["firewood", "coal", "knife", "hatchet"]
+const CRATE_ITEMS: Array[String] = ["firewood", "coal", "knife", "hatchet", "spyglass", "sextant", "tent"]
 
 var _spawned_containers: Array[Node] = []
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()

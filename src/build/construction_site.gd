@@ -183,6 +183,10 @@ func _complete_construction() -> void:
 		get_parent().add_child(result)
 		# Unfreeze any RigidBody3D in the result after a frame delay.
 		_unfreeze_rigid_bodies_deferred(result)
+		# If this is a tent, make it interactive for store/place.
+		if recipe.id == &"tent":
+			result.add_to_group("placed_tents")
+			TentPlacementManager.add_tent_click_area(result)
 
 	# Emit completion signal.
 	construction_complete.emit(recipe.result_scene if recipe else null)

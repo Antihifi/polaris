@@ -46,6 +46,12 @@ class_name DemolitionTestController
 @export var sound_unit_size: float = 15.0  # Reference distance for attenuation (larger = audible further)
 @export var sound_max_distance: float = 200.0  # Beyond this, sound is silent
 
+@export_group("Debris Cleanup")
+@export var debris_cleanup_enabled: bool = true
+@export var debris_min_volume: float = 1.0  # AABB volume threshold for cleanup
+@export var debris_cleanup_hours_min: int = 6  # Min game-hours before fade-out
+@export var debris_cleanup_hours_max: int = 8  # Max game-hours before fade-out
+
 # Sound preloads
 var _wood_crash_sound: AudioStream = preload("res://sounds/wood_crash.mp3")
 var _ground_crash_sound: AudioStream = preload("res://sounds/crash_on_ground.mp3")
@@ -79,6 +85,7 @@ var _mid_rumble_player: AudioStreamPlayer = null
 # Collision layers
 const LAYER_GROUND := 1
 const LAYER_DEBRIS := 2
+const LAYER_SHIP_BODY := 4  # Ship capsule collider — separate so debris ignores it
 
 # Shroud-mast dependency map
 const MAST_SHROUDS: Dictionary = {
@@ -86,6 +93,14 @@ const MAST_SHROUDS: Dictionary = {
 	"Mast_MainMast": ["Shroud_Mainmast_Port", "Shroud_MainMast_Starboard"],
 	"Mast_MizzenMast": ["Shroud_MizzenMast_Port", "Shroud_MizzenMast_Starboard"],
 	"Mast_Bowsprit": [],
+}
+
+# Rigging-mast dependency map (rigging must go before its mast)
+const MAST_RIGGING: Dictionary = {
+	"Mast_Foremast": ["Rigging_Foremast"],
+	"Mast_MainMast": ["Rigging_MainMast"],
+	"Mast_MizzenMast": ["Rigging_MizzenMast"],
+	"Mast_Bowsprit": ["Rigging_Bowsprit", "Rigging_Bowsprit_Top"],
 }
 
 # Rigging/shroud to mast mapping for shake effect
@@ -137,6 +152,11 @@ var _ship_center: Vector3 = Vector3.ZERO
 
 # Active shake tweens (for cleanup on reset)
 var _active_shakes: Array[Tween] = []
+
+# Debris auto-cleanup
+var _debris_cleanup_queue: Array[Dictionary] = []  # [{body: RigidBody3D, expire: int}]
+var _debris_check_timer: float = 0.0
+const DEBRIS_CHECK_INTERVAL: float = 2.0  # Check every 2 seconds (performant)
 
 
 
@@ -191,6 +211,7 @@ func _process(delta: float) -> void:
 	_check_mast_ground_impacts()
 	_update_creaking(delta)
 	_update_sinking(delta)
+	_check_debris_cleanup(delta)
 
 
 # ============ SOUND SYSTEM ============
@@ -320,6 +341,12 @@ func _get_destruction_progress() -> float:
 func _fix_collision_layers() -> void:
 	var rigging_count := 0
 	var debris_count := 0
+
+	# Move ship's capsule collider to its own layer so debris ignores it
+	for child in ship_root.get_children():
+		if child is StaticBody3D:
+			child.collision_layer = LAYER_SHIP_BODY
+			child.collision_mask = LAYER_SHIP_BODY
 
 	for group_node in ship_root.get_children():
 		var is_rigging := _is_rigging_group(group_node)
@@ -497,6 +524,12 @@ func _destroy_mast_progressive() -> void:
 		if remaining.is_empty():
 			continue
 
+		# Check rigging dependency (rigging must go before mast)
+		if not _check_rigging_destroyed(mast_name):
+			print("Cannot destroy ", mast_name, " - rigging still intact!")
+			_current_mast_index = (idx + 1) % MAST_GROUPS.size()
+			continue
+
 		# Check shroud dependency
 		if not _check_shrouds_destroyed(mast_name):
 			print("Cannot destroy ", mast_name, " - shrouds still intact!")
@@ -533,6 +566,17 @@ func _destroy_mast_progressive() -> void:
 		return
 
 	print("All masts fully destroyed")
+
+
+func _check_rigging_destroyed(mast_name: String) -> bool:
+	var rigging: Array = MAST_RIGGING.get(mast_name, [])
+	if rigging.is_empty():
+		return true
+
+	for rigging_name in rigging:
+		if not _rigging_destroyed.get(rigging_name, false):
+			return false
+	return true
 
 
 func _check_shrouds_destroyed(mast_name: String) -> bool:
@@ -767,6 +811,7 @@ func _get_all_bodies(group: Node) -> Array[RigidBody3D]:
 
 func _activate_body(body: RigidBody3D, is_rigging: bool, is_mast: bool = false) -> void:
 	body.freeze = false
+	_register_debris_for_cleanup(body)
 
 	if is_rigging:
 		var gentle_push := Vector3(
@@ -817,6 +862,52 @@ func _generate_torque(body: RigidBody3D) -> Vector3:
 	return random_axis * torque_strength * body.mass * 2.0
 
 
+# ============ DEBRIS CLEANUP ============
+
+func _register_debris_for_cleanup(body: RigidBody3D) -> void:
+	if not debris_cleanup_enabled:
+		return
+	for child in body.get_children():
+		if child is MeshInstance3D:
+			var aabb: AABB = child.get_aabb()
+			var vol: float = aabb.size.x * aabb.size.y * aabb.size.z
+			if vol >= debris_min_volume:
+				var tm: Node = get_node_or_null("/root/TimeManager")
+				var total_h: int = 0
+				if tm:
+					total_h = tm.current_day * 24 + tm.current_hour
+				var delay: int = randi_range(debris_cleanup_hours_min, debris_cleanup_hours_max)
+				_debris_cleanup_queue.append({"body": body, "expire": total_h + delay})
+			break  # Only check first mesh child
+
+
+func _check_debris_cleanup(delta: float) -> void:
+	if not debris_cleanup_enabled or _debris_cleanup_queue.is_empty():
+		return
+	_debris_check_timer += delta
+	if _debris_check_timer < DEBRIS_CHECK_INTERVAL:
+		return
+	_debris_check_timer = 0.0
+
+	var tm: Node = get_node_or_null("/root/TimeManager")
+	if not tm:
+		return
+	var now: int = tm.current_day * 24 + tm.current_hour
+
+	var i: int = _debris_cleanup_queue.size() - 1
+	while i >= 0:
+		var entry: Dictionary = _debris_cleanup_queue[i]
+		var body: RigidBody3D = entry.body
+		if not is_instance_valid(body):
+			_debris_cleanup_queue.remove_at(i)
+		elif now >= entry.expire:
+			_debris_cleanup_queue.remove_at(i)
+			var tween: Tween = body.create_tween()
+			tween.tween_property(body, "scale", Vector3.ZERO, 3.0)
+			tween.tween_callback(body.queue_free)
+		i -= 1
+
+
 func destroy_all() -> void:
 	if not ship_root:
 		return
@@ -854,6 +945,8 @@ func reset_all() -> void:
 	# Reset sound state
 	_falling_mast_bodies.clear()
 	_mast_ground_impacts.clear()
+	_debris_cleanup_queue.clear()
+	_debris_check_timer = 0.0
 	_creak_timer = 0.0
 	_next_creak_interval = randf_range(20.0, 40.0)
 	if _creak_player and is_instance_valid(_creak_player):

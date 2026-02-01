@@ -2,18 +2,21 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://sfcgi2lb2krw"
-path.s3tc="res://.godot/imported/Material.001_normal.png-774385ddfa98736f9312df7f80d4b200.s3tc.ctex"
-path.etc2="res://.godot/imported/Material.001_normal.png-774385ddfa98736f9312df7f80d4b200.etc2.ctex"
+uid="uid://dru88v5ciy3au"
+path.s3tc="res://.godot/imported/Bed2_Material_1.png-eb48ddebb17c88d3cf5fa00c409d158f.s3tc.ctex"
+path.etc2="res://.godot/imported/Bed2_Material_1.png-eb48ddebb17c88d3cf5fa00c409d158f.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
+generator_parameters={
+"md5": "b8bbfe3b4b82ef892f43a2f9d46eb47b"
+}
 
 [deps]
 
-source_file="res://objects/bed1/textures/Material.001_normal.png"
-dest_files=["res://.godot/imported/Material.001_normal.png-774385ddfa98736f9312df7f80d4b200.s3tc.ctex", "res://.godot/imported/Material.001_normal.png-774385ddfa98736f9312df7f80d4b200.etc2.ctex"]
+source_file="res://objects/bed1/Bed2_Material_1.png"
+dest_files=["res://.godot/imported/Bed2_Material_1.png-eb48ddebb17c88d3cf5fa00c409d158f.s3tc.ctex", "res://.godot/imported/Bed2_Material_1.png-eb48ddebb17c88d3cf5fa00c409d158f.etc2.ctex"]
 
 [params]
 
@@ -23,12 +26,12 @@ compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=1
+compress/normal_map=0
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
-roughness/mode=1
-roughness/src_normal="res://objects/bed1/textures/Material.001_normal.png"
+roughness/mode=8
+roughness/src_normal="res://objects/bed1/Bed2_Material.png"
 process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2

@@ -83,17 +83,12 @@ func _tick(delta: float) -> Status:
 	# We wait 3+ frames so the physics engine can process the move_to() call.
 	if _moving and _frames_since_move_called > 3:
 		if "is_moving" in agent and not agent.is_moving:
-			if agent.has_method("stop"):
-				agent.stop()
-			_moving = false
-			# Check if we actually arrived at the target
 			if dist < arrival_distance:
+				if agent.has_method("stop"):
+					agent.stop()
+				_moving = false
 				return SUCCESS
-			else:
-				# One-time log when navigation finishes but unit didn't reach target
-				var unit_name: String = agent.unit_name if "unit_name" in agent else "unit"
-				print("[BTMoveTo] %s: Nav finished %.1fm from target (need < %.1fm)" % [unit_name, dist, arrival_distance])
-				return FAILURE
+			# Nav finished far from target - fall through to stuck detection
 
 	# Stuck detection: check if we've moved enough since last tick
 	if _last_position != Vector3.INF:

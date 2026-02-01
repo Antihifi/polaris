@@ -411,8 +411,11 @@ func _check_collision(pos: Vector3) -> bool:
 
 func _check_materials_available() -> bool:
 	## Check if workbench has required materials.
-	if not _linked_workbench or not _current_recipe:
+	if not _current_recipe:
 		return false
+	# No workbench = inventory placement, materials already consumed.
+	if not _linked_workbench:
+		return true
 
 	# Check if workbench has the method.
 	if not _linked_workbench.has_method("get_stored_material_count"):

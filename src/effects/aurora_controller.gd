@@ -23,7 +23,7 @@ signal aurora_ended
 # --- Shader Tuning ---
 @export_category("Shader")
 @export var shader_speed: float = 0.01
-@export var shader_smoothness: float = 0.15
+@export var shader_smoothness: float = 0.3
 @export var shader_distort: float = 1.0
 @export var shader_scale: float = 0.02
 @export var shader_offset: float = 0.0

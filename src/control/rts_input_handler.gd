@@ -11,6 +11,7 @@ extends Node
 @export var workbench_collision_mask: int = 32  # Layer 6 for workbenches
 @export var construction_site_collision_mask: int = 64  # Layer 7 for construction sites
 @export var ship_collision_mask: int = 128  # Layer 8 for ships
+@export var tent_collision_mask: int = 256  # Layer 9 for placed tents
 
 ## Enable multi-selection with shift-click and box select
 @export var multi_select_enabled: bool = true
@@ -22,6 +23,8 @@ signal sled_clicked(sled: Node)
 signal workbench_clicked(workbench: Node)
 signal construction_site_clicked(site: Node)
 signal ship_clicked(ship: Node)
+signal tent_clicked(tent: Node)
+signal corpse_clicked(corpse: Node)
 
 # Single selection (legacy support)
 var selected_unit: ClickableUnit = null
@@ -303,6 +306,30 @@ func _raycast_for_construction_site(screen_position: Vector2) -> Node:
 	return null
 
 
+func _raycast_for_tent(screen_position: Vector2) -> Node:
+	## Raycast to find a placed tent at screen position. Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+	var space_state := camera.get_world_3d().direct_space_state
+
+	var tent_query := PhysicsRayQueryParameters3D.create(from, to, tent_collision_mask)
+	tent_query.collide_with_areas = true
+	tent_query.collide_with_bodies = false
+	var tent_result := space_state.intersect_ray(tent_query)
+
+	if not tent_result.is_empty():
+		var hit: Object = tent_result.collider
+		if hit is Node:
+			var current: Node = hit as Node
+			for i in range(5):
+				if not current:
+					break
+				if current.is_in_group("placed_tents"):
+					return current
+				current = current.get_parent()
+	return null
+
+
 func _raycast_for_ship(screen_position: Vector2) -> Node:
 	## Raycast to find a ship at screen position. Returns null if none found.
 	var from := camera.project_ray_origin(screen_position)
@@ -430,6 +457,12 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	## If clicking on a construction site, emit construction_site_clicked or assign officer.
 	## Non-lead sled pullers are filtered out - they follow their leader automatically.
 
+	# Check if right-clicking on a dead unit (corpse)
+	var clicked_corpse := _raycast_for_unit(screen_position)
+	if clicked_corpse and clicked_corpse is ClickableUnit and (clicked_corpse as ClickableUnit).is_dead:
+		corpse_clicked.emit(clicked_corpse)
+		return
+
 	# Check if right-clicking on a construction site
 	var clicked_site := _raycast_for_construction_site(screen_position)
 	if clicked_site:
@@ -440,6 +473,12 @@ func _handle_right_click(screen_position: Vector2) -> void:
 				return
 		# Otherwise show site panel
 		construction_site_clicked.emit(clicked_site)
+		return
+
+	# Check if right-clicking on a placed tent
+	var clicked_tent := _raycast_for_tent(screen_position)
+	if clicked_tent:
+		tent_clicked.emit(clicked_tent)
 		return
 
 	# Check if right-clicking on a workbench
@@ -553,24 +592,13 @@ func _get_terrain_position(screen_position: Vector2) -> Vector3:
 	var from := camera.project_ray_origin(screen_position)
 	var direction := camera.project_ray_normal(screen_position)
 
-	# Method 1: Try Terrain3D direct height query (no physics needed)
-	if terrain_3d and "data" in terrain_3d and terrain_3d.data:
-		# Use iterative approach: start with y=0 plane, get height, refine
-		if abs(direction.y) > 0.001:
-			# Initial intersection with y=0 plane
-			var t := -from.y / direction.y
-			if t > 0:
-				var ground_pos := from + direction * t
-				var height: float = terrain_3d.data.get_height(ground_pos)
-				if not is_nan(height):
-					# Refine: intersect with plane at actual terrain height
-					t = (height - from.y) / direction.y
-					if t > 0:
-						ground_pos = from + direction * t
-						height = terrain_3d.data.get_height(ground_pos)
-						if not is_nan(height):
-							print("[RTSInput] Terrain3D hit at: ", Vector3(ground_pos.x, height, ground_pos.z))
-							return Vector3(ground_pos.x, height, ground_pos.z)
+	# Method 1: Terrain3D CPU raymarching (bypasses physics, reliable on all slopes)
+	# Uses Terrain3D's built-in get_intersection() which walks the ray against the
+	# heightmap directly — no HeightMapShape3D physics bugs, no iterative convergence issues.
+	if terrain_3d and terrain_3d.has_method("get_intersection"):
+		var hit: Vector3 = terrain_3d.get_intersection(from, direction)
+		if hit.z < 3.4e38 and not is_nan(hit.y):
+			return hit
 
 	# Method 2: Fallback to physics raycast
 	var to := from + direction * 1000.0
@@ -745,13 +773,14 @@ func _select_all_units() -> void:
 
 
 func _show_move_indicator(position: Vector3) -> void:
-	## Show destination indicator on all selected units.
+	## Show destination indicator on movable selected units (skips dead/undiscovered).
 	for unit in selected_units:
-		if unit.has_method("show_destination_indicator"):
+		if unit.has_method("show_destination_indicator") and unit.has_method("can_receive_move_command") and unit.can_receive_move_command():
 			unit.show_destination_indicator(position)
 	# Legacy single selection
 	if selected_unit and selected_unit.has_method("show_destination_indicator"):
-		selected_unit.show_destination_indicator(position)
+		if not selected_unit.has_method("can_receive_move_command") or selected_unit.can_receive_move_command():
+			selected_unit.show_destination_indicator(position)
 
 
 ## --- Public API ---

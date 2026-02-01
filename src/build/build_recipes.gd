@@ -32,15 +32,15 @@ static func _init_recipes() -> void:
 	barrel.result_scene_path = "res://objects/storage_barrel.tscn"
 	_recipes[&"barrel"] = barrel
 
-	# Tent Frame - 4 days
-	var tent_frame := BuildRecipe.new()
-	tent_frame.id = &"tent_frame"
-	tent_frame.display_name = "Tent Frame"
-	tent_frame.description = "Wooden poles for tent construction."
-	tent_frame.construction_days = 4
-	tent_frame.required_materials = {"scrap_wood": 5, "nails": 3}
-	tent_frame.result_scene_path = "res://objects/small_tent1/small_tent_1.tscn"
-	_recipes[&"tent_frame"] = tent_frame
+	# Tent - 4 days
+	var tent := BuildRecipe.new()
+	tent.id = &"tent"
+	tent.display_name = "Tent"
+	tent.description = "A canvas tent providing shelter from the elements."
+	tent.construction_days = 4
+	tent.required_materials = {"scrap_wood": 5, "nails": 3, "scrap_sails": 2}
+	tent.result_scene_path = "res://objects/small_tent1/small_tent_1.tscn"
+	_recipes[&"tent"] = tent
 
 	# Firewood Bundle - 1 day, no nails (no scene - uses default box)
 	var firewood := BuildRecipe.new()

@@ -12,6 +12,8 @@ var _sled_panel_scene: PackedScene = preload("res://ui/sled_panel.tscn")
 var _workbench_panel_scene: PackedScene = preload("res://ui/workbench_panel.tscn")
 var _ship_resource_panel_scene: PackedScene = preload("res://ui/ship_resource_panel.tscn")
 var _construction_site_panel_scene: PackedScene = preload("res://ui/construction_site_panel.tscn")
+var _tent_panel_scene: PackedScene = preload("res://ui/tent_panel.tscn")
+var _butcher_panel_scene: PackedScene = preload("res://ui/butcher_panel.tscn")
 var _fragmented_ship_scene: PackedScene = preload("res://objects/erebus4/erebus_physics_ready.tscn")
 var _simplified_ship_scene: PackedScene = preload("res://objects/erebus2/errebus_simplified_pre_destruction_meshes_test3.tscn")
 var _resource_nodes_scene: PackedScene = preload("res://objects/ship1/resource_nodes.tscn")
@@ -21,6 +23,7 @@ var _scenario_panel_scene: PackedScene = preload("res://ui/scenario_panel.tscn")
 var _tutorial_panel_scene: PackedScene = preload("res://ui/tutorial_panel.tscn")
 var _terrain_config_scene: PackedScene = preload("res://terrain/procedural_terrain_config.tscn")
 var _water_scene: PackedScene = preload("res://terrain/water.tscn")
+var _aurora_controller_scene: PackedScene = preload("res://src/effects/aurora_controller.tscn")
 var _ui_theme: Theme = preload("res://ui/MinimalUI.tres")
 
 
@@ -49,6 +52,10 @@ var sled_panel: Control = null
 var workbench_panel: Control = null
 var ship_resource_panel: Control = null
 var construction_site_panel: Control = null
+var tent_panel: Control = null
+var tent_placement_manager: TentPlacementManager = null
+var butcher_panel: Control = null
+var _input_handler: Node = null
 var _seed_manager = null
 var character_spawner: Node = null
 var scenario_panel: ScenarioPanel = null
@@ -168,7 +175,7 @@ func _generate_game() -> void:
 	await get_tree().process_frame
 	_place_pois(inlet_info.position)
 
-	# Stage 8: Find spawn + bake NavMesh
+	# Stage 8: Find spawn, spawn ship, bake NavMesh
 	_update_loading("Finding Spawn Location", "Searching for gentle terrain", 65)
 	var ship_pos: Vector3 = _pois.get("ship", Vector3.ZERO)
 	var spawn_pos := _find_navigable_spawn(ship_pos)
@@ -177,6 +184,9 @@ func _generate_game() -> void:
 		var actual_height: float = terrain.data.get_height(Vector3(spawn_pos.x, 0, spawn_pos.z))
 		if not is_nan(actual_height):
 			spawn_pos.y = actual_height
+
+	# Spawn ship BEFORE NavMesh bake so its collision is included
+	_spawn_fragmented_ship(ship_pos)
 
 	_update_loading("Baking Navigation Mesh", "Baking initial chunk at spawn...", 70)
 	runtime_nav_baker.enabled = true
@@ -540,8 +550,7 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	var men: Array[Node] = character_spawner.spawn_survivors(men_count, spawn_pos)
 	print("[DemoGame] Spawned %d men" % men.size())
 
-	# Fragmented ship with destruction system
-	_spawn_fragmented_ship(ship_pos)
+	# Ship already spawned before NavMesh bake (see _generate_game)
 
 	# Containers near ship
 	var container_spawn_center := ship_pos + Vector3(50.0, 0, 0)
@@ -578,7 +587,13 @@ func _spawn_fragmented_ship(ship_pos: Vector3) -> void:
 		if not is_nan(terrain_height):
 			_ship_terrain_y = terrain_height
 
-	ship.global_position = Vector3(ship_pos.x, _ship_terrain_y, ship_pos.z)
+	ship.global_position = Vector3(ship_pos.x, _ship_terrain_y - 3.0, ship_pos.z)
+
+	# Random list (roll) and pitch for realistic frozen-in-ice appearance
+	var ship_rng := RandomNumberGenerator.new()
+	ship_rng.randomize()
+	ship.rotation.z = deg_to_rad(ship_rng.randf_range(-5.0, 5.0))  # Port/starboard list
+	ship.rotation.x = deg_to_rad(ship_rng.randf_range(-5.0, 5.0))  # Fore/aft pitch
 
 	# Simplified (non-destructible) ship model - the ONLY model at start
 	_simplified_ship_node = _simplified_ship_scene.instantiate()
@@ -586,18 +601,16 @@ func _spawn_fragmented_ship(ship_pos: Vector3) -> void:
 	_simplified_ship_node.position = Vector3.ZERO
 	ship.add_child(_simplified_ship_node)
 
-	# Resource nodes on PORT side (-Z) at Y=0, parented to scene root
-	# The scene has a 90° Y rotation baked in for ship_1.tscn's rotated model.
-	# The demo ship has NO rotation, so we reset to identity to align the crescent
-	# alongside the ship's X axis, with the baked Z≈-6.5 offset pointing to port.
+	# Resource nodes on PORT side (+X), parented to scene root (won't sink with ship)
 	var resource_nodes: Node3D = _resource_nodes_scene.instantiate()
 	resource_nodes.name = "ResourceNodes"
 	resource_nodes.transform = Transform3D.IDENTITY
 	resource_nodes.rotation.y = -PI / 2.0
 	add_child(resource_nodes)
-	# Offset towards port (-Z): baked 6.5m + resource_node_offset extra
+	# With -PI/2 rotation, baked local Z=-6.5 maps to world +X (port/East).
+	# Add extra +X offset to clear the hull.
 	resource_nodes.global_position = Vector3(
-		ship_pos.x, 0.0, ship_pos.z - resource_node_offset
+		ship_pos.x + resource_node_offset, 0.0, ship_pos.z
 	)
 
 	# Add DemolitionTestController (needs to exist for scheduler, finds erebus on demand)
@@ -648,6 +661,18 @@ func _swap_to_fragmented_ship() -> void:
 	var resource_comp := ShipResourceComponent.new()
 	resource_comp.name = "ShipResourceComponent"
 	erebus.add_child(resource_comp)
+
+	# Initialize demolition controller now that ship_root exists
+	var demolition := ship.get_node_or_null("DemolitionTestController")
+	if demolition:
+		demolition.ship_root = erebus
+		if not demolition.rigging_manager:
+			demolition.rigging_manager = ship.get_node_or_null("RiggingCleanupManager")
+		if demolition.auto_fix_collision:
+			demolition._fix_collision_layers()
+		demolition._store_initial_transforms()
+		demolition._cache_hull_deck_fragments()
+		demolition._init_state()
 
 	print("[DemoGame] Swapped to fragmented ship (Y offset: %.2f)" % SHIP_MODEL_Y_OFFSET)
 
@@ -881,6 +906,7 @@ func _setup_game_ui() -> void:
 	input_handler.name = "RTSInputHandler"
 	input_handler.camera = rts_camera
 	add_child(input_handler)
+	_input_handler = input_handler
 
 	# HUD (hidden until scenario dismissed)
 	game_hud = _hud_scene.instantiate()
@@ -930,6 +956,70 @@ func _setup_game_ui() -> void:
 			if construction_site_panel.has_method("show_for_site"):
 				construction_site_panel.show_for_site(site, rts_camera)
 		)
+
+	# Tent interaction panel and placement manager
+	tent_panel = _tent_panel_scene.instantiate()
+	add_child(tent_panel)
+	if input_handler.has_signal("tent_clicked"):
+		input_handler.tent_clicked.connect(func(tent):
+			if tent_panel.has_method("show_for_tent"):
+				tent_panel.show_for_tent(tent, rts_camera)
+		)
+
+	tent_placement_manager = TentPlacementManager.new()
+	tent_placement_manager.name = "TentPlacementManager"
+	add_child(tent_placement_manager)
+
+	# Butcher confirmation panel
+	butcher_panel = _butcher_panel_scene.instantiate()
+	add_child(butcher_panel)
+	if input_handler.has_signal("corpse_clicked"):
+		input_handler.corpse_clicked.connect(func(corpse: Node):
+			if not corpse or not is_instance_valid(corpse):
+				return
+			# If already butchered, open corpse inventory directly.
+			var corpse_inv: Inventory = corpse.get_node_or_null("CorpseInventory")
+			if corpse_inv:
+				_open_corpse_inventory(corpse, corpse_inv)
+				return
+			var selected: Array[Node] = input_handler.get_selected_units()
+			var butcher_unit: Node = selected[0] if not selected.is_empty() else null
+			var has_axe: bool = butcher_unit and butcher_unit.has_method("has_item_by_id") and butcher_unit.has_item_by_id("hatchet")
+			butcher_panel.show_for_corpse(corpse, has_axe, rts_camera)
+		)
+	butcher_panel.butcher_confirmed.connect(func(corpse: Node3D):
+		_on_butcher_confirmed(corpse)
+	)
+
+	# Connect inventory item action (e.g. Place Tent from crate, Carve body parts)
+	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	if container_panel:
+		container_panel.item_action_requested.connect(func(item: InventoryItem, action: String):
+			if action == "place" and tent_placement_manager:
+				inventory_hud.close_container()
+				tent_placement_manager.start_tent_placement(item)
+			elif action == "carve":
+				_handle_carve(item)
+		)
+
+	# Also connect unit panel so carving works from unit inventory
+	var unit_panel: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+	if unit_panel:
+		unit_panel.item_action_requested.connect(func(item: InventoryItem, action: String):
+			if action == "place" and tent_placement_manager:
+				inventory_hud.close_container()
+				tent_placement_manager.start_tent_placement(item)
+			elif action == "carve":
+				_handle_carve(item)
+		)
+
+	# Enable carve button when unit inventory opens (check if unit has knife)
+	inventory_hud.unit_inventory_opened.connect(func(unit: ClickableUnit):
+		var up: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+		if up and unit:
+			var has_knife: bool = unit.has_method("has_item_by_id") and unit.has_item_by_id("knife")
+			up.set_carve_enabled(has_knife)
+	)
 
 	print("[DemoGame] UI setup complete")
 
@@ -1070,11 +1160,14 @@ func _create_basic_lighting() -> void:
 	dynamic_weather.name = "DynamicWeatherController"
 	add_child(dynamic_weather)
 
+	var aurora_ctrl: Node = _aurora_controller_scene.instantiate()
+	add_child(aurora_ctrl)
+
 	var time_manager = get_node_or_null("/root/TimeManager")
 	if time_manager and time_manager.has_method("refresh_sky3d"):
 		time_manager.refresh_sky3d()
 
-	print("[DemoGame] Sky3D, SnowController, and DynamicWeatherController added")
+	print("[DemoGame] Sky3D, SnowController, DynamicWeatherController, and AuroraController added")
 
 
 func _find_navigable_spawn(center: Vector3) -> Vector3:
@@ -1167,3 +1260,62 @@ func _find_dynamic_weather_controller() -> Node:
 	if nodes.size() > 0:
 		return nodes[0]
 	return null
+
+
+# === BUTCHERING ===
+
+const BUTCHER_MULTIPLIER: float = 1.0  ## Stub: will be replaced by unit's butchering skill.
+
+func _on_butcher_confirmed(corpse: Node3D) -> void:
+	## Create corpse inventory with body parts after butcher confirmation.
+	if not corpse or not is_instance_valid(corpse):
+		return
+	var protoset: JSON = load("res://data/items_protoset.json")
+	var corpse_inv := Inventory.new()
+	corpse_inv.name = "CorpseInventory"
+	corpse_inv.protoset = protoset
+	corpse.add_child(corpse_inv)
+
+	var grid := GridConstraint.new()
+	grid.name = "GridConstraint"
+	grid.size = Vector2i(8, 6)
+	corpse_inv.add_child(grid)
+
+	corpse_inv.create_and_add_item("human_head")
+	corpse_inv.create_and_add_item("human_arm")
+	corpse_inv.create_and_add_item("human_arm")
+	corpse_inv.create_and_add_item("human_leg")
+	corpse_inv.create_and_add_item("human_leg")
+	corpse_inv.create_and_add_item("human_torso")
+
+	corpse.add_to_group("butchered")
+	_open_corpse_inventory(corpse, corpse_inv)
+
+	var corpse_name: String = corpse.unit_name if "unit_name" in corpse else "unit"
+	print("[DemoGame] Butchered %s — body parts created" % corpse_name)
+
+
+func _open_corpse_inventory(corpse: Node, corpse_inv: Inventory) -> void:
+	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	if not container_panel:
+		return
+	var corpse_name: String = corpse.unit_name if "unit_name" in corpse else "Corpse"
+	container_panel.show_inventory(corpse_inv, "REMAINS OF %s" % corpse_name.to_upper())
+	var selected: Array[Node] = _input_handler.get_selected_units() if _input_handler else []
+	var butcher_unit: Node = selected[0] if not selected.is_empty() else null
+	var has_knife: bool = butcher_unit and butcher_unit.has_method("has_item_by_id") and butcher_unit.has_item_by_id("knife")
+	container_panel.set_carve_enabled(has_knife)
+
+
+func _handle_carve(item: InventoryItem) -> void:
+	if not item or not is_instance_valid(item):
+		return
+	var inv: Inventory = item.get_inventory()
+	if not inv:
+		return
+	var meat_yield: int = int(item.get_property("meat_yield", 1))
+	var total_meat: int = int(floorf(meat_yield * BUTCHER_MULTIPLIER))
+	inv.remove_item(item)
+	for i in range(total_meat):
+		inv.create_and_add_item("human_meat")
+	print("[DemoGame] Carved body part into %d human meat" % total_meat)

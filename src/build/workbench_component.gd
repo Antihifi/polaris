@@ -10,7 +10,8 @@ signal materials_changed
 ## Materials stored at this workbench.
 var stored_materials: Dictionary = {
 	"scrap_wood": 0,
-	"nails": 0
+	"nails": 0,
+	"scrap_sails": 0
 }
 
 ## Construction sites created from this workbench.
@@ -268,7 +269,11 @@ func _apply_construction_shader(node: Node) -> void:
 
 func _remove_from_resource_groups(node: Node) -> void:
 	## Remove from groups that would make units interact with it as a resource.
-	var resource_groups: Array[String] = ["containers", "food_sources", "seats", "beds"]
+	var resource_groups: Array[String] = [
+		"containers", "interactable", "barrels", "crates",
+		"food_sources", "seats", "beds", "heat_sources", "shelters",
+		"barrel_positions", "fire_positions", "bed_positions",
+	]
 	for group_name in node.get_groups():
 		if group_name in resource_groups:
 			node.remove_from_group(group_name)

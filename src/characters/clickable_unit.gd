@@ -156,6 +156,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Align selection indicator to terrain slope (before early returns so idle units align too)
+	if is_selected:
+		var sel_indicator := get_node_or_null("SelectionIndicator")
+		if sel_indicator and sel_indicator.visible:
+			_align_indicator_to_terrain(sel_indicator, global_position)
+
 	# Skip physics during locked animations (sitting, sleeping)
 	if is_animation_locked:
 		return
@@ -415,11 +421,31 @@ func _show_selection_indicator(show: bool) -> void:
 	var indicator := get_node_or_null("SelectionIndicator")
 	if indicator:
 		indicator.visible = show
+		if show:
+			_align_indicator_to_terrain(indicator, global_position)
+
+
+func _align_indicator_to_terrain(indicator: Node3D, world_pos: Vector3) -> void:
+	## Align a flat disc indicator's Y axis to terrain surface normal.
+	## Uses global_transform.basis so parent rotation (unit yaw) doesn't interfere.
+	var terrain := _find_terrain3d()
+	if not terrain or not "data" in terrain or not terrain.data or not terrain.data.has_method("get_normal"):
+		return
+	var normal: Vector3 = terrain.data.get_normal(world_pos)
+	if is_nan(normal.x) or normal.length_squared() < 0.5:
+		return
+	var up := normal.normalized()
+	var right := up.cross(Vector3.FORWARD).normalized()
+	if right.length_squared() < 0.001:
+		right = up.cross(Vector3.RIGHT).normalized()
+	var forward := right.cross(up).normalized()
+	indicator.global_transform.basis = Basis(right, up, forward)
 
 
 func show_destination_indicator(target_pos: Vector3) -> void:
 	## Show the destination indicator at the target position.
 	## Reparents to scene root so it stays stationary while unit moves.
+	## Aligns to terrain slope via Terrain3D normal query.
 	var indicator := get_node_or_null("DestinationIndicator")
 	if not indicator:
 		# Check if already reparented to scene root
@@ -432,6 +458,7 @@ func show_destination_indicator(target_pos: Vector3) -> void:
 			get_tree().current_scene.add_child(indicator)
 		# Position at destination (world space) slightly above terrain
 		indicator.global_position = target_pos + Vector3(0, 0.1, 0)
+		_align_indicator_to_terrain(indicator, target_pos)
 		indicator.visible = true
 
 
@@ -677,6 +704,12 @@ func _on_death() -> void:
 	var ai_controller := get_node_or_null("ManAIController")
 	if ai_controller and ai_controller.has_method("set_enabled"):
 		ai_controller.set_enabled(false)
+
+	# Lay collision shape flat so raycasts can hit the corpse on the ground.
+	var col_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col_shape:
+		col_shape.rotation.z = deg_to_rad(90)
+		col_shape.position = Vector3(0, 0.3, 0)
 
 	# Disable physics processing (movement, gravity, etc.)
 	set_physics_process(false)
@@ -1190,8 +1223,10 @@ func is_pulling_sled() -> bool:
 
 func can_receive_move_command() -> bool:
 	## Returns true if this unit can receive direct movement commands.
-	## Undiscovered units cannot be commanded until recruited.
+	## Dead and undiscovered units cannot be commanded.
 	## Non-lead sled pullers cannot be commanded directly - they follow the leader.
+	if is_dead:
+		return false
 	if not is_discovered:
 		return false
 	if sled_puller and sled_puller.is_support_puller():

@@ -207,15 +207,17 @@ func _get_unit_state(unit: Node) -> Dictionary:
 
 	var stats: SurvivorStats = unit.stats
 
-	# Check for dying condition first (most severe)
+	# Check for dead/dying conditions first (most severe)
 	if stats.is_dead():
 		return {"text": "DEAD", "color": STATE_COLOR_CRITICAL}
-	if stats.is_dying():
+	if stats.health < 25.0:
 		return {"text": "Dying", "color": STATE_COLOR_CRITICAL}
 
+	# Deteriorating: a core stat has hit 0 and is draining health, but health >= 25%
+	if stats.is_dying():
+		return {"text": "Deteriorating", "color": STATE_COLOR_WARNING}
+
 	# Critical states (red) - check each stat at critical threshold
-	if stats.health <= SurvivorStats.CRITICAL_THRESHOLD:
-		return {"text": "Dying", "color": STATE_COLOR_CRITICAL}
 	if stats.hunger <= SurvivorStats.CRITICAL_THRESHOLD:
 		return {"text": "Starving", "color": STATE_COLOR_CRITICAL}
 	if stats.warmth <= SurvivorStats.CRITICAL_THRESHOLD:

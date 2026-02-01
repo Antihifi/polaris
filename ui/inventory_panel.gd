@@ -4,6 +4,7 @@ class_name InventoryPanel extends PanelContainer
 ## Can be instantiated from inventory_panel.tscn or created programmatically.
 
 signal panel_closed
+signal item_action_requested(item: InventoryItem, action: String)
 
 @export var title: String = "Inventory":
 	set(value):
@@ -20,6 +21,10 @@ var _title_label: Label = null
 var _grid_ctrl: CtrlInventoryGrid = null
 var _close_button: Button = null
 var _grid_container: Control = null
+var _action_button: Button = null
+var _action_item: InventoryItem = null
+var _vbox: VBoxContainer = null
+var _carve_enabled: bool = false
 
 
 func _ready() -> void:
@@ -32,6 +37,7 @@ func _ready() -> void:
 		# Scene-based: connect and add grid to container
 		_close_button.pressed.connect(_on_close_pressed)
 		_title_label.text = title
+		_vbox = _grid_container.get_parent() as VBoxContainer
 		_setup_grid_control(_grid_container)
 	else:
 		# Programmatic fallback
@@ -41,6 +47,15 @@ func _ready() -> void:
 	if _close_button:
 		_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
 		_close_button.z_index = 10  # Draw above grid elements
+
+	# Create action button (hidden by default, added below grid)
+	_action_button = Button.new()
+	_action_button.name = "ActionButton"
+	_action_button.visible = false
+	_action_button.pressed.connect(_on_action_button_pressed)
+	_action_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	if _vbox:
+		_vbox.add_child(_action_button)
 
 	hide()
 
@@ -59,6 +74,8 @@ func _setup_grid_control(parent: Control) -> void:
 	if custom_item_scene:
 		_grid_ctrl.custom_item_control_scene = custom_item_scene
 	parent.add_child(_grid_ctrl)
+	# Connect item click for placeable items
+	_grid_ctrl.inventory_item_clicked.connect(_on_grid_item_clicked)
 
 
 func _build_ui() -> void:
@@ -71,13 +88,13 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_bottom", 8)
 	add_child(margin)
 
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
-	margin.add_child(vbox)
+	_vbox = VBoxContainer.new()
+	_vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(_vbox)
 
 	# Header with title and close button
 	var header := HBoxContainer.new()
-	vbox.add_child(header)
+	_vbox.add_child(header)
 
 	_title_label = Label.new()
 	_title_label.text = title
@@ -92,13 +109,13 @@ func _build_ui() -> void:
 
 	# Separator
 	var sep := HSeparator.new()
-	vbox.add_child(sep)
+	_vbox.add_child(sep)
 
 	# Grid container
 	_grid_container = MarginContainer.new()
 	_grid_container.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	_grid_container.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	vbox.add_child(_grid_container)
+	_vbox.add_child(_grid_container)
 
 	_setup_grid_control(_grid_container)
 
@@ -110,6 +127,7 @@ func show_inventory(inv: Inventory, display_title: String = "") -> void:
 
 	if display_title.length() > 0:
 		title = display_title
+	_hide_action_button()
 	show()
 
 
@@ -117,6 +135,7 @@ func hide_panel() -> void:
 	_inventory = null
 	if _grid_ctrl:
 		_grid_ctrl.inventory = null
+	_hide_action_button()
 	hide()
 	panel_closed.emit()
 
@@ -128,3 +147,47 @@ func _on_close_pressed() -> void:
 
 func get_displayed_inventory() -> Inventory:
 	return _inventory
+
+
+# =========================
+# Item action button
+# =========================
+func set_carve_enabled(enabled: bool) -> void:
+	## Set whether the [CARVE] action button is enabled for remains items.
+	_carve_enabled = enabled
+
+
+func _on_grid_item_clicked(item: InventoryItem, _at_position: Vector2, _button_index: int) -> void:
+	## Show action button when a placeable or carveable item is clicked.
+	if not item or not is_instance_valid(item):
+		_hide_action_button()
+		return
+	if item.get_property("placeable", false):
+		var item_name: String = item.get_property("name", "Item")
+		_action_item = item
+		_action_button.text = "PLACE %s" % item_name.to_upper()
+		_action_button.disabled = false
+		_action_button.visible = true
+	elif item.get_property("category", "") == "remains":
+		_action_item = item
+		_action_button.text = "CARVE"
+		_action_button.disabled = not _carve_enabled
+		_action_button.visible = true
+	else:
+		_hide_action_button()
+
+
+func _hide_action_button() -> void:
+	_action_item = null
+	if _action_button:
+		_action_button.visible = false
+
+
+func _on_action_button_pressed() -> void:
+	if _action_item and is_instance_valid(_action_item):
+		var category: String = _action_item.get_property("category", "")
+		if category == "remains":
+			item_action_requested.emit(_action_item, "carve")
+		else:
+			item_action_requested.emit(_action_item, "place")
+	_hide_action_button()

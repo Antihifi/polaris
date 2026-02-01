@@ -23,7 +23,7 @@ const CONTAINER_COLLISION_LAYER: int = 8  # Layer 4 (1 << 3)
 
 ## Allowed item categories based on storage type
 const FOOD_CATEGORIES: Array[String] = ["food"]
-const GENERAL_CATEGORIES: Array[String] = ["fuel", "tool", "misc"]
+const GENERAL_CATEGORIES: Array[String] = ["fuel", "tool", "misc", "structure"]
 
 var inventory: Inventory = null
 var grid_constraint: GridConstraint = null

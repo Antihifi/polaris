@@ -1,0 +1,11 @@
+Model Information:
+* title:	PB63 Hatchet Low
+* source:	https://sketchfab.com/3d-models/pb63-hatchet-low-c958f9cf30844076953a9fe02f489e8b
+* author:	Makovetkyi Volodymyr (https://sketchfab.com/pbr-scans)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "PB63 Hatchet Low" (https://sketchfab.com/3d-models/pb63-hatchet-low-c958f9cf30844076953a9fe02f489e8b) by Makovetkyi Volodymyr (https://sketchfab.com/pbr-scans) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

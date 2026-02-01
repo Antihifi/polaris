@@ -314,11 +314,19 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# Close panel on Escape
-	if visible:
-		if event.is_action_pressed("ui_cancel"):
-			hide_panel()
-			get_viewport().set_input_as_handled()
+	if not event is InputEventKey or not event.pressed:
+		return
+
+	var key := event as InputEventKey
+
+	# "C" key toggles stats panel for selected unit
+	if key.keycode == KEY_C:
+		_toggle_stats_panel()
+
+	# Escape closes panel
+	elif visible and key.keycode == KEY_ESCAPE:
+		hide_panel()
+		get_viewport().set_input_as_handled()
 
 
 func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
@@ -365,6 +373,29 @@ func hide_panel() -> void:
 	_current_unit = null
 	visible = false
 	closed.emit()
+
+
+func _toggle_stats_panel() -> void:
+	## Toggle stats panel for the currently selected unit.
+	if visible:
+		hide_panel()
+		return
+
+	# Try RTSInputHandler first
+	var root := get_tree().current_scene
+	var input_handler: Node = root.get_node_or_null("RTSInputHandler") if root else null
+	if input_handler and input_handler.has_method("has_selection") and input_handler.has_selection():
+		var selected: Array = input_handler.get_selected_units()
+		if not selected.is_empty() and selected[0] is ClickableUnit:
+			show_for_unit(selected[0] as ClickableUnit)
+			return
+
+	# Fallback to SelectionManager
+	var selection_mgr := get_node_or_null("/root/SelectionManager")
+	if selection_mgr and selection_mgr.has_selection():
+		var unit: Node = selection_mgr.get_first_selected()
+		if unit is ClickableUnit:
+			show_for_unit(unit as ClickableUnit)
 
 
 func _on_stats_changed() -> void:

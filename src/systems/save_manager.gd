@@ -425,13 +425,22 @@ func _serialize_errant_men() -> Array:
 
 func _serialize_pois() -> Dictionary:
 	## Serialize POI locations.
-	# POIs are static - stored in procedural_game_controller._pois
+	## Values can be Vector3 (single POI) or Array (multiple POIs like inuit_villages).
 	var controller := _find_procedural_controller()
 	if controller and "_pois" in controller:
 		var pois_copy := {}
 		for key: String in controller._pois:
-			var pos: Vector3 = controller._pois[key]
-			pois_copy[key] = _vector3_to_array(pos)
+			var value: Variant = controller._pois[key]
+			if value is Vector3:
+				pois_copy[key] = _vector3_to_array(value)
+			elif value is Array:
+				var arr: Array = []
+				for item: Variant in value:
+					if item is Vector3:
+						arr.append(_vector3_to_array(item))
+				pois_copy[key] = arr
+			else:
+				pois_copy[key] = value
 		return pois_copy
 	return {}
 

@@ -85,7 +85,7 @@
 	"spyglass": {
 		"name": "Spyglass",
 		"image": "res://inventory_icons/spyglass.png",
-		"size": "Vector2i(1, 2)",
+		"size": "Vector2i(2, 2)",
 		"category": "tool",
 		"subcategory": "navigation",
 		"max_stack_size": 1,
@@ -96,7 +96,7 @@
 	"sextant": {
 		"name": "Sextant",
 		"image": "res://inventory_icons/sextant.png",
-		"size": "Vector2i(1, 2)",
+		"size": "Vector2i(2, 2)",
 		"category": "tool",
 		"subcategory": "navigation",
 		"max_stack_size": 1,
@@ -146,5 +146,52 @@
 		"category": "material",
 		"max_stack_size": 1,
 		"weight": 10.0
+	},
+	"tent": {
+		"name": "Tent",
+		"image": "res://inventory_icons/tent.png",
+		"size": "Vector2i(4, 4)",
+		"category": "structure",
+		"subcategory": "shelter",
+		"max_stack_size": 1,
+		"weight": 20.0,
+		"placeable": true,
+		"recipe_id": "tent"
+	},
+	"human_head": {
+		"name": "Head",
+		"image": "res://inventory_icons/head.png",
+		"size": "Vector2i(2, 2)",
+		"category": "remains",
+		"meat_yield": 2,
+		"max_stack_size": 1,
+		"weight": 4.0
+	},
+	"human_arm": {
+		"name": "Arm",
+		"image": "res://inventory_icons/arm.png",
+		"size": "Vector2i(2, 3)",
+		"category": "remains",
+		"meat_yield": 3,
+		"max_stack_size": 1,
+		"weight": 3.0
+	},
+	"human_leg": {
+		"name": "Leg",
+		"image": "res://inventory_icons/leg.png",
+		"size": "Vector2i(2, 3)",
+		"category": "remains",
+		"meat_yield": 4,
+		"max_stack_size": 1,
+		"weight": 5.0
+	},
+	"human_torso": {
+		"name": "Torso",
+		"image": "res://inventory_icons/torso.png",
+		"size": "Vector2i(3, 3)",
+		"category": "remains",
+		"meat_yield": 6,
+		"max_stack_size": 1,
+		"weight": 8.0
 	}
 }

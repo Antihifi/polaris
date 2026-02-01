@@ -124,7 +124,10 @@ func _spawn_single_officer(position: Vector3, index: int) -> Node:
 	## Create and configure a single officer (player-controlled).
 	var unit: Node = officer_scene.instantiate()
 
-	# Add to scene FIRST
+	# Set rank BEFORE add_child so _ready() can configure PassiveAI correctly
+	unit.rank = ClickableUnit.UnitRank.OFFICER
+
+	# Add to scene (triggers _ready which checks rank for PassiveAI setup)
 	get_tree().current_scene.add_child(unit)
 	unit.global_position = position
 
@@ -132,9 +135,6 @@ func _spawn_single_officer(position: Vector3, index: int) -> Node:
 	var first_name := FIRST_NAMES[_rng.randi() % FIRST_NAMES.size()]
 	var last_name := LAST_NAMES[_rng.randi() % LAST_NAMES.size()]
 	unit.unit_name = "Lt. %s %s" % [first_name, last_name]
-
-	# Set rank
-	unit.rank = ClickableUnit.UnitRank.OFFICER
 
 	# Randomize stats
 	_randomize_stats(unit)
@@ -153,15 +153,15 @@ func _spawn_errant_officer(position: Vector3) -> Node:
 	## Uses men.tscn (with AI) but sets rank to OFFICER.
 	var unit: Node = unit_scene.instantiate()  # men.tscn has ManAIController
 
+	# Set rank BEFORE add_child so _ready() knows this is an officer
+	unit.rank = ClickableUnit.UnitRank.OFFICER
+
 	get_tree().current_scene.add_child(unit)
 	unit.global_position = position
 
 	var first_name := FIRST_NAMES[_rng.randi() % FIRST_NAMES.size()]
 	var last_name := LAST_NAMES[_rng.randi() % LAST_NAMES.size()]
 	unit.unit_name = "Lt. %s %s" % [first_name, last_name]
-
-	# Set rank to officer (AI will be removed on discovery)
-	unit.rank = ClickableUnit.UnitRank.OFFICER
 
 	_randomize_stats(unit)
 	unit.movement_speed = _vary_value(base_movement_speed, 0.15)

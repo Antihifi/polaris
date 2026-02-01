@@ -1,4 +1,4 @@
-[gd_resource type="BehaviorTree" load_steps=13 format=3 uid="uid://s25vaiv53h8r"]
+[gd_resource type="BehaviorTree" load_steps=15 format=3 uid="uid://s25vaiv53h8r"]
 
 [ext_resource type="Script" uid="uid://d1t0pcuknhrdp" path="res://ai/tasks/bt_check_idle.gd" id="1_0tgqy"]
 [ext_resource type="Script" uid="uid://csuh7vuvgudd5" path="res://ai/tasks/bt_eat_from_inventory.gd" id="2_27mdt"]
@@ -27,12 +27,23 @@ resource_name = "true"
 property = &"inventory_has_food"
 value = SubResource("BBVariant_ql3t2")
 
+[sub_resource type="BBNode" id="BBNode_0tgqy"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_27mdt"]
+await_completion = 5.5
+animation_player = SubResource("BBNode_0tgqy")
+animation_name = &"taking_item"
+blend = 2.0
+speed = 0.3
+
 [sub_resource type="BTAction" id="BTAction_yeqhi"]
 script = ExtResource("2_27mdt")
 
 [sub_resource type="BTSequence" id="BTSequence_macxb"]
 custom_name = "EatFrominventory"
-children = [SubResource("BTCondition_yp43i"), SubResource("BTCheckAgentProperty_rxmcr"), SubResource("BTCheckAgentProperty_p8nnf"), SubResource("BTAction_yeqhi")]
+children = [SubResource("BTCondition_yp43i"), SubResource("BTCheckAgentProperty_rxmcr"), SubResource("BTCheckAgentProperty_p8nnf"), SubResource("BTPlayAnimation_27mdt"), SubResource("BTAction_yeqhi")]
 
 [sub_resource type="BTCooldown" id="BTCooldown_0tgqy"]
 duration = 5.0

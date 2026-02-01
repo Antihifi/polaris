@@ -55,6 +55,9 @@ func detach_from_sled() -> void:
 	attached_sled = null
 	is_lead_puller = false
 	sled_formation_offset = Vector3.ZERO
+	# Clear stale NavigationAgent state to prevent drift (same pattern as commit 1558232)
+	if unit.has_method("stop"):
+		unit.stop()
 	detached_from_sled.emit()
 
 

@@ -44,7 +44,7 @@ func _tick(_delta: float) -> Status:
 
 		# Skip occupied positions for single-occupancy resources (beds, seats, etc.)
 		# Workbenches and construction sites support multiple workers, so skip check
-		var skip_occupancy := resource_group in ["workbenches", "construction_sites", "ship_scrap_wood", "ship_nails", "ship_rope", "ship_sail_cloth"]
+		var skip_occupancy := resource_group in ["workbenches", "construction_sites", "ship_scrap_wood", "ship_nails", "ship_rope", "ship_scrap_sails"]
 		if not skip_occupancy:
 			var occupied := false
 			for survivor in agent.get_tree().get_nodes_in_group("survivors"):

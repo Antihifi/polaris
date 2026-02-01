@@ -133,16 +133,28 @@ Root is **BTDynamicSelector** (re-evaluates priorities each tick):
 ```
 BTDynamicSelector [Root]
 ├── 1. PlayerOverride - BTCheckVar(player_command_active) → BTWait(0.1s)
-├── 2. SeekShelter (energy < 25) - FindBed → Move → Lock → Sleep anims (45-60s) → Unlock
-├── 3. SeekWarmth (warmth < 60) - FindHeat → Move → Lock → Crouch/Stand anims (15-45s) → Unlock
-├── 4. SeekFood (hunger < 60) - FindContainer → Move → Lock → Open/Take/Eat anims → Unlock
-└── 5. IdleBehaviors [BTRandomSelector]
-    ├── Wander - GenerateTarget → Move → Wait(15-30s)
-    ├── SitOnCrate - FindSeat → Move → AlignMarker → Sit anims (20-40s)
-    └── WarmByFire - FindHeat → FindSpot → Move → Face → Crouch/Stand (15-45s)
+├── 2. HaulingSequence (NO COOLDOWN) - is_delivering==false AND carrying==true
+│       → speed=0.5 → carry_walk → FindNearest[workbenches] → MoveTo(stuck=1.0)
+│       → AnimLock → taking_item(reverse) → AnimLock off → DepositMaterials → speed=1.0
+├── 3. SeekShelter [5s cooldown] (energy < 55)
+├── 4. SeekWarmth [5s cooldown] (warmth < 60)
+├── 5. SeekFood [5s cooldown] (hunger < 60)
+├── 6. SeekWork [5s cooldown] → BTSelector:
+│   ├── GatheringSequence - CanWork → CanGather → RandomSelector[nails,sails,wood]
+│   │     → MoveTo(stuck=1.0) → AnimLock → taking_item → AnimLock off → GatherFrom[ship]
+│   └── ConstructingSequence - CanWork → FindNearest[construction_sites] → MoveTo → ...
+├── 7. DeliverySequence [5s cooldown] - CanWork → FindNearest[construction_sites]
+│       → FindNearest[workbenches] → MoveTo(stuck=1.0) → AnimLock → GatherFrom[workbench]
+│       → taking_item → speed=0.5 → AnimLock off → carry_walk → MoveTo(stuck=1.0)
+│       → AnimLock → DepositMaterials → taking_item(reverse) → AnimLock off → speed=1.0
+└── 8. IdleBehaviors [5s cooldown] → BTRandomSelector: Wander, SitOnCrate, WarmByFire
 ```
 
-**Note:** Uses `BTCheckNeedCritical` (custom BTCondition) for stat checks, not `BTCheckAgentProperty`.
+**Design notes:**
+- HaulingSequence has **no cooldown by design** — carrying units must always prioritize depositing
+- `is_delivering` flag prevents HaulingSequence from hijacking mid-delivery
+- DeliverySequence handles workbench → construction site material transport
+- GatherFrom[workbench] sets `is_delivering=true` and retargets blackboard to construction site
 
 ---
 
@@ -327,6 +339,16 @@ func move_to(target_position: Vector3) -> void:
 **Why this works:** Movement is mutually exclusive with stationary animations. If the BT calls move_to(), the unit should move, period.
 
 **Lesson learned:** Single-line fixes > 150-line overengineered solutions. Always find the actual root cause.
+
+### Issue: BTMoveToBlackboard Instant FAILURE on Nav-Finished-Far (FIXED 2026-01-31)
+
+**Symptom:** Units rapidly cycle states (~15/sec) after MoveTo fails — especially visible during HaulingSequence when workbench is unreachable.
+
+**Root Cause:** When NavigationAgent3D finishes its path but the unit is far from the target, `bt_move_to_blackboard.gd` returned FAILURE instantly (zero delay), bypassing the existing `stuck_timeout` timer. With HaulingSequence having no cooldown (by design), this created a tight loop.
+
+**Fix Applied:** Restructured the nav-finished check (lines 84-91) so that `stop()` and `_moving = false` only execute for the SUCCESS branch (arrived at target). The far-from-target case now falls through to the existing stuck detection, which waits `stuck_timeout` seconds before returning FAILURE.
+
+**Key insight:** Don't add new state/variables when an existing mechanism already handles the case. The stuck detection was already designed for this — the nav-finished path just needed to stop bypassing it.
 
 ### BTCheckAgentProperty CheckType Values
 

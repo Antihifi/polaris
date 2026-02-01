@@ -29,7 +29,7 @@ The shader uses noise-based wave patterns projected onto the sky dome via `EYEDI
 | `aurora_emission` | 4.0 | Glow intensity multiplier |
 | `aurora_speed` | 0.01 | Animation speed |
 | `aurora_scale` | 0.02 | Noise pattern scale |
-| `aurora_smoothness` | 0.15 | Wave edge softness |
+| `aurora_smoothness` | 0.3 | Wave edge softness |
 | `aurora_distort` | 1.0 | Noise distortion amount |
 | `aurora_offset` | 0.0 | Wave offset |
 | `aurora_noise` | - | Required: NoiseTexture2D (FastNoiseLite, Simplex, freq ~0.01) |
@@ -68,15 +68,35 @@ func is_aurora_active() -> bool   # Query current state
 
 ## Adding to a Scene
 
+### Important: AuroraController is the Source of Truth
+
+The `AuroraController` applies its `@export` values to the sky material on init. **Do NOT tweak aurora shader params on the sky material directly** — the controller will overwrite them. Instead, tune the `@export` vars on the AuroraController node in the inspector:
+
+| Controller Export | Maps to Shader Uniform |
+|-------------------|----------------------|
+| `aurora_color` | `aurora_color` |
+| `emission_strength` | `aurora_emission` |
+| `shader_speed` | `aurora_speed` |
+| `shader_smoothness` | `aurora_smoothness` |
+| `shader_distort` | `aurora_distort` |
+| `shader_scale` | `aurora_scale` |
+| `shader_offset` | `aurora_offset` |
+
+The controller also creates the noise texture and manages `aurora_visible` / `aurora_intensity` automatically.
+
 ### Gameplay (with conditions)
 1. Add an `AuroraController` node as child of the scene root
-2. Controller auto-finds Sky3D and sets sky material uniforms
-3. Requires: Sky3D in scene + `TimeManager` autoload + `DynamicWeatherController` in scene tree
+2. Tune appearance via the controller's `@export` vars in the inspector
+3. Controller auto-finds Sky3D and applies uniforms on init
+4. Requires: Sky3D in scene + `TimeManager` autoload + `DynamicWeatherController` in scene tree
+
+### Procedural / Dynamic Sky3D
+Same approach — the AuroraController finds whatever Sky3D exists at init time. Since it runs `_initialize()` via `call_deferred`, the Sky3D node just needs to exist by the end of the first frame. Tune appearance on the AuroraController's `@export` vars.
 
 ### Menu Screen (always-on decoration)
-1. `menu_screen.gd` creates an `AuroraController` programmatically
-2. Calls `start_aurora()` to force it on immediately
-3. No TimeManager needed — `start_aurora()` bypasses condition checks
+1. `menu_screen.gd` sets `aurora_visible = true` directly on the sky material
+2. Aurora appearance values come from the sky material's editor-set shader params
+3. No AuroraController needed — no condition checks for menu
 
 ---
 
@@ -84,7 +104,7 @@ func is_aurora_active() -> bool   # Query current state
 
 The aurora code lives in `addons/sky_3d/shaders/SkyMaterial.gdshader` (modified from the addon). If the Sky3D addon is updated, the aurora uniforms and `render_aurora()` function must be re-added:
 - Uniforms: `group_uniforms aurora;` block
-- Functions: `aurora_amplify()` and `render_aurora()`
+- Functions: `render_aurora()`
 - Render call: in `render_sky()` between `deep_space` and `// Clouds`
 
 ---

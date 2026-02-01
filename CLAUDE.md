@@ -16,6 +16,9 @@ cat "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.lo
 ### Scene Creation
 **NEVER programmatically generate .tscn files.** ASK the user to create scenes in Godot editor.
 
+### Editor-First UI/Visuals
+**If a visual element CAN be configured in the Godot editor, it MUST be.** Never programmatically create UI nodes, Sprite3D, materials, or shaders that could be placed in a .tscn scene. Scripts should only toggle visibility/state, not construct visual hierarchies.
+
 ### No Impossible Fallbacks
 **NEVER create fallbacks to unreachable positions.** If a task can't find a valid target, FAIL immediately and let the behavior tree handle it. Don't send units to ship centers, object origins, or other positions inside collision meshes.
 

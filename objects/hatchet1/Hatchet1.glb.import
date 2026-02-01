@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cgqxgynlnje1t"
-path="res://.godot/imported/scene.gltf-de438e5c3f7de6f0108839479385a4f1.scn"
+uid="uid://byokjdvv77c6t"
+path="res://.godot/imported/Hatchet1.glb-e468357d58da82558e9f08814a51c8b0.scn"
 
 [deps]
 
-source_file="res://objects/bed1/scene.gltf"
-dest_files=["res://.godot/imported/scene.gltf-de438e5c3f7de6f0108839479385a4f1.scn"]
+source_file="res://objects/hatchet1/Hatchet1.glb"
+dest_files=["res://.godot/imported/Hatchet1.glb-e468357d58da82558e9f08814a51c8b0.scn"]
 
 [params]
 
