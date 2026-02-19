@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://c2alnp8rtypm2"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Expeditions"
+brief_tooltip = "[Coming Soon]
+Send groups south to find rescue.
+Requires sled with supplies."
+implemented = false
+detailed_text = "[b]Expeditions — Coming Soon[/b]
+
+[i]Crozier's actual plan was to lead his men south to Back's Fish River, over 300 kilometres away, hoping to reach a Hudson's Bay Company outpost. None of them made it.[/i]
+
+Assemble a party, load a sled with supplies, and send them south across King William Island to find rescue.
+
+• Outfit an expedition with food, fuel, and tents for a multi-day journey
+• Discover points of interest along the route
+• Reach the HBC outpost on the south coast to secure rescue early
+
+Finding the outpost is your best chance. Without it, you are simply waiting and hoping the rescue timer runs out before your supplies do."

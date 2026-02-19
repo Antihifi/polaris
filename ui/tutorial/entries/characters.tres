@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Characters"
+brief_tooltip = "Captain: You control directly, provides morale aura.
+Officers: Controllable units you command.
+Men: AI-controlled, handle survival autonomously."
+implemented = true
+detailed_text = "[b]Three Ranks of Survivor[/b]
+
+[i]The Royal Navy ran on strict hierarchy. Captain Crozier commanded Terror; his officers relayed orders; the able seamen did the work. That chain of command is all that stands between your men and chaos.[/i]
+
+Your expedition consists of 30-45 crew divided into three ranks:
+
+[b]Captain (You)[/b]
+• You control the Captain directly at all times
+• His presence steadies nearby men, boosting their morale
+• If the Captain dies, the expedition is lost
+
+[b]Officers[/b]
+• A handful of lieutenants and mates you can give direct orders
+• Useful for leading work parties, scouting, or managing specific tasks
+• Fewer in number but more capable than ordinary seamen
+
+[b]Men[/b]
+• The bulk of your crew — they act on their own initiative
+• They will seek food when hungry, warmth when cold, and rest when tired
+• They gather materials and work at construction sites without being told
+• You can override their decisions by giving them direct commands
+
+[b]Traits[/b]
+Each survivor has randomly assigned traits that shape his abilities:
+• [b]Strong[/b] — Carries more, builds faster
+• [b]Cold Blooded[/b] — Naturally resistant to cold
+• [b]Navigator[/b] — Better at finding locations
+• [b]Drunkard[/b] — Eats more, prone to mental breaks
+• [b]Coward[/b] — Flees danger, lower morale
+Double-click any man to see his traits and full condition.
+
+[b]Death[/b]
+When a survivor dies, his body remains where he fell. The sight damages the morale of those nearby. In desperate circumstances, the dead can be butchered for meat."

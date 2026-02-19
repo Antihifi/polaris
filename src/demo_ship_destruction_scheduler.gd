@@ -17,8 +17,9 @@ signal ship_swap_requested
 @export var total_destruction_days: int = 7
 @export var explosive_events_per_day_min: int = 1
 @export var explosive_events_per_day_max: int = 3
-@export var sink_events_per_day_min: int = 0
-@export var sink_events_per_day_max: int = 1
+@export var rigging_events_per_day: int = 3
+@export var sink_events_per_day_min: int = 1
+@export var sink_events_per_day_max: int = 2
 
 ## Reference to the DemolitionTestController (set by demo_controller after spawning)
 var demolition_controller: Node = null
@@ -63,15 +64,24 @@ func _schedule_today_events() -> void:
 	# Determine which phases are active today
 	var active_phases: Array[Phase] = _get_active_phases()
 
-	# Schedule explosive events
-	var explosive_count: int = _rng.randi_range(explosive_events_per_day_min, explosive_events_per_day_max)
-	for i in range(explosive_count):
-		var phase: Phase = active_phases[_rng.randi_range(0, active_phases.size() - 1)]
-		var hour: int = _rng.randi_range(6, 22)  # Daytime events
-		_scheduled_events.append({"hour": hour, "phase": phase})
+	# Schedule dedicated rigging events if in rigging phase, to ensure masts become vulnerable
+	if active_phases.has(Phase.RIGGING):
+		for i in range(rigging_events_per_day):
+			var hour: int = _rng.randi_range(6, 22)
+			_scheduled_events.append({"hour": hour, "phase": Phase.RIGGING})
+		# Prevent explosive events from also being rigging
+		active_phases.erase(Phase.RIGGING)
 
-	# Schedule sink events (only after day 3)
-	if _current_day >= 3:
+	# Schedule other explosive events from remaining active phases
+	if not active_phases.is_empty():
+		var explosive_count: int = _rng.randi_range(explosive_events_per_day_min, explosive_events_per_day_max)
+		for i in range(explosive_count):
+			var phase: Phase = active_phases[_rng.randi_range(0, active_phases.size() - 1)]
+			var hour: int = _rng.randi_range(6, 22)  # Daytime events
+			_scheduled_events.append({"hour": hour, "phase": phase})
+
+	# Schedule sink events (start from day 1 alongside destruction)
+	if _current_day >= 1:
 		var sink_count: int = _rng.randi_range(sink_events_per_day_min, sink_events_per_day_max)
 		for i in range(sink_count):
 			var hour: int = _rng.randi_range(8, 20)

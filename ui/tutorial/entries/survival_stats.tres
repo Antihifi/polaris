@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=3 format=3 uid="uid://bamno6w6bt1c3"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://dvrng1jji228o" path="res://ui/tutorial/tutorial_survival_stats.png" id="1_87c6n"]
+
+[resource]
+script = ExtResource("1")
+title = "Survival Stats"
+brief_tooltip = "Five vital stats (0-100): Hunger, Warmth, Health, Morale, Energy.
+Stats cascade — low energy increases hunger drain.
+Any stat reaching 0 means death."
+detailed_text = "[b]Five Vital Statistics[/b]
+
+[i]The real Franklin expedition lost all 129 men to a combination of starvation, hypothermia, and despair. Your crew faces the same threats.[/i]
+
+Every survivor has five needs, each ranging from 0 to 100. If any one drops to zero, that man begins to die.
+
+[b]Hunger[/b] — Falls steadily over time. Survivors eat from nearby containers on their own, but you must ensure food is available. A starving man's health deteriorates rapidly.
+
+[b]Warmth[/b] — Drains faster at night and during storms. Fires and tents are your best defence against the cold. The colder it gets, the faster warmth drops — and it gets much worse below -30°C.
+
+[b]Energy[/b] — Depleted by work and travel. Men rest on their own when exhausted. Resting inside a tent recovers energy far faster than sitting in the open. A man's stamina is limited by his health — the sicker he is, the less energy he can recover.
+
+[b]Health[/b] — Declines when other needs are in crisis. If health reaches zero, the survivor dies. Health is slow to recover, so prevention matters more than cure.
+
+[b]Morale[/b] — Eroded by cold, darkness, storms, and the death of companions. Men with dangerously low morale may eventually snap.
+
+[b]How Stats Interact[/b]
+
+These needs feed on each other. A freezing, exhausted man burns through his food much faster. Multiple failing stats compound — a survivor in crisis on several fronts can spiral toward death very quickly. Keep all needs balanced rather than letting any single one collapse.
+
+[b]Work Speed[/b]
+
+Hungry, cold, or exhausted men work far slower. A well-fed, warm, rested crew accomplishes significantly more. High morale gives a modest bonus to everything."
+screenshot = ExtResource("1_87c6n")

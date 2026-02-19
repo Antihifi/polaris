@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://v0w0j7w1y1bf"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Tents"
+brief_tooltip = "Construct tents at the workbench, then place them instantly.
+Provides warmth and faster rest for men inside.
+Right-click a placed tent to pack it into a nearby crate."
+detailed_text = "[b]Shelter From the Storm[/b]
+
+[i]The real expedition carried large canvas tents that could shelter several men. Setting them up on the ice was hard work, but without them, exposure would have killed the crew in days.[/i]
+
+Tents are your primary defence against the cold. They must first be [b]constructed at a workbench[/b] (5 wood, 3 nails, 2 sail scraps — 4 days), but once built, a completed tent can be placed on the ground instantly.
+
+[b]How to Place a Completed Tent[/b]
+
+Once a tent finishes construction, it appears as an item in a crate. To place it:
+1. A translucent preview appears showing where the tent will go
+2. Move the mouse to position it on the terrain
+3. Use the [b]scroll wheel[/b] to rotate it
+4. [b]Left-click[/b] to place — it goes up immediately
+5. [b]Right-click[/b] or [b]ESC[/b] to cancel
+
+[b]What Tents Provide[/b]
+
+• Warmth for everyone inside — a significant buffer against the cold
+• Faster rest — men recover energy much more quickly in a tent than sitting in the open
+• Storm protection — blizzard exposure is greatly reduced inside a tent
+• Men seek shelter in tents on their own when they need rest or warmth
+
+[b]Moving Tents[/b]
+
+• Right-click a placed tent to open its panel
+• Click [b]Store Tent[/b] to pack it into a nearby crate (must be within 10 metres)
+• The tent returns to the crate as an item, ready to be placed again elsewhere
+
+[b]Tips[/b]
+
+• Build tents early — even summer nights get cold
+• Place tents near fires for the best warmth
+• Multiple tents grouped together make a proper camp
+• Keep crates near your tent area so you can relocate tents if needed"

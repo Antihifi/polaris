@@ -1,133 +1,68 @@
 class_name TutorialPanel extends CanvasLayer
-## Single-page tutorial overview with hoverable category buttons.
-## Each category shows a tooltip with details about that game element.
+## Tutorial overview with hoverable category buttons and clickable detail views.
+## Categories are defined as TutorialEntry resources assigned in the Inspector.
 
 signal back_requested
 
-@onready var title_label: Label = $CenterContainer/Panel/MarginContainer/VBoxContainer/TitleLabel
+## Drag TutorialEntry .tres files here in the Inspector to populate the grid.
+@export var entries: Array[TutorialEntry] = []
+
+@onready var grid_panel: CenterContainer = $CenterContainer
 @onready var grid_container: GridContainer = $CenterContainer/Panel/MarginContainer/VBoxContainer/GridContainer
 @onready var back_button: Button = $CenterContainer/Panel/MarginContainer/VBoxContainer/BackButton
-
-## Tutorial categories with their status and tooltip descriptions
-const TUTORIAL_CATEGORIES := [
-	{
-		"name": "Survival Stats",
-		"icon": "",  # Could add icon path
-		"implemented": true,
-		"tooltip": "Five vital stats (0-100): Hunger, Warmth, Health, Morale, Energy.\nStats cascade - low energy increases hunger drain.\nAny stat reaching 0 means death."
-	},
-	{
-		"name": "Characters",
-		"icon": "",
-		"implemented": true,
-		"tooltip": "Captain: You control directly, provides morale aura.\nOfficers: Controllable units you command.\nMen: AI-controlled, handle survival autonomously."
-	},
-	{
-		"name": "Controls",
-		"icon": "",
-		"implemented": true,
-		"tooltip": "Left-click: Select unit\nCtrl+click or drag: Multi-select\nRight-click ground: Move\nRight-click object: Interact\nWASD/Arrows: Camera pan\nMouse wheel: Zoom"
-	},
-	{
-		"name": "Time System",
-		"icon": "",
-		"implemented": true,
-		"tooltip": "Survive 365+ days until rescue arrives.\nSeasons: Summer (mild) → Winter (deadly) → Spring (rescue)\nSpace: Pause | 1x/2x/4x: Speed controls"
-	},
-	{
-		"name": "Temperature",
-		"icon": "",
-		"implemented": true,
-		"tooltip": "Warmth drains in cold weather, faster at night.\nShelter reduces cold damage.\nFire provides warmth (+5/hr within 5m).\nBelow -40°C is deadly even with gear."
-	},
-	{
-		"name": "Sleds",
-		"icon": "",
-		"implemented": true,
-		"tooltip": "Right-click sled with unit selected to attach.\nLead puller navigates, sled follows.\nEssential for hauling supplies on expeditions."
-	},
-	{
-		"name": "Inventory",
-		"icon": "",
-		"implemented": true,
-		"tooltip": "Right-click containers to open inventory.\nDrag items between inventories.\nUnits have personal 3x3 inventory."
-	},
-	{
-		"name": "Buildings",
-		"icon": "",
-		"implemented": false,
-		"tooltip": "[Coming Soon]\nTents: Basic shelter from cold.\nFire Pits: Warmth and cooking.\nWorkshop: Craft sleds and tools."
-	},
-	{
-		"name": "Expeditions",
-		"icon": "",
-		"implemented": false,
-		"tooltip": "[Coming Soon]\nSend groups south to find rescue.\nRequires sled with supplies.\nFind Hudson's Bay Company outpost for salvation."
-	},
-	{
-		"name": "Combat",
-		"icon": "",
-		"implemented": false,
-		"tooltip": "[Coming Soon]\nWolves hunt the weak and alone.\nPolar bears are extremely dangerous.\nArmed units auto-attack threats."
-	},
-	{
-		"name": "Natives",
-		"icon": "",
-		"implemented": false,
-		"tooltip": "[Coming Soon]\nDiscover Inuit camp to trade.\nWestern goods → Superior cold gear.\nWestern goods → Food (seal, whale meat)."
-	},
-	{
-		"name": "Morale Events",
-		"icon": "",
-		"implemented": false,
-		"tooltip": "[Coming Soon]\nLow morale (<25%) triggers mental breaks.\nBerserk: Attacks others.\nWendigo: Cannibalism in starvation."
-	}
-]
+@onready var detail_panel: TutorialDetailPanel = $TutorialDetailPanel
 
 
 func _ready() -> void:
-	layer = 50  # Same layer as scenario panel
-
-	# Connect back button
+	layer = 50
 	back_button.pressed.connect(_on_back_pressed)
-
-	# Populate grid with category buttons
+	detail_panel.back_pressed.connect(_on_detail_back)
 	_create_category_buttons()
-
-	# Start hidden
 	visible = false
 
 
 func _create_category_buttons() -> void:
-	## Create a button for each tutorial category with tooltip.
-	for category in TUTORIAL_CATEGORIES:
+	## Create a button for each tutorial entry with tooltip.
+	for entry: TutorialEntry in entries:
 		var button := Button.new()
-		button.text = category.name
+		button.text = entry.title
 
-		# Mark unimplemented features
-		if not category.implemented:
+		if not entry.implemented:
 			button.text += " *"
-			button.modulate = Color(0.7, 0.7, 0.7, 1.0)  # Slightly dimmed
+			button.modulate = Color(0.7, 0.7, 0.7, 1.0)
 
-		# Set tooltip
-		button.tooltip_text = category.tooltip
-
-		# Sizing
+		button.tooltip_text = entry.brief_tooltip
 		button.custom_minimum_size = Vector2(180, 50)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_on_category_pressed.bind(entry))
 
 		grid_container.add_child(button)
 
 
 func show_tutorial() -> void:
-	## Display the tutorial screen.
+	## Display the tutorial grid screen.
 	visible = true
+	grid_panel.visible = true
+	detail_panel.hide_entry()
 	back_button.grab_focus()
 
 
 func hide_tutorial() -> void:
-	## Hide the tutorial screen.
+	## Hide the entire tutorial layer.
 	visible = false
+
+
+func _on_category_pressed(entry: TutorialEntry) -> void:
+	## Open the detail view for a category.
+	grid_panel.visible = false
+	detail_panel.show_entry(entry)
+
+
+func _on_detail_back() -> void:
+	## Return from detail view to the category grid.
+	detail_panel.hide_entry()
+	grid_panel.visible = true
+	back_button.grab_focus()
 
 
 func _on_back_pressed() -> void:

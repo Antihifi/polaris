@@ -12,6 +12,10 @@ extends Node
 @export var construction_site_collision_mask: int = 64  # Layer 7 for construction sites
 @export var ship_collision_mask: int = 128  # Layer 8 for ships
 @export var tent_collision_mask: int = 256  # Layer 9 for placed tents
+@export var corpse_collision_mask: int = 32768  # Layer 16 for corpses (1 << 15)
+
+## Maximum distance (meters) for box selection — units beyond this are ignored
+@export var max_selection_distance: float = 200.0
 
 ## Enable multi-selection with shift-click and box select
 @export var multi_select_enabled: bool = true
@@ -48,6 +52,17 @@ const DOUBLE_CLICK_THRESHOLD_MS: int = 400
 # Formation spacing for group moves
 const FORMATION_SPACING: float = 2.0
 
+# Hold-to-attack state (for non-hostile human targets)
+var _attack_hold_target: Node3D = null
+var _attack_hold_start_time: float = 0.0
+var _attack_hold_position: Vector2 = Vector2.ZERO
+var _attack_button_shown: bool = false
+const ATTACK_HOLD_DURATION: float = 0.3  # Seconds to hold before showing button
+
+# Attack confirmation button (instantiated on demand, like ButcherPanel)
+var _attack_button_scene: PackedScene = preload("res://ui/attack_confirm_button.tscn")
+var attack_confirm_button: Control = null
+
 
 func _ready() -> void:
 	# Try to find camera if not set
@@ -57,6 +72,17 @@ func _ready() -> void:
 	# Find Terrain3D node
 	await get_tree().process_frame  # Wait for scene to be ready
 	_find_terrain3d()
+
+
+func _process(_delta: float) -> void:
+	# Track hold-to-attack timer
+	if _attack_hold_target and not _attack_button_shown:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			# Right-click released before threshold - cancel
+			_cancel_attack_hold()
+		elif Time.get_ticks_msec() / 1000.0 - _attack_hold_start_time >= ATTACK_HOLD_DURATION:
+			# Held long enough - show attack button
+			_show_attack_button()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -131,29 +157,76 @@ func _handle_left_click_up(screen_position: Vector2) -> void:
 	box_current = Vector2.ZERO
 
 
+func _find_owner_unit_or_animal(hit: Object) -> Node3D:
+	## Traverse up the tree to find the ClickableUnit or Animal that owns this collider.
+	## Works with InteractionCollider nested under BoneAttachment3D/Skeleton/UnitModel.
+	var node: Node = hit if hit is Node else null
+	while node:
+		if node is ClickableUnit:
+			return node as ClickableUnit
+		if node is Animal:
+			return node as Animal
+		node = node.get_parent()
+	return null
+
+
 func _raycast_for_unit(screen_position: Vector2) -> Node:
 	## Raycast to find a unit at screen position. Returns null if none found.
+	## Detects both CharacterBody3D and InteractionCollider Area3D on layer 2.
 	var from := camera.project_ray_origin(screen_position)
 	var to := from + camera.project_ray_normal(screen_position) * 1000.0
 
 	var space_state := camera.get_world_3d().direct_space_state
 	var unit_query := PhysicsRayQueryParameters3D.create(from, to, unit_collision_mask)
+	unit_query.collide_with_areas = true   # Detect InteractionCollider Area3D
+	unit_query.collide_with_bodies = false  # ONLY InteractionCollider - CharacterBody3D is for physics only
 	var unit_result := space_state.intersect_ray(unit_query)
 
 	if unit_result.is_empty():
 		return null
 
+	# Terrain occlusion: use Terrain3D CPU raymarching (same as _get_terrain_position)
+	# Physics raycasts against Terrain3D's internal collision are unreliable
+	if terrain_3d and terrain_3d.has_method("get_intersection"):
+		var direction: Vector3 = camera.project_ray_normal(screen_position)
+		var terrain_hit: Vector3 = terrain_3d.get_intersection(from, direction)
+		if terrain_hit.z < 3.4e38 and not is_nan(terrain_hit.y):
+			var terrain_dist: float = from.distance_to(terrain_hit)
+			var unit_dist: float = from.distance_to(unit_result.position)
+			if terrain_dist < unit_dist - 2.0:
+				return null  # Terrain blocks line of sight
+
 	var hit: Object = unit_result.collider
 
-	# Check if it's a selectable unit (ClickableUnit)
-	if hit is ClickableUnit:
-		return hit as Node
+	# Traverse up tree to find ClickableUnit owner (InteractionCollider is nested)
+	var owner := _find_owner_unit_or_animal(hit)
+	if owner is ClickableUnit:
+		return owner
+	return null
 
-	# Check parent in case we hit a child collider
-	var parent: Node = hit.get_parent()
-	if parent is ClickableUnit:
-		return parent
 
+func _raycast_for_corpse(screen_position: Vector2) -> Node:
+	## Raycast to find a dead unit or animal (corpse) at screen position.
+	## Corpses are on layer 16 after death. Returns null if none found.
+	## Returns either a ClickableUnit or Animal - caller should check type.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+	var corpse_query := PhysicsRayQueryParameters3D.create(from, to, corpse_collision_mask)
+	corpse_query.collide_with_areas = true   # Detect InteractionCollider Area3D on layer 16
+	corpse_query.collide_with_bodies = false  # ONLY InteractionCollider - CharacterBody3D is for physics only
+	var corpse_result := space_state.intersect_ray(corpse_query)
+
+	if corpse_result.is_empty():
+		return null
+
+	var hit: Object = corpse_result.collider
+
+	# Traverse up tree to find ClickableUnit or Animal owner (InteractionCollider is nested)
+	var owner := _find_owner_unit_or_animal(hit)
+	if owner and "is_dead" in owner and owner.is_dead:
+		return owner
 	return null
 
 
@@ -375,6 +448,205 @@ func _raycast_for_ship(screen_position: Vector2) -> Node:
 	return null
 
 
+func _raycast_for_hostile(screen_position: Vector2) -> Node3D:
+	## Raycast to find a hostile target (animal or broken unit) at screen position.
+	## Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+	# Use unit collision mask - animals will use same layer
+	var query := PhysicsRayQueryParameters3D.create(from, to, unit_collision_mask)
+	query.collide_with_areas = true   # Detect InteractionCollider Area3D
+	query.collide_with_bodies = false  # ONLY InteractionCollider - CharacterBody3D is for physics only
+	var result := space_state.intersect_ray(query)
+
+	if result.is_empty():
+		return null
+
+	var hit: Object = result.collider
+
+	# Traverse up tree to find ClickableUnit or Animal owner (InteractionCollider is nested)
+	var target := _find_owner_unit_or_animal(hit)
+	if not target:
+		return null
+
+	# Check if this is a valid hostile target
+	if _is_attackable_target(target):
+		return target
+
+	return null
+
+
+func _is_attackable_target(target: Node3D) -> bool:
+	## Check if a node is a valid attack target (hostile animal or broken unit).
+	if not target or not is_instance_valid(target):
+		return false
+
+	# Animals in hostile group
+	if target.is_in_group("hostile") or target.is_in_group("animals"):
+		# Check if alive
+		if "health" in target and target.health <= 0:
+			return false
+		return true
+
+	# Broken men (berserk or wendigo)
+	if target is ClickableUnit:
+		var unit := target as ClickableUnit
+		# Don't allow attacking normal survivors
+		if "is_berserk" in unit and unit.is_berserk:
+			return true
+		if "is_wendigo" in unit and unit.is_wendigo:
+			return true
+
+	return false
+
+
+func _raycast_for_non_hostile_human(screen_position: Vector2) -> Node3D:
+	## Raycast to find a non-hostile human (ClickableUnit that's not berserk/wendigo).
+	## Returns null if none found.
+	var from := camera.project_ray_origin(screen_position)
+	var to := from + camera.project_ray_normal(screen_position) * 1000.0
+
+	var space_state := camera.get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(from, to, unit_collision_mask)
+	query.collide_with_areas = true   # Detect InteractionCollider Area3D
+	query.collide_with_bodies = false  # ONLY InteractionCollider - CharacterBody3D is for physics only
+	var result := space_state.intersect_ray(query)
+
+	if result.is_empty():
+		return null
+
+	var hit: Object = result.collider
+
+	# Traverse up tree to find ClickableUnit owner (InteractionCollider is nested)
+	var owner := _find_owner_unit_or_animal(hit)
+	if not owner is ClickableUnit:
+		return null
+	var unit := owner as ClickableUnit
+
+	# Check if dead
+	if unit.is_dead:
+		return null
+
+	# Check if berserk/wendigo (those are handled by _raycast_for_hostile)
+	if "is_berserk" in unit and unit.is_berserk:
+		return null
+	if "is_wendigo" in unit and unit.is_wendigo:
+		return null
+
+	# Don't allow attacking yourself
+	if unit in selected_units:
+		return null
+
+	return unit
+
+
+func _start_attack_hold(target: Node3D, screen_position: Vector2) -> void:
+	## Start the hold-to-attack timer for a non-hostile human target.
+	_attack_hold_target = target
+	_attack_hold_start_time = Time.get_ticks_msec() / 1000.0
+	_attack_hold_position = screen_position
+	_attack_button_shown = false
+
+
+func _cancel_attack_hold() -> void:
+	## Cancel the hold-to-attack and hide button if shown.
+	_attack_hold_target = null
+	_attack_hold_start_time = 0.0
+	_attack_button_shown = false
+	if attack_confirm_button and attack_confirm_button.has_method("hide_button"):
+		attack_confirm_button.hide_button()
+
+
+func _show_attack_button() -> void:
+	## Show the attack confirmation button at cursor position.
+	_attack_button_shown = true
+
+	# Lazy instantiation (like ButcherPanel pattern)
+	if not attack_confirm_button:
+		attack_confirm_button = _attack_button_scene.instantiate()
+		# Add to CanvasLayer for proper UI layering
+		var canvas := _find_canvas_layer()
+		if canvas:
+			canvas.add_child(attack_confirm_button)
+		else:
+			get_tree().current_scene.add_child(attack_confirm_button)
+		attack_confirm_button.attack_confirmed.connect(on_attack_confirmed)
+
+	attack_confirm_button.show_at(_attack_hold_position, _attack_hold_target)
+
+
+func _find_canvas_layer() -> CanvasLayer:
+	## Find GameHUD or any CanvasLayer for proper UI rendering.
+	var hud := get_node_or_null("../GameHUD")
+	if hud is CanvasLayer:
+		return hud
+	return null
+
+
+func on_attack_confirmed(target: Node3D) -> void:
+	## Called by attack confirmation button when user confirms attack.
+	if target and is_instance_valid(target):
+		_issue_attack_command(target)
+	_cancel_attack_hold()
+
+
+func _issue_attack_command(target: Node3D) -> void:
+	## Issue attack command to selected officers/captain.
+	if not target or not is_instance_valid(target):
+		return
+
+	var attack_count := 0
+	for unit in selected_units:
+		if not is_instance_valid(unit):
+			continue
+
+		# Only officers and captain can be commanded to attack
+		if not "rank" in unit:
+			continue
+		var rank: int = unit.rank
+		if rank < 1:  # UnitRank.MAN = 0
+			continue
+
+		# Issue attack command
+		if unit.has_method("attack_target"):
+			unit.attack_target(target)
+			attack_count += 1
+			# Set player command active for BT (don't stop combat - we just started it!)
+			_set_player_command_active(unit, true, false)
+
+	if attack_count > 0:
+		print("[RTSInput] %d officers attacking target" % attack_count)
+		_pulse_attack_target(target)
+
+
+func _pulse_attack_target(target: Node3D) -> void:
+	## Visual feedback: pulse target transparency when attack commanded.
+	if not target or not is_instance_valid(target):
+		return
+
+	# Find first MeshInstance3D in target hierarchy
+	var mesh: MeshInstance3D = _find_mesh_in_children(target)
+	if not mesh:
+		return
+
+	# Pulse transparency: 0.5 → 1.0 over 0.3s
+	var tween := target.create_tween()
+	tween.tween_property(mesh, "transparency", 0.5, 0.15)
+	tween.tween_property(mesh, "transparency", 0.0, 0.15)
+
+
+func _find_mesh_in_children(node: Node) -> MeshInstance3D:
+	for child in node.get_children():
+		if child is MeshInstance3D:
+			return child
+		var found := _find_mesh_in_children(child)
+		if found:
+			return found
+	return null
+
+
 func _try_assign_officer_to_site(site: Node) -> bool:
 	## Try to assign selected officers to construction site.
 	## Returns true if any officers were assigned.
@@ -443,7 +715,6 @@ func _handle_unit_click(unit: Node, add_to_selection: bool) -> void:
 	var focus: Node = _get_focusable_unit(unit)
 	if focus and camera and camera.has_method("set_focus_target"):
 		camera.set_focus_target(focus)
-		_update_camera_height(focus)
 
 	# Emit double-click signal
 	if is_double_click:
@@ -457,11 +728,24 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	## If clicking on a construction site, emit construction_site_clicked or assign officer.
 	## Non-lead sled pullers are filtered out - they follow their leader automatically.
 
-	# Check if right-clicking on a dead unit (corpse)
-	var clicked_corpse := _raycast_for_unit(screen_position)
-	if clicked_corpse and clicked_corpse is ClickableUnit and (clicked_corpse as ClickableUnit).is_dead:
+	# Check if right-clicking on a dead unit (corpse) - uses separate layer 16
+	var clicked_corpse := _raycast_for_corpse(screen_position)
+	if clicked_corpse:
 		corpse_clicked.emit(clicked_corpse)
 		return
+
+	# Check if right-clicking on an attackable target (hostile animal or broken unit)
+	if has_selection():
+		var hostile_target := _raycast_for_hostile(screen_position)
+		if hostile_target:
+			_issue_attack_command(hostile_target)
+			return
+
+		# Check for non-hostile human target (requires hold to confirm)
+		var human_target := _raycast_for_non_hostile_human(screen_position)
+		if human_target:
+			_start_attack_hold(human_target, screen_position)
+			return
 
 	# Check if right-clicking on a construction site
 	var clicked_site := _raycast_for_construction_site(screen_position)
@@ -527,16 +811,22 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	# Move all movable units in formation
 	if movable_units.size() > 1:
 		_move_units_in_formation(movable_units, target_position)
-		# Set player command active for all units
+		# Set player command active for all units and clear combat re-engage
 		for unit in movable_units:
 			_set_player_command_active(unit, true)
+			if "last_attacker" in unit:
+				unit.last_attacker = null
 	elif movable_units.size() == 1:
 		movable_units[0].move_to(target_position)
 		_set_player_command_active(movable_units[0], true)
+		if "last_attacker" in movable_units[0]:
+			movable_units[0].last_attacker = null
 	elif selected_unit and (not selected_unit.has_method("can_receive_move_command") or selected_unit.can_receive_move_command()):
 		# Legacy single selection (only if can receive commands)
 		selected_unit.move_to(target_position)
 		_set_player_command_active(selected_unit, true)
+		if "last_attacker" in selected_unit:
+			selected_unit.last_attacker = null
 
 	_show_move_indicator(target_position)
 
@@ -685,13 +975,9 @@ func _deselect_all() -> void:
 	selected_units.clear()
 	selected_unit = null
 
-	# Clear camera focus target and height limit
+	# Clear camera focus target
 	if camera and camera.has_method("clear_focus_target"):
 		camera.clear_focus_target()
-	if camera and "max_camera_height" in camera:
-		camera.max_camera_height = 15.0
-	if camera and "max_camera_distance" in camera:
-		camera.max_camera_distance = 20.0
 
 	selection_changed.emit(selected_units)
 
@@ -727,6 +1013,24 @@ func _finish_box_selection() -> void:
 		if "is_discovered" in unit and not unit.is_discovered:
 			continue
 
+		# Skip units behind camera (unproject_position mirrors these into screen space)
+		if camera.is_position_behind(unit.global_position):
+			continue
+
+		# Skip units beyond max selection distance
+		var dist_to_cam: float = camera.global_position.distance_to(unit.global_position)
+		if dist_to_cam > max_selection_distance:
+			continue
+
+		# Skip units occluded by terrain (Terrain3D CPU raymarching)
+		if terrain_3d and terrain_3d.has_method("get_intersection"):
+			var dir_to_unit: Vector3 = (unit.global_position - camera.global_position).normalized()
+			var terrain_hit: Vector3 = terrain_3d.get_intersection(camera.global_position, dir_to_unit)
+			if terrain_hit.z < 3.4e38 and not is_nan(terrain_hit.y):
+				var terrain_dist: float = camera.global_position.distance_to(terrain_hit)
+				if terrain_dist < dist_to_cam - 2.0:
+					continue  # Terrain blocks line of sight
+
 		# Project unit position to screen
 		var screen_pos := camera.unproject_position(unit.global_position)
 
@@ -744,7 +1048,6 @@ func _finish_box_selection() -> void:
 	var focus: Node = _get_focusable_unit(null)
 	if focus and camera and camera.has_method("set_focus_target"):
 		camera.set_focus_target(focus)
-		_update_camera_height(focus)
 
 	print("[RTSInput] Box selected %d units" % units_in_box.size())
 
@@ -844,27 +1147,17 @@ func _get_focusable_unit(preferred: Node) -> Node:
 	return best
 
 
-func _update_camera_height(unit: Node) -> void:
-	## Compute max camera height from unit's navigation equipment and skill.
-	if not camera or not "max_camera_height" in camera:
-		return
-	var height: float = 15.0
-	if unit.has_method("has_item_by_id"):
-		if unit.has_item_by_id("spyglass"):
-			height += 10.0
-		if unit.has_item_by_id("sextant"):
-			height += 10.0
-	if "stats" in unit and unit.stats and "navigation_skill" in unit.stats:
-		height += unit.stats.navigation_skill * 0.05
-	camera.max_camera_height = height
-
-
-func _set_player_command_active(unit: Node, active: bool) -> void:
+func _set_player_command_active(unit: Node, active: bool, stop_combat_flag: bool = true) -> void:
 	## Set the player command flag on a unit's AI controller.
-	## Also clears animation lock so unit can respond immediately.
+	## Also clears animation lock and optionally combat state.
+	## Set stop_combat_flag=false when issuing attack commands.
 	var ai_controller: Node = unit.get_node_or_null("ManAIController")
 	if ai_controller and ai_controller.has_method("set_player_command_active"):
 		ai_controller.set_player_command_active(active)
+
+	# Stop combat when receiving player command (unless it's an attack command)
+	if active and stop_combat_flag and unit.has_method("stop_combat"):
+		unit.stop_combat()
 
 	# Clear animation lock so unit can move immediately
 	# (otherwise unit stays frozen during BT waits until lock is released)

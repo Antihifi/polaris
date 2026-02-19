@@ -32,12 +32,12 @@ static func _init_recipes() -> void:
 	barrel.result_scene_path = "res://objects/storage_barrel.tscn"
 	_recipes[&"barrel"] = barrel
 
-	# Tent - 4 days
+	# Tent - 1 day
 	var tent := BuildRecipe.new()
 	tent.id = &"tent"
 	tent.display_name = "Tent"
 	tent.description = "A canvas tent providing shelter from the elements."
-	tent.construction_days = 4
+	tent.construction_days = 1
 	tent.required_materials = {"scrap_wood": 5, "nails": 3, "scrap_sails": 2}
 	tent.result_scene_path = "res://objects/small_tent1/small_tent_1.tscn"
 	_recipes[&"tent"] = tent
@@ -52,12 +52,12 @@ static func _init_recipes() -> void:
 	# No scene path - will use default box mesh
 	_recipes[&"firewood_bundle"] = firewood
 
-	# Sled - 10 days, most complex
+	# Sled - 4 days
 	var sled := BuildRecipe.new()
 	sled.id = &"sled"
 	sled.display_name = "Sled"
 	sled.description = "A sturdy sled for hauling supplies across the ice."
-	sled.construction_days = 10
+	sled.construction_days = 4
 	sled.required_materials = {"scrap_wood": 10, "nails": 5}
 	sled.result_scene_path = "res://objects/sled1/sled_1.tscn"
 	_recipes[&"sled"] = sled

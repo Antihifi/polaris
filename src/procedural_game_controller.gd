@@ -22,11 +22,15 @@ var _sky3d_scene: PackedScene = preload("res://sky_3d.tscn")
 var _snow_controller: PackedScene = preload("res://src/systems/weather/snow_controller.tscn")
 var _scenario_panel_scene: PackedScene = preload("res://ui/scenario_panel.tscn")
 var _tutorial_panel_scene: PackedScene = preload("res://ui/tutorial_panel.tscn")
+var _water_scene: PackedScene = preload("res://terrain/water.tscn")
+var _aurora_controller_scene: PackedScene = preload("res://src/effects/aurora_controller.tscn")
 
-	
+
 ## Load terrain texture configuration (dedicated scene for procedural generation)
 ## Contains Terrain3DAssets with 4 textures: snow (0), rock (1), gravel (2), ice (3)
 var _terrain_config_scene: PackedScene = preload("res://terrain/procedural_terrain_config.tscn")
+## Terrain generation parameters (erosion, heights, etc.) - edited via TerrainParamsDock
+var _terrain_config: TerrainConfig = preload("res://terrain/terrain_params.tres")
 var _ui_theme: Theme = preload("res://ui/MinimalUI.tres")
 
 ## Terrain configuration (matches terrain_generator.gd)
@@ -62,6 +66,8 @@ var scenario_panel: ScenarioPanel = null  # Intro screen
 var tutorial_panel: TutorialPanel = null  # Tutorial screen
 var game_hud: CanvasLayer = null  # Main game HUD
 var inventory_hud: CanvasLayer = null  # Inventory HUD
+var score_manager: DemoScoreManager = null  # Win/lose tracking
+var _errant_unit_refs: Array[Node] = []  # Errant units for score manager
 
 ## Generated data
 var _heightmap: Image = null
@@ -146,6 +152,15 @@ func _generate_game() -> void:
 	await get_tree().process_frame
 	var inlet_info := _carve_inlet()
 
+	# Flatten ship area to Y=0 for proper ship placement
+	_update_loading_detail("Flattening ship placement area")
+	_flatten_ship_area(inlet_info)
+
+	# Break up ice-water boundary at south map edges
+	_update_loading_detail("Creating ice-floe breakup at south coast")
+	_break_ice_water_boundary()
+	await get_tree().process_frame
+
 	# Stage 2: Create Terrain3D dynamically (like CodeGenerated.gd)
 	_update_loading("Creating Terrain", "Initializing Terrain3D node", 35)
 	await get_tree().process_frame
@@ -195,11 +210,17 @@ func _generate_game() -> void:
 	await get_tree().process_frame
 
 	# Stage 7: NOW spawn entities (after terrain + NavMesh ready)
-	_update_loading("Spawning Entities", "Creating captain and supplies", 90)
+	_update_loading("Spawning Entities", "Creating captain and supplies", 85)
 	await get_tree().process_frame
 	_spawn_entities_at(spawn_pos, ship_pos)
 
-	# Stage 8: Setup camera and UI
+	# Stage 8: Setup south coast open water and win condition
+	_update_loading("Setting Up South Coast", "Creating open water and ice boundary", 90)
+	await get_tree().process_frame
+	_setup_open_water_area()
+	_spawn_water_mesh()
+
+	# Stage 9: Setup camera and UI
 	_update_loading("Setting Up UI", "Configuring game interface", 95)
 	await get_tree().process_frame
 	_setup_game_ui()
@@ -308,13 +329,168 @@ func _generate_heightmap() -> void:
 	var height_rng: RandomNumberGenerator = _seed_manager.get_height_rng()
 	_heightmap = HeightmapGenerator.generate_heightmap(
 		TERRAIN_RESOLUTION, TERRAIN_RESOLUTION,
-		_island_mask, height_rng
+		_island_mask, height_rng, _terrain_config
 	)
+
+	# Post-processing: smooth steep slopes FIRST (creates nav-passable gaps)
+	HeightmapGenerator.smooth_steep_slopes(_heightmap, _island_mask, METERS_PER_PIXEL, 35.0, 80)
+
+	# Apply hydraulic erosion AFTER smoothing using GPU compute shader
+	GPUErosion.apply_hydraulic_erosion_gpu(_heightmap, _island_mask, _terrain_config, METERS_PER_PIXEL)
+
+	# Eliminate sugarloaf peaks on north coast (aggressive smoothing)
+	HeightmapGenerator.smooth_by_latitude(_heightmap, _island_mask, 0.0, 0.35, 3)
+
+	# Smooth southern flatlands for easier navigation
+	HeightmapGenerator.smooth_by_latitude(_heightmap, _island_mask, 0.65, 1.0, 2)
 
 
 func _carve_inlet() -> Dictionary:
 	var inlet_rng: RandomNumberGenerator = _seed_manager.get_inlet_rng()
 	return HeightmapGenerator.carve_inlet(_heightmap, _island_mask, inlet_rng)
+
+
+func _flatten_ship_area(inlet_info: Dictionary) -> void:
+	## Flatten the terrain around the ship position to Y=0 (sea level).
+	## Creates a flat ice/frozen sea surface for the ship to sit on.
+	## Uses soft edges to blend into surrounding terrain.
+	## Ship dimensions are in meters, converted to pixels via METERS_PER_PIXEL.
+	var ship_pixel: Vector2i = inlet_info.pixel_position
+	var img_w := _heightmap.get_width()
+	var img_h := _heightmap.get_height()
+
+	# Ship is ~60m long — use 55m half-length + 35m half-width in meters,
+	# then convert to pixel counts for this resolution.
+	var half_length: int = int(55.0 / METERS_PER_PIXEL)  # Along channel
+	var half_width: int = int(35.0 / METERS_PER_PIXEL)   # Across channel
+
+	var min_x := maxi(0, ship_pixel.x - half_width)
+	var max_x := mini(img_w - 1, ship_pixel.x + half_width)
+	var min_y := maxi(0, ship_pixel.y - half_length)
+	var max_y := mini(img_h - 1, ship_pixel.y + half_length)
+
+	var pixels_modified: int = 0
+	for py in range(min_y, max_y + 1):
+		for px in range(min_x, max_x + 1):
+			var dist_x := absf(float(px - ship_pixel.x)) / float(half_width)
+			var dist_y := absf(float(py - ship_pixel.y)) / float(half_length)
+			var dist := maxf(dist_x, dist_y)
+
+			var current: float = _heightmap.get_pixel(px, py).r
+
+			if dist < 0.6:
+				# Core area: force to 0.0 (sea level)
+				_heightmap.set_pixel(px, py, Color(0.0, 0.0, 0.0, 1.0))
+				pixels_modified += 1
+			elif dist < 1.0:
+				# Blend zone: smooth transition from 0.0 to current height
+				var blend := (dist - 0.6) / 0.4
+				# Smoothstep for gradual transition
+				blend = blend * blend * (3.0 - 2.0 * blend)
+				var new_h := lerpf(0.0, current, blend)
+				_heightmap.set_pixel(px, py, Color(new_h, 0.0, 0.0, 1.0))
+				pixels_modified += 1
+
+	print("[ProceduralGame] Flattened ship area: %d pixels set to Y=0 around (%d, %d)" % [
+		pixels_modified, ship_pixel.x, ship_pixel.y])
+
+
+func _break_ice_water_boundary() -> void:
+	## Create organic ice-floe breakup in the bottom ~5% of the map (full width).
+	## Uses noise iso-contours — NO grids, NO rectangular stamps.
+	##   - A noise-warped BLEND ZONE transitions existing terrain -> frozen sea level
+	##   - South of that, noise iso-contours create ice-floe plateaus at Y=-2
+	##   - Gaps between floes descend to Y=-15 (below water mesh)
+	## The water mesh fills the gaps, producing a natural pack-ice edge.
+	## Noise frequencies are scaled by METERS_PER_PIXEL to maintain consistent
+	## world-space feature sizes across different terrain resolutions.
+	var img_w := _heightmap.get_width()
+	var img_h := _heightmap.get_height()
+
+	# --- Base zone start (before noise warping) ---
+	var base_zone_start: float = float(img_h) * 0.88
+	var zone_end_y: int = img_h - 1
+	if base_zone_start >= float(zone_end_y):
+		return
+
+	# --- Blend zone: smooth transition from terrain to ice floes ---
+	var blend_rows: int = int(float(img_h) * 0.05)
+	var process_start_y: int = maxi(0, int(base_zone_start) - blend_rows)
+
+	# --- Edge noise: warps the boundary so it isn't ruler-straight ---
+	# Scale frequency by METERS_PER_PIXEL to keep ~125m world-space undulations
+	var edge_noise := FastNoiseLite.new()
+	edge_noise.seed = _seed_manager.current_seed ^ 0xED6E0001
+	edge_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	edge_noise.frequency = 0.008 * METERS_PER_PIXEL
+	edge_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	edge_noise.fractal_octaves = 2
+	edge_noise.fractal_gain = 0.5
+	edge_noise.fractal_lacunarity = 2.0
+
+	# --- Floe noise for organic ice shapes ---
+	# Scale frequency by METERS_PER_PIXEL to keep ~40m world-space features
+	var floe_noise := FastNoiseLite.new()
+	floe_noise.seed = _seed_manager.current_seed ^ 0x1CEF100E
+	floe_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	floe_noise.frequency = 0.025 * METERS_PER_PIXEL
+	floe_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	floe_noise.fractal_octaves = 3
+	floe_noise.fractal_gain = 0.5
+	floe_noise.fractal_lacunarity = 2.0
+
+	var plateau_h: float = -2.0   # Must match FROZEN_SEA_HEIGHT (-2.0) for seamless join
+	var deep_h: float = -15.0     # Ocean floor between floes
+	var frozen_sea_h: float = -2.0  # Must match FROZEN_SEA_HEIGHT (-2.0) for seamless join
+
+	var pixels_modified: int = 0
+
+	for py in range(process_start_y, zone_end_y + 1):
+		for px in range(0, img_w):
+			# Per-column boundary warp (sample at fixed Y for consistent boundary curve)
+			var warp_offset: float = edge_noise.get_noise_2d(float(px), base_zone_start) * float(blend_rows) * 0.5
+			var warped_start: float = base_zone_start + warp_offset
+
+			# Distance into the floe zone (negative = in blend zone or north of it)
+			var dist_into_zone: float = float(py) - warped_start
+
+			if dist_into_zone < -float(blend_rows):
+				continue  # North of blend zone — keep existing terrain
+
+			if dist_into_zone < 0.0:
+				# BLEND ZONE: smoothly transition existing terrain -> frozen sea level
+				var blend_t: float = (float(blend_rows) + dist_into_zone) / float(blend_rows)
+				blend_t = clampf(blend_t, 0.0, 1.0)
+				blend_t = blend_t * blend_t * (3.0 - 2.0 * blend_t)  # smoothstep
+
+				var existing_h: float = _heightmap.get_pixel(px, py).r
+				var new_h: float = lerpf(existing_h, frozen_sea_h, blend_t)
+				_heightmap.set_pixel(px, py, Color(new_h, 0.0, 0.0, 1.0))
+				pixels_modified += 1
+			else:
+				# FLOE ZONE: ice-floe breakup with descending gaps
+				var zone_depth: float = float(zone_end_y) - warped_start
+				if zone_depth < 1.0:
+					zone_depth = 1.0
+				var raw_t: float = clampf(dist_into_zone / zone_depth, 0.0, 1.0)
+				var t: float = raw_t * raw_t * (3.0 - 2.0 * raw_t)  # smoothstep
+
+				var base_h: float = lerpf(frozen_sea_h, deep_h, t)
+				var threshold: float = lerpf(0.25, 0.75, t)
+
+				var noise_val: float = (floe_noise.get_noise_2d(float(px), float(py)) + 1.0) * 0.5
+
+				var new_h: float
+				if noise_val > threshold:
+					new_h = plateau_h  # Ice floe surface
+				else:
+					new_h = base_h     # Descending gap (water fills above)
+
+				_heightmap.set_pixel(px, py, Color(new_h, 0.0, 0.0, 1.0))
+				pixels_modified += 1
+
+	print("[ProceduralGame] Ice-water boundary: %d pixels modified (blend + noise-contour floes, rows %d-%d)" % [
+		pixels_modified, process_start_y, zone_end_y])
 
 
 func _create_terrain() -> void:
@@ -562,6 +738,9 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	# === ERRANT GROUPS (GDD: 2-3 groups along north coast) ===
 	_spawn_errant_groups(rng, ship_pos)
 
+	# === POLAR BEARS (25 on north coast - reduced for performance) ===
+	character_spawner.spawn_polar_bears(25, _island_mask, WORLD_SIZE_METERS, false)
+
 	# Schedule final setup after NavMesh sync
 	_finalize_captain_setup.call_deferred()
 
@@ -709,6 +888,11 @@ func _spawn_fragmented_ship(ship_pos: Vector3) -> void:
 	_simplified_ship_node.position = Vector3.ZERO
 	ship.add_child(_simplified_ship_node)
 
+	# Add ShipResourceComponent early so units can gather before ship swap.
+	var resource_comp := ShipResourceComponent.new()
+	resource_comp.name = "ShipResourceComponent"
+	ship.add_child(resource_comp)
+
 	# Resource nodes on PORT side (+X), parented to scene root (won't sink with ship)
 	var resource_nodes: Node3D = _resource_nodes_scene.instantiate()
 	resource_nodes.name = "ResourceNodes"
@@ -764,11 +948,6 @@ func _swap_to_fragmented_ship() -> void:
 	erebus.position = Vector3(0, SHIP_MODEL_Y_OFFSET, 0)
 	ship.add_child(erebus)
 
-	# Add ShipResourceComponent (on the erebus node, like ship_1.tscn)
-	var resource_comp := ShipResourceComponent.new()
-	resource_comp.name = "ShipResourceComponent"
-	erebus.add_child(resource_comp)
-
 	# Initialize demolition controller now that ship_root exists
 	var demolition := ship.get_node_or_null("DemolitionTestController")
 	if demolition:
@@ -810,6 +989,10 @@ func _spawn_errant_groups(rng: RandomNumberGenerator, ship_pos: Vector3) -> void
 		var men_in_group := rng.randi_range(errant_men_min, errant_men_max)
 		var has_officer := rng.randf() < errant_officer_chance
 		var units: Array[Node] = character_spawner.spawn_errant_group(camp_pos, men_in_group, has_officer, 20.0)
+
+		# Track errant unit references for score manager
+		for unit in units:
+			_errant_unit_refs.append(unit)
 
 		print("[ProceduralGame] Errant group %d at %s: %d men, %s officer, %d barrels, %d crates" % [
 			i + 1, camp_pos, men_in_group, "1" if has_officer else "no", group_barrels, group_crates])
@@ -869,6 +1052,128 @@ func _find_north_coast_position(rng: RandomNumberGenerator, group_index: int, to
 		return world_pos
 
 	return Vector3.INF
+
+
+# === SOUTH COAST SETUP ===
+
+func _find_south_coast_position() -> Vector3:
+	## Find the south coast position from the island mask.
+	if not _island_mask:
+		return Vector3.INF
+
+	var img_width := _island_mask.get_width()
+	var img_height := _island_mask.get_height()
+	var center_x := img_width / 2
+
+	# Scan from bottom up to find where land starts
+	var coastline_y := img_height - 1
+	for y in range(img_height - 1, 0, -1):
+		var value: float = _island_mask.get_pixel(center_x, y).r
+		if value > 0.3:
+			coastline_y = y
+			break
+
+	# Place area slightly south of coastline (in the water)
+	var area_y := coastline_y + 30
+	if area_y >= img_height:
+		area_y = img_height - 10
+
+	var half_size := float(img_width) / 2.0
+	var world_x := (float(center_x) - half_size) * METERS_PER_PIXEL
+	var world_z := (float(area_y) - half_size) * METERS_PER_PIXEL
+
+	var world_y := -2.0  # Below sea level
+	return Vector3(world_x, world_y, world_z)
+
+
+func _setup_open_water_area() -> void:
+	## Create an Area3D at the south coast for the win condition.
+	## The south coast is determined from the island mask.
+
+	var south_coast_pos := _find_south_coast_position()
+	if south_coast_pos == Vector3.INF:
+		push_warning("[ProceduralGame] Could not find south coast - using fallback position")
+		var half := WORLD_SIZE_METERS / 2.0
+		south_coast_pos = Vector3(0, 0, half - 50.0)
+
+	# Create open water detection area (wide strip along south coast)
+	var open_water := Area3D.new()
+	open_water.name = "OpenWaterArea"
+	add_child(open_water)
+	open_water.global_position = south_coast_pos
+
+	var col_shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(WORLD_SIZE_METERS * 0.6, 50.0, 100.0)  # Wide strip
+	col_shape.shape = box
+	open_water.add_child(col_shape)
+
+	# Setup score manager
+	score_manager = DemoScoreManager.new()
+	score_manager.name = "DemoScoreManager"
+	add_child(score_manager)
+	score_manager.setup(open_water)
+
+	# Register errant units after spawning
+	if not _errant_unit_refs.is_empty():
+		score_manager.register_errant_units(_errant_unit_refs)
+
+	# Connect score signals
+	score_manager.demo_won.connect(_on_demo_won)
+	score_manager.demo_lost.connect(_on_demo_lost)
+
+	print("[ProceduralGame] Open water area created at %s" % south_coast_pos)
+
+
+func _spawn_water_mesh() -> void:
+	## Instantiate the water mesh at the south coast to create open ocean visuals.
+	## The water plane sits at Y~-2.5 (wave troughs dip below 0, crests rise above).
+	## The terrain at the south coast descends below Y=0, so the water covers it.
+	## Reference: world_map.tscn places water at Y=-0.43 with Y-scale 2.253.
+	var south_pos := _find_south_coast_position()
+	if south_pos == Vector3.INF:
+		push_warning("[ProceduralGame] Could not find south coast for water mesh")
+		return
+
+	var water: MeshInstance3D = _water_scene.instantiate()
+	water.name = "Water"
+	add_child(water)
+
+	# PlaneMesh is 768x256 units. Scale to cover full ice floe zone.
+	var water_scale_x: float = WORLD_SIZE_METERS / 768.0 * 1.5  # 1.5x coverage for edge overlap
+	# Scale Z to cover ~20% of map depth (ice floe zone is ~12%)
+	var water_scale_z: float = WORLD_SIZE_METERS / 256.0 * 0.2
+	var water_y_scale: float = 2.253  # Match world_map.tscn wave height scaling
+
+	# Position: Shift mesh north to cover ice floe transition zone
+	# south_pos.z is at the coastline - move 200m north to cover the pockmarked terrain
+	var water_z: float = south_pos.z - 200.0
+
+	water.transform = Transform3D(
+		Basis(
+			Vector3(water_scale_x, 0, 0),
+			Vector3(0, water_y_scale, 0),
+			Vector3(0, 0, water_scale_z)
+		),
+		Vector3(0.0, -2.5, water_z)
+	)
+
+	print("[ProceduralGame] Water mesh spawned at Z=%.1f (scale: %.2f x %.2f x %.2f)" % [
+		water_z, water_scale_x, water_y_scale, water_scale_z])
+
+
+func _on_demo_won(score: Dictionary) -> void:
+	print("[ProceduralGame] === GAME WON ===")
+	print("[ProceduralGame] Total Score: %d" % score.get("total", 0))
+	print("[ProceduralGame]   Survivors: %d (%d pts)" % [score.get("survivors_alive", 0), score.get("survivor_points", 0)])
+	print("[ProceduralGame]   Good condition: %d (%d pts)" % [score.get("good_condition", 0), score.get("condition_points", 0)])
+	print("[ProceduralGame]   Errant found: %d (%d pts)" % [score.get("errant_found", 0), score.get("errant_points", 0)])
+	print("[ProceduralGame]   Tents: %d (%d pts)" % [score.get("tents_built", 0), score.get("tent_points", 0)])
+	print("[ProceduralGame]   Food: %d (%d pts)" % [score.get("food_items", 0), score.get("food_points", 0)])
+
+
+func _on_demo_lost(reason: String) -> void:
+	print("[ProceduralGame] === GAME LOST === %s" % reason)
 
 
 func _setup_game_ui() -> void:
@@ -1062,6 +1367,10 @@ func _create_basic_lighting() -> void:
 	dynamic_weather.name = "DynamicWeatherController"
 	add_child(dynamic_weather)
 
+	# Add AuroraController for northern lights effect
+	var aurora_ctrl: Node = _aurora_controller_scene.instantiate()
+	add_child(aurora_ctrl)
+
 	# Notify TimeManager to find the newly added Sky3D
 	# (TimeManager's initial search runs before we create Sky3D)
 	var time_manager = get_node_or_null("/root/TimeManager")
@@ -1069,7 +1378,7 @@ func _create_basic_lighting() -> void:
 		time_manager.refresh_sky3d()
 		print("[ProceduralGame] TimeManager refreshed to find Sky3D")
 
-	print("[ProceduralGame] Sky3D, SnowController, and DynamicWeatherController added to scene")
+	print("[ProceduralGame] Sky3D, SnowController, DynamicWeatherController, and AuroraController added to scene")
 
 
 func _find_navigable_spawn(center: Vector3) -> Vector3:
@@ -1278,6 +1587,12 @@ const BUTCHER_MULTIPLIER: float = 1.0  ## Stub: will be replaced by unit's butch
 func _on_butcher_confirmed(corpse: Node3D) -> void:
 	if not corpse or not is_instance_valid(corpse):
 		return
+	# Validate: must have a selected unit with a hatchet
+	var selected: Array[Node] = _input_handler.get_selected_units() if _input_handler else []
+	var butcher_unit: Node = selected[0] if not selected.is_empty() else null
+	if not butcher_unit or not butcher_unit.has_method("has_item_by_id") or not butcher_unit.has_item_by_id("hatchet"):
+		push_warning("[ProceduralGame] Butcher attempted without selected unit with hatchet!")
+		return
 	var protoset: JSON = load("res://data/items_protoset.json")
 	var corpse_inv := Inventory.new()
 	corpse_inv.name = "CorpseInventory"
@@ -1317,6 +1632,12 @@ func _open_corpse_inventory(corpse: Node, corpse_inv: Inventory) -> void:
 
 func _handle_carve(item: InventoryItem) -> void:
 	if not item or not is_instance_valid(item):
+		return
+	# Validate: must have a selected unit with a knife
+	var selected: Array[Node] = _input_handler.get_selected_units() if _input_handler else []
+	var carver_unit: Node = selected[0] if not selected.is_empty() else null
+	if not carver_unit or not carver_unit.has_method("has_item_by_id") or not carver_unit.has_item_by_id("knife"):
+		push_warning("[ProceduralGame] Carve attempted without selected unit with knife!")
 		return
 	var inv: Inventory = item.get_inventory()
 	if not inv:

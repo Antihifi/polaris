@@ -43,8 +43,7 @@ class_name DemolitionTestController
 
 @export_group("Sound Settings")
 @export var ground_y: float = 0.0  # Y=0 in real game (frozen ocean), adjust for testing
-@export var sound_unit_size: float = 15.0  # Reference distance for attenuation (larger = audible further)
-@export var sound_max_distance: float = 200.0  # Beyond this, sound is silent
+@export var sound_max_camera_distance: float = 1000.0  # Only play sounds if camera is within this range
 
 @export_group("Debris Cleanup")
 @export var debris_cleanup_enabled: bool = true
@@ -58,6 +57,7 @@ var _ground_crash_sound: AudioStream = preload("res://sounds/crash_on_ground.mp3
 var _creak_sound: AudioStream = preload("res://sounds/ship_wood_creak.mp3")
 var _low_rumble_sound: AudioStream = preload("res://sounds/low_rumble.mp3")
 var _mid_rumble_sound: AudioStream = preload("res://sounds/mid_rumble_loop.mp3")
+var _rigging_snap_sound: AudioStream = preload("res://sounds/rigging_snap.mp3")
 
 # Ground impact detection (masts only)
 var _mast_ground_impacts: Dictionary = {}  # mast_name -> bool (already impacted)
@@ -216,17 +216,19 @@ func _process(delta: float) -> void:
 
 # ============ SOUND SYSTEM ============
 
-func _play_sound_3d(sound: AudioStream, pos: Vector3, volume_db: float = 0.0) -> void:
-	## Play a 3D positional sound at the given world position.
-	## Uses logarithmic attenuation with unit_size=2m for natural falloff.
-	var player := AudioStreamPlayer3D.new()
+func _play_ship_sound(sound: AudioStream, volume_db: float = 0.0) -> void:
+	## Play a sound if camera is within range of the ship.
+	## Uses regular AudioStreamPlayer (non-positional) for reliable playback.
+	var camera := get_viewport().get_camera_3d()
+	if not camera:
+		return
+	var ref_pos: Vector3 = _ship_center if _ship_center != Vector3.ZERO else (ship_root.global_position if ship_root else Vector3.ZERO)
+	if camera.global_position.distance_to(ref_pos) > sound_max_camera_distance:
+		return
+	var player := AudioStreamPlayer.new()
 	player.stream = sound
 	player.volume_db = volume_db
-	player.unit_size = sound_unit_size
-	player.max_distance = sound_max_distance
-	player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
 	add_child(player)
-	player.global_position = pos
 	player.finished.connect(player.queue_free)
 	player.play()
 
@@ -255,7 +257,7 @@ func _trigger_ground_impact(body: RigidBody3D) -> void:
 	_mast_ground_impacts[mast_name] = true
 
 	# Play ground crash sound at impact position
-	_play_sound_3d(_ground_crash_sound, body.global_position, 0.0)
+	_play_ship_sound(_ground_crash_sound, 0.0)
 
 	# Large camera shake
 	var camera := get_viewport().get_camera_3d()
@@ -473,6 +475,7 @@ func _destroy_rigging_single() -> void:
 				_rigging_destroyed[group_name] = true
 				_current_rigging_index = (idx + 1) % RIGGING_GROUPS.size()
 				print("Destroyed rigging: ", group_name, " (", count, " pieces)")
+				_play_ship_sound(_rigging_snap_sound, -6.0)
 				# Shake the mast that lost tension - sharp initial jolt
 				var mast_name: String = RIGGING_TO_MAST.get(group_name, "")
 				if mast_name:
@@ -498,6 +501,7 @@ func _destroy_shroud_single() -> void:
 				_shroud_destroyed[group_name] = true
 				_current_shroud_index = (idx + 1) % SHROUD_GROUPS.size()
 				print("Destroyed shroud: ", group_name, " (", count, " pieces)")
+				_play_ship_sound(_rigging_snap_sound, -3.0)
 				# Shake the mast that lost tension - longer, more dramatic sway
 				var mast_name: String = SHROUD_TO_MAST.get(group_name, "")
 				if mast_name:
@@ -557,7 +561,7 @@ func _destroy_mast_progressive() -> void:
 				_destroyed_bodies[remaining[j]] = true
 
 		# ONE sound + shake per mast destruction event
-		_play_sound_3d(_wood_crash_sound, group.global_position, -12.0)
+		_play_ship_sound(_wood_crash_sound, -12.0)
 		var camera := get_viewport().get_camera_3d()
 		if camera and camera.has_method("shake"):
 			camera.shake(0.15, 0.4)
@@ -655,7 +659,7 @@ func _destroy_hull_progressive() -> void:
 		_destroyed_bodies[remaining[i]] = true
 
 	# ONE sound + shake per hull destruction event
-	_play_sound_3d(_wood_crash_sound, _ship_center, -12.0)
+	_play_ship_sound(_wood_crash_sound, -12.0)
 	var camera := get_viewport().get_camera_3d()
 	if camera and camera.has_method("shake"):
 		camera.shake(0.15, 0.4)
@@ -701,7 +705,7 @@ func _destroy_deck_progressive() -> void:
 		_destroyed_bodies[remaining[i]] = true
 
 	# ONE sound + shake per deck destruction event
-	_play_sound_3d(_wood_crash_sound, _ship_center, -12.0)
+	_play_ship_sound(_wood_crash_sound, -12.0)
 	var camera := get_viewport().get_camera_3d()
 	if camera and camera.has_method("shake"):
 		camera.shake(0.15, 0.4)
@@ -877,7 +881,7 @@ func _register_debris_for_cleanup(body: RigidBody3D) -> void:
 				if tm:
 					total_h = tm.current_day * 24 + tm.current_hour
 				var delay: int = randi_range(debris_cleanup_hours_min, debris_cleanup_hours_max)
-				_debris_cleanup_queue.append({"body": body, "expire": total_h + delay})
+				_debris_cleanup_queue.append({"id": body.get_instance_id(), "expire": total_h + delay})
 			break  # Only check first mesh child
 
 
@@ -897,8 +901,9 @@ func _check_debris_cleanup(delta: float) -> void:
 	var i: int = _debris_cleanup_queue.size() - 1
 	while i >= 0:
 		var entry: Dictionary = _debris_cleanup_queue[i]
-		var body: RigidBody3D = entry.body
-		if not is_instance_valid(body):
+		var body_id: int = entry.id
+		var body: RigidBody3D = instance_from_id(body_id) as RigidBody3D
+		if body == null:
 			_debris_cleanup_queue.remove_at(i)
 		elif now >= entry.expire:
 			_debris_cleanup_queue.remove_at(i)
@@ -1116,5 +1121,5 @@ func _explode_hull_pieces(count: int) -> void:
 
 	# ONE sound for all exploded pieces
 	if to_explode > 0:
-		_play_sound_3d(_wood_crash_sound, _ship_center, -12.0)
+		_play_ship_sound(_wood_crash_sound, -12.0)
 		print("Exploded %d hull pieces during sink" % to_explode)

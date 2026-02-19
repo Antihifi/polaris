@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://dyvieb43trubb"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Construction"
+brief_tooltip = "Build structures at the workbench.
+Men gather materials and work autonomously.
+Tents, crates, barrels, sleds, and more."
+detailed_text = "[b]Building Your Camp[/b]
+
+[i]After abandoning ship, the real expedition established camps on the ice and shore. Tents, storage, and boats were hauled from the wreck and assembled by hand — everything they needed to survive had to be built from salvage.[/i]
+
+Your men will gather materials from the ship, carry them to the workbench, and build structures — all on their own once you place the order.
+
+[b]How to Build[/b]
+
+1. Right-click a [b]Workbench[/b] to open the crafting panel
+2. Choose a recipe (greyed out if you lack the materials)
+3. A translucent preview appears — position it, then click to confirm
+4. Use the scroll wheel to rotate the preview before placing
+5. Your men handle the rest: gathering, hauling, and building
+
+[b]What You Can Build[/b]
+
+[b]Crate[/b] — 3 wood, 1 nail. 2 days. Extra storage.
+[b]Barrel[/b] — 4 wood, 2 nails. 3 days. Larger food storage.
+[b]Tent[/b] — 5 wood, 3 nails, 2 sail scraps. 4 days. Shelter from cold.
+[b]Firewood[/b] — 2 wood. 1 day. Fuel for fires.
+[b]Sled[/b] — 10 wood, 5 nails. 10 days. Hauling vehicle.
+
+[b]While Under Construction[/b]
+
+• A progress bar shows how close the structure is to completion
+• Up to 2 men can work on a site at once — more hands means faster work
+• Materials must be delivered to the site before work can begin
+• You can cancel a project to get the deposited materials back
+
+[b]Tips[/b]
+
+• Build storage first so you have somewhere to put salvaged supplies
+• Get at least two tents up before winter — your men will need shelter
+• Place structures within reach of the workbench
+• You can cancel and redirect materials if priorities change"

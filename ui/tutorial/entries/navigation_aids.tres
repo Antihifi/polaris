@@ -1,0 +1,42 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=3 format=3 uid="uid://c1an3v5i43a66"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://dmiv5yxbvumhv" path="res://ui/tutorial/tutorial_navigation_aids.png" id="1_4pf5f"]
+
+[resource]
+script = ExtResource("1")
+title = "Navigation Aids"
+brief_tooltip = "Spyglass (Z): First-person zoom to scout distant terrain.
+Sextant (M): Bird's eye map view of your surroundings.
+Requires the item in a unit's inventory."
+detailed_text = "[b]Spyglass & Sextant[/b]
+
+[i]Royal Navy officers carried telescopes and sextants as standard equipment. The spyglass let them spot distant landmarks; the sextant, combined with nautical tables, let them fix their position by the stars. On King William Island, these tools were essential for planning any overland journey.[/i]
+
+Two navigation items let you see beyond normal camera range. Both require a unit to have the item in their inventory.
+
+[b]Spyglass (Z)[/b]
+
+Press [b]Z[/b] with a unit selected who has a spyglass. The camera shifts to a first-person view through the telescope.
+
+• The unit must be stopped — you cannot use the spyglass while moving
+• Move the mouse to look around (limited to how far a man can turn his head)
+• A subtle sway simulates holding the glass by hand
+• Press [b]Z[/b] again to exit
+
+Use the spyglass to scout distant terrain, spot landmarks, or check on faraway parts of the island before committing to a journey.
+
+[b]Sextant (M)[/b]
+
+Press [b]M[/b] with a unit selected who has a sextant. The camera rises to a bird's eye view looking straight down.
+
+• Gives you a tactical overview of your camp and surroundings
+• Mouse controls are disabled while in this view
+• Press [b]M[/b] again to return to normal view
+
+Use the sextant view when planning where to place structures or when you need to see the lay of the land around your position.
+
+[b]Finding These Items[/b]
+
+Spyglasses and sextants can be found in containers salvaged from the ship. Officers often start with one or both. Check unit inventories to see who is carrying what."
+screenshot = ExtResource("1_4pf5f")

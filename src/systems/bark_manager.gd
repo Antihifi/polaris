@@ -40,9 +40,14 @@ var _cooldowns: Dictionary = {}  # unit_id -> timestamp
 ## Maximum barks visible at once (oldest removed if exceeded)
 @export var max_concurrent_barks: int = 5
 
+## Maximum distance (meters) from camera to show barks
+@export var max_bark_distance: float = 50.0
+
 
 func _ready() -> void:
 	_load_bark_data()
+	_connect_to_survivors.call_deferred()
+	_connect_to_animals.call_deferred()
 
 
 func _process(_delta: float) -> void:
@@ -140,6 +145,10 @@ func _show_bark(unit: Node, text: String, duration: float) -> void:
 	if not camera:
 		return
 
+	# Skip barks from units too far from camera
+	if camera.global_position.distance_to(unit.global_position) > max_bark_distance:
+		return
+
 	# Enforce max concurrent barks
 	_enforce_bark_limit()
 
@@ -154,8 +163,8 @@ func _show_bark(unit: Node, text: String, duration: float) -> void:
 	# Create popup from themed scene
 	var popup: Control = _bark_scene.instantiate()
 
-	# Set text
-	var label: Label = popup.get_node_or_null("Panel/MarginContainer/Label")
+	# Set text (PanelContainer > Label)
+	var label: Label = popup.get_node_or_null("Panel/Label")
 	if label:
 		label.text = text
 
@@ -172,7 +181,14 @@ func _show_bark(unit: Node, text: String, duration: float) -> void:
 	if panel:
 		# Wait a frame for label to size itself
 		await unit.get_tree().process_frame
+		# Guard against popup being freed during await (race with _enforce_bark_limit)
+		if not is_instance_valid(popup) or not is_instance_valid(panel):
+			return
 		panel.position = screen_pos - panel.size / 2.0
+
+	# Popup may have been freed if panel was null or during await
+	if not is_instance_valid(popup):
+		return
 
 	bark_started.emit(unit, text)
 
@@ -357,3 +373,150 @@ func trigger_work_start_bark(unit: Node) -> void:
 func trigger_death_nearby_bark(unit: Node) -> void:
 	## Trigger when another unit dies nearby.
 	bark_immediate(unit, _get_random_line("death_nearby", unit), 4.0)
+
+
+# ============================================================================
+# SIGNAL CONNECTIONS: Auto-connect to survivor/animal events
+# ============================================================================
+
+## Connected units (to avoid duplicate connections)
+var _connected_units: Dictionary = {}  # unit_id -> true
+var _connected_animals: Dictionary = {}  # animal_id -> true
+
+
+func _connect_to_survivors() -> void:
+	## Connect to all survivors' combat signals.
+	await get_tree().process_frame
+	var survivors := get_tree().get_nodes_in_group("survivors")
+	for unit: Node in survivors:
+		_connect_unit_signals(unit)
+
+	# Also listen for new units added later
+	get_tree().node_added.connect(_on_node_added)
+
+
+func _connect_to_animals() -> void:
+	## Connect to all animals' combat signals.
+	await get_tree().process_frame
+	var animals := get_tree().get_nodes_in_group("animals")
+	for animal: Node in animals:
+		_connect_animal_signals(animal)
+
+
+func _on_node_added(node: Node) -> void:
+	## Auto-connect newly spawned units/animals.
+	if node.is_in_group("survivors"):
+		_connect_unit_signals.call_deferred(node)
+	elif node.is_in_group("animals"):
+		_connect_animal_signals.call_deferred(node)
+
+
+func _connect_unit_signals(unit: Node) -> void:
+	## Connect a single unit's signals.
+	var unit_id := unit.get_instance_id()
+	if _connected_units.has(unit_id):
+		return
+	_connected_units[unit_id] = true
+
+	if unit.has_signal("combat_started"):
+		unit.combat_started.connect(_on_unit_combat_started.bind(unit))
+	if unit.has_signal("took_damage"):
+		unit.took_damage.connect(_on_unit_took_damage.bind(unit))
+
+	# Connect to died signal via CombatComponent
+	var combat: Node = unit.get_node_or_null("CombatComponent")
+	if combat and combat.has_signal("died"):
+		combat.died.connect(_on_unit_died.bind(unit))
+
+
+func _connect_animal_signals(animal: Node) -> void:
+	## Connect to an animal's CombatComponent signals for death detection.
+	var animal_id := animal.get_instance_id()
+	if _connected_animals.has(animal_id):
+		return
+	_connected_animals[animal_id] = true
+
+	# Animals emit combat signals via their CombatComponent
+	var combat: Node = animal.get_node_or_null("CombatComponent")
+	if combat:
+		combat.died.connect(_on_animal_died.bind(animal))
+		combat.combat_started.connect(_on_animal_started_combat.bind(animal))
+
+
+func _on_unit_combat_started(target: Node3D, unit: Node) -> void:
+	## Unit started combat - bark if target is an animal (50% chance).
+	if not is_instance_valid(target):
+		return
+	if target.is_in_group("animals") and randf() < 0.5:
+		bark(unit, "combat_start", 2.0)
+
+
+func _on_unit_took_damage(_amount: float, _attacker: Node3D, unit: Node) -> void:
+	## Unit took damage - pain bark (30% chance).
+	if randf() < 0.3:
+		bark(unit, "took_hit", 1.5)
+
+
+func _on_animal_died(animal: Node) -> void:
+	## Animal killed - find nearest survivor to celebrate (50% chance).
+	if randf() < 0.5:
+		return
+
+	var survivors := get_tree().get_nodes_in_group("survivors")
+	var closest: Node = null
+	var closest_dist: float = 30.0  # Max range to react
+
+	for unit: Node in survivors:
+		if "is_dead" in unit and unit.is_dead:
+			continue
+		var dist: float = unit.global_position.distance_to(animal.global_position)
+		if dist < closest_dist:
+			closest = unit
+			closest_dist = dist
+
+	if closest:
+		bark(closest, "killed_animal", 2.5)
+
+
+func _on_animal_started_combat(target: Node3D, animal: Node) -> void:
+	## Animal attacked someone - nearby survivors warn (70% chance).
+	if not is_instance_valid(target) or randf() < 0.3:
+		return
+
+	# Find a nearby survivor (not the target) to yell warning
+	var survivors := get_tree().get_nodes_in_group("survivors")
+	for unit: Node in survivors:
+		if unit == target:
+			continue
+		if "is_dead" in unit and unit.is_dead:
+			continue
+		var dist: float = unit.global_position.distance_to(animal.global_position)
+		if dist < 25.0:
+			bark_immediate(unit, _get_random_line("animal_attacking", unit), 2.0)
+			break  # Only one warning
+
+
+func _on_unit_died(unit: Node) -> void:
+	## A survivor died - nearby survivors react.
+	var survivors := get_tree().get_nodes_in_group("survivors")
+	var death_pos: Vector3 = unit.global_position
+
+	for other: Node in survivors:
+		if other == unit:
+			continue
+		if "is_dead" in other and other.is_dead:
+			continue
+		var dist: float = other.global_position.distance_to(death_pos)
+		if dist < 20.0:
+			# Stagger reactions slightly so they don't all bark at once
+			var delay: float = randf_range(0.5, 2.0)
+			_schedule_death_reaction(other, delay)
+			break  # Only one reaction bark
+
+
+func _schedule_death_reaction(unit: Node, delay: float) -> void:
+	## Delayed death reaction bark.
+	get_tree().create_timer(delay).timeout.connect(func() -> void:
+		if is_instance_valid(unit) and not ("is_dead" in unit and unit.is_dead):
+			bark_immediate(unit, _get_random_line("death_nearby", unit), 3.0)
+	)

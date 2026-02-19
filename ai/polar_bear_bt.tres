@@ -1,0 +1,174 @@
+[gd_resource type="BehaviorTree" load_steps=50 format=3 uid="uid://x3lk8pjv0hyo"]
+
+[ext_resource type="Script" uid="uid://b3hku2bbe8dvd" path="res://ai/tasks/bt_animal_is_low_health.gd" id="1_77veu"]
+[ext_resource type="Script" uid="uid://cjox2lutis041" path="res://ai/tasks/bt_flee.gd" id="2_b5xyu"]
+[ext_resource type="Script" uid="uid://d1ty33qfd5kjk" path="res://ai/tasks/bt_animal_has_threat.gd" id="3_tm6ii"]
+[ext_resource type="Script" uid="uid://c32no05sqsgid" path="res://ai/tasks/bt_animal_chase_target.gd" id="4_bvvx4"]
+[ext_resource type="Script" uid="uid://cq33eh2o0obro" path="res://ai/tasks/bt_animal_deal_damage.gd" id="5_ui7dk"]
+[ext_resource type="Script" uid="uid://djhnm7w0g4p1n" path="res://ai/tasks/bt_animal_pick_roam_target.gd" id="6_bvvx4"]
+[ext_resource type="Script" uid="uid://u1yefwug6grv" path="res://ai/tasks/bt_has_investigation_target.gd" id="6_i81lx"]
+[ext_resource type="Script" uid="uid://hje2d18sfnk6" path="res://ai/tasks/bt_animal_roam_to_target.gd" id="7_ui7dk"]
+[ext_resource type="Script" uid="uid://b6754783gne18" path="res://ai/tasks/bt_investigate_move.gd" id="8_6gcch"]
+[ext_resource type="Script" uid="uid://kfvm6q52na0s" path="res://ai/tasks/bt_check_persistence.gd" id="9_eo7o5"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_n48aa"]
+
+[sub_resource type="BTCondition" id="BTCondition_mytth"]
+script = ExtResource("1_77veu")
+
+[sub_resource type="BBNode" id="BBNode_n55n5"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_b5xyu"]
+animation_player = SubResource("BBNode_n55n5")
+animation_name = &"PolarBearALL_Run"
+blend = 2.0
+
+[sub_resource type="BTAction" id="BTAction_imwjx"]
+script = ExtResource("2_b5xyu")
+flee_distance = 50.0
+
+[sub_resource type="BTSequence" id="BTSequence_3og16"]
+custom_name = "FleeWhenLow"
+children = [SubResource("BTCondition_mytth"), SubResource("BTPlayAnimation_b5xyu"), SubResource("BTAction_imwjx")]
+
+[sub_resource type="BTCondition" id="BTCondition_r5pb0"]
+script = ExtResource("3_tm6ii")
+
+[sub_resource type="BBNode" id="BBNode_ui7dk"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_imwjx"]
+await_completion = 2.6
+animation_player = SubResource("BBNode_ui7dk")
+animation_name = &"PolarBearALL_Idle"
+blend = 2.0
+
+[sub_resource type="BBNode" id="BBNode_i81lx"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_3og16"]
+animation_player = SubResource("BBNode_i81lx")
+animation_name = &"PolarBearALL_Run"
+blend = 2.0
+
+[sub_resource type="BTAction" id="BTAction_6gcch"]
+script = ExtResource("4_bvvx4")
+
+[sub_resource type="BBNode" id="BBNode_b5xyu"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_tm6ii"]
+await_completion = 4.0
+animation_player = SubResource("BBNode_b5xyu")
+animation_name = &"PolarBearALL_Attack"
+blend = 1.0
+
+[sub_resource type="BTAction" id="BTAction_eo7o5"]
+script = ExtResource("5_ui7dk")
+
+[sub_resource type="BTSequence" id="BTSequence_8w0uv"]
+custom_name = "AttackThreat"
+children = [SubResource("BTCondition_r5pb0"), SubResource("BTPlayAnimation_imwjx"), SubResource("BTPlayAnimation_3og16"), SubResource("BTAction_6gcch"), SubResource("BTPlayAnimation_tm6ii"), SubResource("BTAction_eo7o5")]
+
+[sub_resource type="BTCondition" id="BTCondition_8w0uv"]
+script = ExtResource("6_i81lx")
+
+[sub_resource type="BBNode" id="BBNode_gaoks"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_f46g8"]
+animation_player = SubResource("BBNode_gaoks")
+animation_name = &"PolarBearALL_Walk"
+blend = 1.0
+
+[sub_resource type="BTAction" id="BTAction_3trgt"]
+script = ExtResource("8_6gcch")
+
+[sub_resource type="BTCondition" id="BTCondition_gcsn1"]
+script = ExtResource("9_eo7o5")
+
+[sub_resource type="BTSequence" id="BTSequence_2nmyp"]
+custom_name = "InvestigateSequence"
+children = [SubResource("BTCondition_8w0uv"), SubResource("BTPlayAnimation_f46g8"), SubResource("BTAction_3trgt"), SubResource("BTCondition_gcsn1")]
+
+[sub_resource type="BTAction" id="BTAction_r5pb0"]
+script = ExtResource("6_bvvx4")
+
+[sub_resource type="BBNode" id="BBNode_3og16"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_6gcch"]
+animation_player = SubResource("BBNode_3og16")
+animation_name = &"PolarBearALL_Walk"
+blend = 1.0
+
+[sub_resource type="BTAction" id="BTAction_8w0uv"]
+script = ExtResource("7_ui7dk")
+
+[sub_resource type="BBNode" id="BBNode_bvvx4"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_ui7dk"]
+animation_player = SubResource("BBNode_bvvx4")
+animation_name = &"PolarBearALL_Idle2"
+blend = 1.0
+metadata/_weight_ = 2.7105751391465684
+
+[sub_resource type="BBNode" id="BBNode_imwjx"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_r5pb0"]
+animation_player = SubResource("BBNode_imwjx")
+animation_name = &"PolarBearALL_Idle3"
+blend = 1.0
+
+[sub_resource type="BTProbabilitySelector" id="BTProbabilitySelector_i81lx"]
+custom_name = "Idle"
+children = [SubResource("BTPlayAnimation_ui7dk"), SubResource("BTPlayAnimation_r5pb0")]
+
+[sub_resource type="BTRandomWait" id="BTRandomWait_q4rhq"]
+min_duration = 3.0
+max_duration = 8.0
+
+[sub_resource type="BTSequence" id="BTSequence_n48aa"]
+custom_name = "Roam"
+children = [SubResource("BTAction_r5pb0"), SubResource("BTPlayAnimation_6gcch"), SubResource("BTAction_8w0uv"), SubResource("BTProbabilitySelector_i81lx"), SubResource("BTRandomWait_q4rhq")]
+
+[sub_resource type="BBNode" id="BBNode_77veu"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_mytth"]
+animation_player = SubResource("BBNode_77veu")
+animation_name = &"PolarBearALL_Idle2"
+blend = 1.0
+metadata/_weight_ = 2.7105751391465684
+
+[sub_resource type="BBNode" id="BBNode_bjs2d"]
+saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
+resource_name = "Sketchfab_Scene/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_n55n5"]
+animation_player = SubResource("BBNode_bjs2d")
+animation_name = &"PolarBearALL_Idle3"
+blend = 1.0
+
+[sub_resource type="BTProbabilitySelector" id="BTProbabilitySelector_ui7dk"]
+custom_name = "Idle"
+children = [SubResource("BTPlayAnimation_mytth"), SubResource("BTPlayAnimation_n55n5")]
+
+[sub_resource type="BTDynamicSelector" id="BTSelector_77veu"]
+children = [SubResource("BTSequence_3og16"), SubResource("BTSequence_8w0uv"), SubResource("BTSequence_2nmyp"), SubResource("BTSequence_n48aa"), SubResource("BTProbabilitySelector_ui7dk")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_n48aa")
+root_task = SubResource("BTSelector_77veu")

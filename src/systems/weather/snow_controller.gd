@@ -14,6 +14,14 @@ enum SnowIntensity {
 	HEAVY
 }
 
+enum TransitionPhase {
+	IDLE,
+	CLOUD_BUILDING,    ## Clouds build up before snow starts
+	WEATHER_ACTIVE,    ## Particles, fog, camera, wind transition
+	WEATHER_CLEARING,  ## Particles, fog, camera clear first
+	CLOUD_CLEARING,    ## Clouds dissipate after snow stops
+}
+
 const SNOW_PARTICLES_SCENE: PackedScene = preload("res://src/systems/weather/snow_particles.tscn")
 const BLIZZARD_POST_PROCESS_SHADER: Shader = preload("res://src/systems/weather/blizzard_post_process.gdshader")
 
@@ -22,6 +30,12 @@ const BLIZZARD_POST_PROCESS_SHADER: Shader = preload("res://src/systems/weather/
 
 ## How long transitions between snow states take (seconds)
 @export var transition_duration: float = 5.0
+
+## Duration of cloud buildup phase before snow starts (seconds)
+@export var cloud_buildup_duration: float = 6.0
+
+## Duration of cloud clearing phase after snow stops (seconds)
+@export var cloud_clearing_duration: float = 8.0
 
 ## Height above camera to spawn particles
 @export var spawn_height_offset: float = 25.0
@@ -161,8 +175,10 @@ var current_intensity: SnowIntensity = SnowIntensity.NONE
 ## Target snow intensity (for transitions)
 var _target_intensity: SnowIntensity = SnowIntensity.NONE
 
-## Transition progress (0-1)
-var _transition_progress: float = 1.0
+## Phase state machine for two-phase transitions (cloud buildup -> weather)
+var _transition_phase: TransitionPhase = TransitionPhase.IDLE
+var _cloud_transition_progress: float = 1.0
+var _weather_transition_progress: float = 1.0
 
 ## Active particle system
 var _snow_particles: GPUParticles3D
@@ -205,10 +221,30 @@ var _sky_dome: Node = null
 ## Original SkyDome settings (restored when snow stops)
 var _original_cumulus_coverage: float = 0.55
 var _original_cumulus_intensity: float = 0.6
+var _original_cumulus_thickness: float = 0.0243
+var _original_cumulus_absorption: float = 2.0
 var _original_cirrus_coverage: float = 0.5
 var _original_atm_darkness: float = 0.5
 var _original_atm_thickness: float = 0.7
 var _original_atm_sun_intensity: float = 18.0
+
+## Per-event cloud targets set by DynamicWeatherController (-1.0 = use intensity config default)
+var _cloud_target_cumulus_coverage: float = -1.0
+var _cloud_target_cumulus_thickness: float = -1.0
+var _cloud_target_cumulus_absorption: float = -1.0
+var _cloud_target_cumulus_intensity: float = -1.0
+var _cloud_target_cirrus_coverage: float = -1.0
+var _cloud_target_atm_darkness: float = -1.0
+var _cloud_target_atm_thickness: float = -1.0
+var _cloud_target_atm_sun_intensity: float = -1.0
+var _cloud_target_sun_shadow_opacity: float = -1.0
+
+## Original sun shadow opacity (restored when snow stops)
+var _original_sun_shadow_opacity: float = 1.0
+
+## Snapshots of actual state at phase boundaries (prevents abrupt transitions)
+var _snapshot_weather: Dictionary = {}
+var _snapshot_clouds: Dictionary = {}
 
 
 ## Build intensity config from exported variables
@@ -233,10 +269,13 @@ func _get_intensity_config(intensity: SnowIntensity) -> Dictionary:
 				# SkyDome uses originals (-1 = use original)
 				"cumulus_coverage": -1.0,
 				"cumulus_intensity": -1.0,
+				"cumulus_thickness": -1.0,
+				"cumulus_absorption": -1.0,
 				"cirrus_coverage": -1.0,
 				"atm_darkness": -1.0,
 				"atm_thickness": -1.0,
 				"atm_sun_intensity": -1.0,
+				"sun_shadow_opacity": -1.0,
 			}
 		SnowIntensity.LIGHT:
 			return {
@@ -253,10 +292,13 @@ func _get_intensity_config(intensity: SnowIntensity) -> Dictionary:
 				"camera_far_ratio": light_camera_far_ratio,
 				"cumulus_coverage": light_cumulus_coverage,
 				"cumulus_intensity": 0.45,
+				"cumulus_thickness": 0.06,
+				"cumulus_absorption": 3.0,
 				"cirrus_coverage": 0.7,
 				"atm_darkness": light_atm_darkness,
 				"atm_thickness": 1.2,
 				"atm_sun_intensity": 10.0,
+				"sun_shadow_opacity": 0.5,
 			}
 		SnowIntensity.HEAVY:
 			return {
@@ -273,10 +315,13 @@ func _get_intensity_config(intensity: SnowIntensity) -> Dictionary:
 				"camera_far_ratio": heavy_camera_far_ratio,
 				"cumulus_coverage": heavy_cumulus_coverage,
 				"cumulus_intensity": 0.25,
+				"cumulus_thickness": 0.15,
+				"cumulus_absorption": 5.0,
 				"cirrus_coverage": 0.9,
 				"atm_darkness": heavy_atm_darkness,
 				"atm_thickness": 2.0,
 				"atm_sun_intensity": 4.0,
+				"sun_shadow_opacity": 0.1,
 			}
 		_:
 			return _get_intensity_config(SnowIntensity.NONE)
@@ -312,6 +357,10 @@ func _store_original_values() -> void:
 			_original_volumetric_fog_emission = _environment.volumetric_fog_emission
 			print("[SnowController] Stored fog originals - enabled: ", _original_volumetric_fog_enabled, ", density: ", _original_volumetric_fog_density, ", emission: ", _original_volumetric_fog_emission)
 
+		# Store original sun shadow opacity
+		if "sun_shadow_opacity" in sky3d:
+			_original_sun_shadow_opacity = sky3d.sun_shadow_opacity
+
 		# Get SkyDome from Sky3D for overcast effect
 		if "sky" in sky3d and sky3d.sky:
 			_sky_dome = sky3d.sky
@@ -319,6 +368,10 @@ func _store_original_values() -> void:
 				_original_cumulus_coverage = _sky_dome.cumulus_coverage
 			if "cumulus_intensity" in _sky_dome:
 				_original_cumulus_intensity = _sky_dome.cumulus_intensity
+			if "cumulus_thickness" in _sky_dome:
+				_original_cumulus_thickness = _sky_dome.cumulus_thickness
+			if "cumulus_absorption" in _sky_dome:
+				_original_cumulus_absorption = _sky_dome.cumulus_absorption
 			if "cirrus_coverage" in _sky_dome:
 				_original_cirrus_coverage = _sky_dome.cirrus_coverage
 			if "atm_darkness" in _sky_dome:
@@ -327,7 +380,7 @@ func _store_original_values() -> void:
 				_original_atm_thickness = _sky_dome.atm_thickness
 			if "atm_sun_intensity" in _sky_dome:
 				_original_atm_sun_intensity = _sky_dome.atm_sun_intensity
-			print("[SnowController] Stored SkyDome originals - cumulus: ", _original_cumulus_coverage, ", atm_darkness: ", _original_atm_darkness)
+			print("[SnowController] Stored SkyDome originals - cumulus: ", _original_cumulus_coverage, ", thickness: ", _original_cumulus_thickness, ", atm_darkness: ", _original_atm_darkness)
 
 	# Store original camera far distance
 	_camera = get_viewport().get_camera_3d()
@@ -359,15 +412,47 @@ func _process(delta: float) -> void:
 	_update_fog_position()
 	_update_wind()
 
-	if _transition_progress < 1.0:
-		_transition_progress = minf(_transition_progress + delta / transition_duration, 1.0)
-		_apply_transition()
+	match _transition_phase:
+		TransitionPhase.CLOUD_BUILDING:
+			_cloud_transition_progress = minf(_cloud_transition_progress + delta / cloud_buildup_duration, 1.0)
+			_apply_cloud_transition()
+			if _cloud_transition_progress >= 1.0:
+				# Snapshot weather state before starting weather phase
+				_snapshot_weather = _snapshot_current_weather_state()
+				_transition_phase = TransitionPhase.WEATHER_ACTIVE
+				_weather_transition_progress = 0.0
+				print("[SnowController] Cloud buildup complete, starting weather transition")
 
-		if _transition_progress >= 1.0:
-			current_intensity = _target_intensity
-			if current_intensity == SnowIntensity.NONE:
+		TransitionPhase.WEATHER_ACTIVE:
+			_weather_transition_progress = minf(_weather_transition_progress + delta / transition_duration, 1.0)
+			_apply_weather_transition()
+			# Also transition clouds if changing intensity while already snowing
+			if _cloud_transition_progress < 1.0:
+				_cloud_transition_progress = minf(_cloud_transition_progress + delta / transition_duration, 1.0)
+				_apply_cloud_transition()
+			if _weather_transition_progress >= 1.0:
+				current_intensity = _target_intensity
+				_transition_phase = TransitionPhase.IDLE
+
+		TransitionPhase.WEATHER_CLEARING:
+			_weather_transition_progress = minf(_weather_transition_progress + delta / transition_duration, 1.0)
+			_apply_weather_transition()
+			if _weather_transition_progress >= 1.0:
 				_cleanup_particles()
 				_cleanup_fog_volume()
+				# Snapshot cloud state before clearing phase
+				_snapshot_clouds = _snapshot_current_cloud_state()
+				_transition_phase = TransitionPhase.CLOUD_CLEARING
+				_cloud_transition_progress = 0.0
+				print("[SnowController] Weather cleared, starting cloud clearing")
+
+		TransitionPhase.CLOUD_CLEARING:
+			_cloud_transition_progress = minf(_cloud_transition_progress + delta / cloud_clearing_duration, 1.0)
+			_apply_cloud_transition()
+			if _cloud_transition_progress >= 1.0:
+				current_intensity = SnowIntensity.NONE
+				_transition_phase = TransitionPhase.IDLE
+				print("[SnowController] Cloud clearing complete")
 
 
 func start_snow(intensity: SnowIntensity = SnowIntensity.LIGHT) -> void:
@@ -380,7 +465,6 @@ func start_snow(intensity: SnowIntensity = SnowIntensity.LIGHT) -> void:
 
 	var previous := current_intensity
 	_target_intensity = intensity
-	_transition_progress = 0.0
 
 	if not is_instance_valid(_snow_particles):
 		_create_particles()
@@ -389,8 +473,28 @@ func start_snow(intensity: SnowIntensity = SnowIntensity.LIGHT) -> void:
 		_create_fog_volume()
 
 	if previous == SnowIntensity.NONE:
+		# Snapshot current state before any changes
+		_snapshot_clouds = _snapshot_current_cloud_state()
+		_snapshot_weather = _snapshot_current_weather_state()
+		# Starting from clear: cloud buildup first, then weather
+		# Keep particles/fog invisible during cloud buildup phase
+		if is_instance_valid(_snow_particles):
+			_snow_particles.amount_ratio = 0.0
+		if _fog_shader_material:
+			_fog_shader_material.set_shader_parameter("fog_density", 0.0)
+		_transition_phase = TransitionPhase.CLOUD_BUILDING
+		_cloud_transition_progress = 0.0
+		_weather_transition_progress = 0.0
+		print("[SnowController] Starting cloud buildup phase (%.1fs)" % cloud_buildup_duration)
 		snow_started.emit(intensity)
 	else:
+		# Snapshot current state before transition
+		_snapshot_clouds = _snapshot_current_cloud_state()
+		_snapshot_weather = _snapshot_current_weather_state()
+		# Changing intensity while already snowing: simultaneous transition
+		_transition_phase = TransitionPhase.WEATHER_ACTIVE
+		_cloud_transition_progress = 0.0
+		_weather_transition_progress = 0.0
 		snow_intensity_changed.emit(previous, intensity)
 
 
@@ -399,7 +503,25 @@ func stop_snow() -> void:
 		return
 
 	_target_intensity = SnowIntensity.NONE
-	_transition_progress = 0.0
+
+	if _transition_phase == TransitionPhase.CLOUD_BUILDING:
+		# Snapshot actual state before clearing (clouds may be mid-buildup)
+		_snapshot_clouds = _snapshot_current_cloud_state()
+		# Clouds were still building, particles never started — skip to cloud clearing
+		_transition_phase = TransitionPhase.CLOUD_CLEARING
+		_cloud_transition_progress = 0.0
+		_cleanup_particles()
+		_cleanup_fog_volume()
+		print("[SnowController] Stopping during cloud buildup, skipping to cloud clearing")
+	else:
+		# Snapshot actual state before clearing
+		_snapshot_weather = _snapshot_current_weather_state()
+		_snapshot_clouds = _snapshot_current_cloud_state()
+		# Normal stop: clear weather first, then clouds
+		_transition_phase = TransitionPhase.WEATHER_CLEARING
+		_weather_transition_progress = 0.0
+		print("[SnowController] Starting weather clearing phase")
+
 	snow_stopped.emit()
 
 
@@ -407,7 +529,9 @@ func set_snow_immediate(intensity: SnowIntensity) -> void:
 	var previous := current_intensity
 	current_intensity = intensity
 	_target_intensity = intensity
-	_transition_progress = 1.0
+	_transition_phase = TransitionPhase.IDLE
+	_cloud_transition_progress = 1.0
+	_weather_transition_progress = 1.0
 
 	if intensity != SnowIntensity.NONE:
 		if not is_instance_valid(_snow_particles):
@@ -426,7 +550,87 @@ func set_snow_immediate(intensity: SnowIntensity) -> void:
 
 
 func is_snowing() -> bool:
-	return current_intensity != SnowIntensity.NONE or _target_intensity != SnowIntensity.NONE
+	return current_intensity != SnowIntensity.NONE or _target_intensity != SnowIntensity.NONE or _transition_phase != TransitionPhase.IDLE
+
+
+func set_cloud_targets(targets: Dictionary) -> void:
+	## Set per-event cloud target overrides. Called by DynamicWeatherController before start_snow().
+	_cloud_target_cumulus_coverage = targets.get("cumulus_coverage", -1.0)
+	_cloud_target_cumulus_thickness = targets.get("cumulus_thickness", -1.0)
+	_cloud_target_cumulus_absorption = targets.get("cumulus_absorption", -1.0)
+	_cloud_target_cumulus_intensity = targets.get("cumulus_intensity", -1.0)
+	_cloud_target_cirrus_coverage = targets.get("cirrus_coverage", -1.0)
+	_cloud_target_atm_darkness = targets.get("atm_darkness", -1.0)
+	_cloud_target_atm_thickness = targets.get("atm_thickness", -1.0)
+	_cloud_target_atm_sun_intensity = targets.get("atm_sun_intensity", -1.0)
+	_cloud_target_sun_shadow_opacity = targets.get("sun_shadow_opacity", -1.0)
+
+
+func _snapshot_current_weather_state() -> Dictionary:
+	## Capture actual current weather state from engine nodes for smooth transitions.
+	var snap: Dictionary = {}
+	snap["particle_amount_ratio"] = _snow_particles.amount_ratio if is_instance_valid(_snow_particles) else 0.0
+	if sky3d:
+		snap["wind_speed"] = sky3d.wind_speed if "wind_speed" in sky3d else _original_wind_speed
+		snap["sun_energy"] = sky3d.sun_energy if "sun_energy" in sky3d else _original_sun_energy
+		snap["ambient_energy"] = sky3d.ambient_energy if "ambient_energy" in sky3d else _original_ambient_energy
+	else:
+		snap["wind_speed"] = _original_wind_speed
+		snap["sun_energy"] = _original_sun_energy
+		snap["ambient_energy"] = _original_ambient_energy
+	if _environment:
+		snap["volumetric_fog_density"] = _environment.volumetric_fog_density
+		snap["volumetric_fog_emission"] = _environment.volumetric_fog_emission
+	else:
+		snap["volumetric_fog_density"] = _original_volumetric_fog_density
+		snap["volumetric_fog_emission"] = _original_volumetric_fog_emission
+	if _fog_shader_material:
+		snap["fog_shader_density"] = _fog_shader_material.get_shader_parameter("fog_density")
+		var em: Variant = _fog_shader_material.get_shader_parameter("fog_emission")
+		snap["fog_shader_emission"] = em if em is Vector3 else Vector3.ZERO
+	else:
+		snap["fog_shader_density"] = 0.0
+		snap["fog_shader_emission"] = Vector3.ZERO
+	snap["camera_far_ratio"] = (_camera.far / normal_far_distance) if _camera else 1.0
+	return snap
+
+
+func _snapshot_current_cloud_state() -> Dictionary:
+	## Capture actual current SkyDome cloud state for smooth transitions.
+	var snap: Dictionary = {}
+	if _sky_dome:
+		snap["cumulus_coverage"] = _sky_dome.cumulus_coverage if "cumulus_coverage" in _sky_dome else _original_cumulus_coverage
+		snap["cumulus_thickness"] = _sky_dome.cumulus_thickness if "cumulus_thickness" in _sky_dome else _original_cumulus_thickness
+		snap["cumulus_absorption"] = _sky_dome.cumulus_absorption if "cumulus_absorption" in _sky_dome else _original_cumulus_absorption
+		snap["cumulus_intensity"] = _sky_dome.cumulus_intensity if "cumulus_intensity" in _sky_dome else _original_cumulus_intensity
+		snap["cirrus_coverage"] = _sky_dome.cirrus_coverage if "cirrus_coverage" in _sky_dome else _original_cirrus_coverage
+		snap["atm_darkness"] = _sky_dome.atm_darkness if "atm_darkness" in _sky_dome else _original_atm_darkness
+		snap["atm_thickness"] = _sky_dome.atm_thickness if "atm_thickness" in _sky_dome else _original_atm_thickness
+		snap["atm_sun_intensity"] = _sky_dome.atm_sun_intensity if "atm_sun_intensity" in _sky_dome else _original_atm_sun_intensity
+	else:
+		snap["cumulus_coverage"] = _original_cumulus_coverage
+		snap["cumulus_thickness"] = _original_cumulus_thickness
+		snap["cumulus_absorption"] = _original_cumulus_absorption
+		snap["cumulus_intensity"] = _original_cumulus_intensity
+		snap["cirrus_coverage"] = _original_cirrus_coverage
+		snap["atm_darkness"] = _original_atm_darkness
+		snap["atm_thickness"] = _original_atm_thickness
+		snap["atm_sun_intensity"] = _original_atm_sun_intensity
+	if sky3d and "sun_shadow_opacity" in sky3d:
+		snap["sun_shadow_opacity"] = sky3d.sun_shadow_opacity
+	else:
+		snap["sun_shadow_opacity"] = _original_sun_shadow_opacity
+	return snap
+
+
+func get_start_transition_duration() -> float:
+	## Total time for cloud buildup + weather transition when starting snow.
+	return cloud_buildup_duration + transition_duration
+
+
+func get_stop_transition_duration() -> float:
+	## Total time for weather clearing + cloud clearing when stopping snow.
+	return transition_duration + cloud_clearing_duration
 
 
 func _find_sky3d() -> Node:
@@ -574,7 +778,7 @@ func _update_wind() -> void:
 
 	# Update snow particle gravity to match wind
 	if _particle_material:
-		var config: Dictionary = _get_intensity_config(_target_intensity if _transition_progress < 1.0 else current_intensity)
+		var config: Dictionary = _get_intensity_config(_target_intensity if _transition_phase != TransitionPhase.IDLE else current_intensity)
 		var mult: float = config["particle_wind_mult"]
 
 		var wind_x: float = sin(wind_dir) * wind_speed * mult
@@ -625,54 +829,46 @@ func _update_fog_light_tint() -> void:
 	_fog_shader_material.set_shader_parameter("light_tint", Vector3(light_color.r, light_color.g, light_color.b))
 
 
-func _apply_transition() -> void:
-	var from_config: Dictionary = _get_intensity_config(current_intensity)
+func _apply_weather_transition() -> void:
+	## Transition particles, wind, sun energy, fog, camera far plane.
+	## Uses _snapshot_weather as "from" values for smooth transitions even when interrupted.
 	var to_config: Dictionary = _get_intensity_config(_target_intensity)
-	var t: float = _transition_progress
-
-	# Determine from/to values, using originals when transitioning from/to NONE
-	# Note: For fog, we now use config values directly (NONE has baseline fog)
-	var is_from_none := current_intensity == SnowIntensity.NONE
+	var t: float = _weather_transition_progress
 	var is_to_none := _target_intensity == SnowIntensity.NONE
 
 	# Particles
 	if is_instance_valid(_snow_particles):
-		var from_ratio: float = from_config["particle_amount_ratio"]
+		var from_ratio: float = _snapshot_weather.get("particle_amount_ratio", 0.0)
 		var to_ratio: float = to_config["particle_amount_ratio"]
 		_snow_particles.amount_ratio = lerpf(from_ratio, to_ratio, t)
 
-	# Sky3D properties (just lighting and wind)
+	# Sky3D properties (lighting and wind)
 	if sky3d:
-		# Wind
 		if "wind_speed" in sky3d:
-			var from_wind: float = _original_wind_speed if is_from_none else from_config["sky3d_wind_speed"]
+			var from_wind: float = _snapshot_weather.get("wind_speed", _original_wind_speed)
 			var to_wind: float = _original_wind_speed if is_to_none else to_config["sky3d_wind_speed"]
 			sky3d.wind_speed = lerpf(from_wind, to_wind, t)
 
-		# Sun energy
 		if "sun_energy" in sky3d:
-			var from_sun: float = _original_sun_energy if is_from_none else from_config["sun_energy"]
+			var from_sun: float = _snapshot_weather.get("sun_energy", _original_sun_energy)
 			var to_sun: float = _original_sun_energy if is_to_none else to_config["sun_energy"]
 			sky3d.sun_energy = lerpf(from_sun, to_sun, t)
 
-		# Ambient energy
 		if "ambient_energy" in sky3d:
-			var from_ambient: float = _original_ambient_energy if is_from_none else from_config["ambient_energy"]
+			var from_ambient: float = _snapshot_weather.get("ambient_energy", _original_ambient_energy)
 			var to_ambient: float = _original_ambient_energy if is_to_none else to_config["ambient_energy"]
 			sky3d.ambient_energy = lerpf(from_ambient, to_ambient, t)
 
 	# Volumetric fog (Godot native - transitions to baseline fog, not zero)
 	if _environment:
-		# Use config values directly - NONE config now has baseline fog values
-		var from_fog_density: float = from_config["volumetric_fog_density"]
+		var from_fog_density: float = _snapshot_weather.get("volumetric_fog_density", _original_volumetric_fog_density)
 		var to_fog_density: float = to_config["volumetric_fog_density"]
 		var target_fog_density: float = lerpf(from_fog_density, to_fog_density, t)
 
-		var from_fog_emission: Color = from_config["volumetric_fog_emission"]
+		var from_fog_emission: Color = _snapshot_weather.get("volumetric_fog_emission", _original_volumetric_fog_emission)
 		var to_fog_emission: Color = to_config["volumetric_fog_emission"]
 		var target_fog_emission: Color = from_fog_emission.lerp(to_fog_emission, t)
 
-		# Enable/disable based on target config
 		var should_enable: bool = to_config["volumetric_fog_enabled"]
 		_environment.volumetric_fog_enabled = should_enable or target_fog_density > 0.001
 		_environment.volumetric_fog_density = target_fog_density
@@ -682,83 +878,88 @@ func _apply_transition() -> void:
 
 	# Post-process fog shader (screen-space raymarched effect)
 	if _fog_shader_material:
-		var from_density: float = from_config["fog_shader_density"]
+		var from_density: float = _snapshot_weather.get("fog_shader_density", 0.0)
 		var to_density: float = to_config["fog_shader_density"]
 		_fog_shader_material.set_shader_parameter("fog_density", lerpf(from_density, to_density, t))
 
-		var from_emission: Vector3 = from_config["fog_shader_emission"]
+		var from_emission: Vector3 = _snapshot_weather.get("fog_shader_emission", Vector3.ZERO)
 		var to_emission: Vector3 = to_config["fog_shader_emission"]
 		_fog_shader_material.set_shader_parameter("fog_emission", from_emission.lerp(to_emission, t))
 
-	# Camera far plane reduction (use config values)
+	# Camera far plane reduction
 	if _camera:
-		var from_far_ratio: float = from_config["camera_far_ratio"]
+		var from_far_ratio: float = _snapshot_weather.get("camera_far_ratio", 1.0)
 		var to_far_ratio: float = to_config["camera_far_ratio"]
 		var target_ratio: float = lerpf(from_far_ratio, to_far_ratio, t)
 		_camera.far = normal_far_distance * target_ratio
 
-	# SkyDome overcast effect (cloud coverage and atmosphere darkening)
-	if _sky_dome:
-		# Cumulus coverage
-		var from_cumulus: float = _original_cumulus_coverage if is_from_none else from_config["cumulus_coverage"]
-		var to_cumulus: float = _original_cumulus_coverage if is_to_none else to_config["cumulus_coverage"]
-		# -1 means use original
-		if from_cumulus < 0.0:
-			from_cumulus = _original_cumulus_coverage
-		if to_cumulus < 0.0:
-			to_cumulus = _original_cumulus_coverage
-		if "cumulus_coverage" in _sky_dome:
-			_sky_dome.cumulus_coverage = lerpf(from_cumulus, to_cumulus, t)
 
-		# Cumulus intensity
-		var from_cumulus_int: float = _original_cumulus_intensity if is_from_none else from_config["cumulus_intensity"]
-		var to_cumulus_int: float = _original_cumulus_intensity if is_to_none else to_config["cumulus_intensity"]
-		if from_cumulus_int < 0.0:
-			from_cumulus_int = _original_cumulus_intensity
-		if to_cumulus_int < 0.0:
-			to_cumulus_int = _original_cumulus_intensity
-		if "cumulus_intensity" in _sky_dome:
-			_sky_dome.cumulus_intensity = lerpf(from_cumulus_int, to_cumulus_int, t)
+func _apply_cloud_transition() -> void:
+	## Transition SkyDome cloud properties (coverage, thickness, absorption, atmosphere).
+	## Uses _snapshot_clouds as "from" values for smooth transitions even when interrupted.
+	if not _sky_dome:
+		return
 
-		# Cirrus coverage
-		var from_cirrus: float = _original_cirrus_coverage if is_from_none else from_config["cirrus_coverage"]
-		var to_cirrus: float = _original_cirrus_coverage if is_to_none else to_config["cirrus_coverage"]
-		if from_cirrus < 0.0:
-			from_cirrus = _original_cirrus_coverage
-		if to_cirrus < 0.0:
-			to_cirrus = _original_cirrus_coverage
-		if "cirrus_coverage" in _sky_dome:
-			_sky_dome.cirrus_coverage = lerpf(from_cirrus, to_cirrus, t)
+	var is_clearing := _transition_phase == TransitionPhase.CLOUD_CLEARING
+	var t: float = _cloud_transition_progress
+	var to_config: Dictionary = _get_intensity_config(SnowIntensity.NONE) if is_clearing else _get_intensity_config(_target_intensity)
+	var is_to_none := is_clearing
 
-		# Atmosphere darkness
-		var from_atm_dark: float = _original_atm_darkness if is_from_none else from_config["atm_darkness"]
-		var to_atm_dark: float = _original_atm_darkness if is_to_none else to_config["atm_darkness"]
-		if from_atm_dark < 0.0:
-			from_atm_dark = _original_atm_darkness
-		if to_atm_dark < 0.0:
-			to_atm_dark = _original_atm_darkness
-		if "atm_darkness" in _sky_dome:
-			_sky_dome.atm_darkness = lerpf(from_atm_dark, to_atm_dark, t)
+	_lerp_sky_prop("cumulus_coverage", to_config, is_to_none, t,
+		_original_cumulus_coverage, _cloud_target_cumulus_coverage)
+	_lerp_sky_prop("cumulus_intensity", to_config, is_to_none, t,
+		_original_cumulus_intensity, _cloud_target_cumulus_intensity)
+	_lerp_sky_prop("cumulus_thickness", to_config, is_to_none, t,
+		_original_cumulus_thickness, _cloud_target_cumulus_thickness)
+	_lerp_sky_prop("cumulus_absorption", to_config, is_to_none, t,
+		_original_cumulus_absorption, _cloud_target_cumulus_absorption)
+	_lerp_sky_prop("cirrus_coverage", to_config, is_to_none, t,
+		_original_cirrus_coverage, _cloud_target_cirrus_coverage)
+	_lerp_sky_prop("atm_darkness", to_config, is_to_none, t,
+		_original_atm_darkness, _cloud_target_atm_darkness)
+	_lerp_sky_prop("atm_thickness", to_config, is_to_none, t,
+		_original_atm_thickness, _cloud_target_atm_thickness)
+	_lerp_sky_prop("atm_sun_intensity", to_config, is_to_none, t,
+		_original_atm_sun_intensity, _cloud_target_atm_sun_intensity)
 
-		# Atmosphere thickness
-		var from_atm_thick: float = _original_atm_thickness if is_from_none else from_config["atm_thickness"]
-		var to_atm_thick: float = _original_atm_thickness if is_to_none else to_config["atm_thickness"]
-		if from_atm_thick < 0.0:
-			from_atm_thick = _original_atm_thickness
-		if to_atm_thick < 0.0:
-			to_atm_thick = _original_atm_thickness
-		if "atm_thickness" in _sky_dome:
-			_sky_dome.atm_thickness = lerpf(from_atm_thick, to_atm_thick, t)
+	# Shadow opacity (set on sky3d, not _sky_dome)
+	_lerp_shadow_opacity(to_config, is_to_none, t)
 
-		# Atmosphere sun intensity
-		var from_sun_int: float = _original_atm_sun_intensity if is_from_none else from_config["atm_sun_intensity"]
-		var to_sun_int: float = _original_atm_sun_intensity if is_to_none else to_config["atm_sun_intensity"]
-		if from_sun_int < 0.0:
-			from_sun_int = _original_atm_sun_intensity
-		if to_sun_int < 0.0:
-			to_sun_int = _original_atm_sun_intensity
-		if "atm_sun_intensity" in _sky_dome:
-			_sky_dome.atm_sun_intensity = lerpf(from_sun_int, to_sun_int, t)
+
+func _lerp_sky_prop(prop: String, to_config: Dictionary,
+		is_to_none: bool, t: float,
+		original_val: float, cloud_target: float) -> void:
+	## Lerp a single SkyDome property using snapshot as "from" value.
+	if prop not in _sky_dome:
+		return
+
+	var from_val: float = _snapshot_clouds.get(prop, original_val)
+
+	var to_val: float = original_val if is_to_none else to_config.get(prop, original_val)
+	# Resolve -1.0 sentinel to original
+	if to_val < 0.0:
+		to_val = original_val
+	# Apply cloud target override if set (overrides config value for the "to" side)
+	if cloud_target >= 0.0 and not is_to_none:
+		to_val = cloud_target
+
+	_sky_dome.set(prop, lerpf(from_val, to_val, t))
+
+
+func _lerp_shadow_opacity(to_config: Dictionary, is_to_none: bool, t: float) -> void:
+	## Lerp sun shadow opacity using sky3d.sun_shadow_opacity.
+	if not sky3d or "sun_shadow_opacity" not in sky3d:
+		return
+
+	var from_val: float = _snapshot_clouds.get("sun_shadow_opacity", _original_sun_shadow_opacity)
+
+	var to_val: float = _original_sun_shadow_opacity if is_to_none else to_config.get("sun_shadow_opacity", _original_sun_shadow_opacity)
+	if to_val < 0.0:
+		to_val = _original_sun_shadow_opacity
+	if _cloud_target_sun_shadow_opacity >= 0.0 and not is_to_none:
+		to_val = _cloud_target_sun_shadow_opacity
+
+	sky3d.sun_shadow_opacity = lerpf(from_val, to_val, t)
 
 
 func _apply_intensity_config(intensity: SnowIntensity) -> void:
@@ -795,28 +996,30 @@ func _apply_intensity_config(intensity: SnowIntensity) -> void:
 	if _camera:
 		_camera.far = normal_far_distance * config["camera_far_ratio"]
 
-	# SkyDome overcast effect
+	# SkyDome overcast effect (apply all cloud properties immediately)
 	if _sky_dome:
-		var cumulus_val: float = config["cumulus_coverage"]
-		if "cumulus_coverage" in _sky_dome:
-			_sky_dome.cumulus_coverage = _original_cumulus_coverage if (is_none or cumulus_val < 0.0) else cumulus_val
+		_apply_sky_prop_immediate("cumulus_coverage", config, is_none, _original_cumulus_coverage)
+		_apply_sky_prop_immediate("cumulus_intensity", config, is_none, _original_cumulus_intensity)
+		_apply_sky_prop_immediate("cumulus_thickness", config, is_none, _original_cumulus_thickness)
+		_apply_sky_prop_immediate("cumulus_absorption", config, is_none, _original_cumulus_absorption)
+		_apply_sky_prop_immediate("cirrus_coverage", config, is_none, _original_cirrus_coverage)
+		_apply_sky_prop_immediate("atm_darkness", config, is_none, _original_atm_darkness)
+		_apply_sky_prop_immediate("atm_thickness", config, is_none, _original_atm_thickness)
+		_apply_sky_prop_immediate("atm_sun_intensity", config, is_none, _original_atm_sun_intensity)
 
-		var cumulus_int_val: float = config["cumulus_intensity"]
-		if "cumulus_intensity" in _sky_dome:
-			_sky_dome.cumulus_intensity = _original_cumulus_intensity if (is_none or cumulus_int_val < 0.0) else cumulus_int_val
+	# Shadow opacity (set on sky3d directly)
+	if sky3d and "sun_shadow_opacity" in sky3d:
+		var shadow_val: float = config.get("sun_shadow_opacity", _original_sun_shadow_opacity)
+		if is_none or shadow_val < 0.0:
+			shadow_val = _original_sun_shadow_opacity
+		sky3d.sun_shadow_opacity = shadow_val
 
-		var cirrus_val: float = config["cirrus_coverage"]
-		if "cirrus_coverage" in _sky_dome:
-			_sky_dome.cirrus_coverage = _original_cirrus_coverage if (is_none or cirrus_val < 0.0) else cirrus_val
 
-		var atm_dark_val: float = config["atm_darkness"]
-		if "atm_darkness" in _sky_dome:
-			_sky_dome.atm_darkness = _original_atm_darkness if (is_none or atm_dark_val < 0.0) else atm_dark_val
-
-		var atm_thick_val: float = config["atm_thickness"]
-		if "atm_thickness" in _sky_dome:
-			_sky_dome.atm_thickness = _original_atm_thickness if (is_none or atm_thick_val < 0.0) else atm_thick_val
-
-		var atm_sun_val: float = config["atm_sun_intensity"]
-		if "atm_sun_intensity" in _sky_dome:
-			_sky_dome.atm_sun_intensity = _original_atm_sun_intensity if (is_none or atm_sun_val < 0.0) else atm_sun_val
+func _apply_sky_prop_immediate(prop: String, config: Dictionary, is_none: bool, original_val: float) -> void:
+	## Apply a single SkyDome property immediately (for set_snow_immediate).
+	if prop not in _sky_dome:
+		return
+	var val: float = config.get(prop, original_val)
+	if is_none or val < 0.0:
+		val = original_val
+	_sky_dome.set(prop, val)

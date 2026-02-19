@@ -193,5 +193,138 @@
 		"meat_yield": 6,
 		"max_stack_size": 1,
 		"weight": 8.0
+	},
+	"seal_meat": {
+		"name": "Seal Meat",
+		"image": "res://inventory_icons/seal_meat.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 30.0,
+		"morale_value": 5.0,
+		"food_quality": "fresh",
+		"requires_cooking": true,
+		"max_stack_size": 5,
+		"weight": 1.5
+	},
+	"bear_meat": {
+		"name": "Bear Meat",
+		"image": "res://inventory_icons/bear_meat.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 45.0,
+		"morale_value": 10.0,
+		"food_quality": "fresh",
+		"requires_cooking": true,
+		"trichinosis_risk": true,
+		"max_stack_size": 5,
+		"weight": 2.0
+	},
+	"caribou_meat": {
+		"name": "Caribou Meat",
+		"image": "res://inventory_icons/caribou_meat.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"nutritional_value": 35.0,
+		"morale_value": 8.0,
+		"food_quality": "fresh",
+		"requires_cooking": true,
+		"max_stack_size": 5,
+		"weight": 1.8
+	},
+	"seal_blubber": {
+		"name": "Seal Blubber",
+		"image": "res://inventory_icons/blubber.png",
+		"size": "Vector2i(1, 1)",
+		"category": "fuel",
+		"burn_duration": 60.0,
+		"nutritional_value": 20.0,
+		"max_stack_size": 3,
+		"weight": 2.0
+	},
+	"bear_fat": {
+		"name": "Bear Fat",
+		"image": "res://inventory_icons/bear_fat.png",
+		"size": "Vector2i(1, 1)",
+		"category": "fuel",
+		"burn_duration": 75.0,
+		"nutritional_value": 15.0,
+		"max_stack_size": 3,
+		"weight": 2.5
+	},
+	"pelt": {
+		"name": "Pelt",
+		"image": "res://inventory_icons/pelt.png",
+		"size": "Vector2i(2, 2)",
+		"category": "material",
+		"max_stack_size": 1,
+		"weight": 3.0
+	},
+	"bear_pelt": {
+		"name": "Bear Pelt",
+		"image": "res://inventory_icons/bear_pelt.png",
+		"size": "Vector2i(3, 3)",
+		"category": "material",
+		"max_stack_size": 1,
+		"weight": 8.0
+	},
+	"bear_head": {
+		"name": "Bear Head",
+		"image": "res://inventory_icons/bear_head.png",
+		"size": "Vector2i(2, 2)",
+		"category": "remains",
+		"subcategory": "animal",
+		"meat_yield": 4,
+		"meat_item_id": "fresh_bear_meat",
+		"max_stack_size": 1,
+		"weight": 10.0
+	},
+	"bear_leg": {
+		"name": "Bear Leg",
+		"image": "res://inventory_icons/bear_leg.png",
+		"size": "Vector2i(2, 3)",
+		"category": "remains",
+		"subcategory": "animal",
+		"meat_yield": 8,
+		"meat_item_id": "fresh_bear_meat",
+		"max_stack_size": 1,
+		"weight": 12.0
+	},
+	"bear_torso": {
+		"name": "Bear Torso",
+		"image": "res://inventory_icons/bear_torso.png",
+		"size": "Vector2i(4, 4)",
+		"category": "remains",
+		"subcategory": "animal",
+		"meat_yield": 12,
+		"meat_item_id": "fresh_bear_meat",
+		"max_stack_size": 1,
+		"weight": 20.0
+	},
+	"fresh_bear_meat": {
+		"name": "Fresh Bear Meat",
+		"image": "res://inventory_icons/fresh_bear_meat.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"subcategory": "raw",
+		"nutritional_value": 45.0,
+		"morale_value": 10.0,
+		"food_quality": "fresh",
+		"requires_cooking": true,
+		"trichinosis_risk": true,
+		"max_stack_size": 5,
+		"weight": 2.0
+	},
+	"grilled_meat": {
+		"name": "Grilled Meat",
+		"image": "res://inventory_icons/grilled_meat.png",
+		"size": "Vector2i(1, 1)",
+		"category": "food",
+		"subcategory": "cooked",
+		"nutritional_value": 50.0,
+		"morale_value": 15.0,
+		"food_quality": "cooked",
+		"requires_cooking": false,
+		"max_stack_size": 5,
+		"weight": 1.8
 	}
 }

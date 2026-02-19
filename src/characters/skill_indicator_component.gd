@@ -1,4 +1,4 @@
-class_name SkillIndicatorComponent extends Node
+class_name SkillIndicatorComponent extends Node3D
 ## Toggles visibility of editor-placed skill icons above a unit's head.
 ## Attach as child of ClickableUnit with Sprite3D children placed in the editor.
 ## The script only shows/hides — all visuals are configured in the .tscn scene.
@@ -23,6 +23,7 @@ func _ready() -> void:
 		return
 
 	_unit.inventory_changed.connect(_refresh)
+	_unit.stats_changed.connect(_refresh)
 	call_deferred("_refresh")
 
 
@@ -30,11 +31,12 @@ func _refresh() -> void:
 	if not _unit or not _unit.inventory:
 		return
 
+	var alive: bool = not _unit.is_dead
 	for config: Dictionary in SKILL_ICON_CONFIG:
 		var icon: Sprite3D = get_node_or_null(config["node"]) as Sprite3D
 		if not icon:
 			continue
-		icon.visible = _check_condition(config)
+		icon.visible = alive and _check_condition(config)
 
 
 func _check_condition(config: Dictionary) -> bool:

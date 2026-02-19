@@ -13,6 +13,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
+	# Don't gather if already carrying - should haul to workbench instead.
+	if agent.has_method("is_carrying") and agent.is_carrying():
+		return FAILURE
+
 	# Check if any ship has resources.
 	for ship in agent.get_tree().get_nodes_in_group("ship_resources"):
 		if ship.has_method("has_resources") and ship.has_resources():

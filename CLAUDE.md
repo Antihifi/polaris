@@ -16,11 +16,33 @@ cat "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.lo
 ### Scene Creation
 **NEVER programmatically generate .tscn files.** ASK the user to create scenes in Godot editor.
 
-### Editor-First UI/Visuals
-**If a visual element CAN be configured in the Godot editor, it MUST be.** Never programmatically create UI nodes, Sprite3D, materials, or shaders that could be placed in a .tscn scene. Scripts should only toggle visibility/state, not construct visual hierarchies.
+### Editor-First Configuration
+**NEVER create a node or change a parameter in code that CAN be done in the editor.** This includes nodes (NavigationObstacle3D, Area3D, etc.), UI elements, materials, shaders, collision layers/masks, and export properties. Adding nodes in code adds unnecessary LOC and makes it harder to debug/tweak. Scripts should only manage runtime state and logic — not construct node hierarchies or set values that belong in the Inspector.
 
 ### No Impossible Fallbacks
 **NEVER create fallbacks to unreachable positions.** If a task can't find a valid target, FAIL immediately and let the behavior tree handle it. Don't send units to ship centers, object origins, or other positions inside collision meshes.
+
+### Composition Over Monoliths
+**NEVER duplicate logic across classes. Use COMPOSITION with shared components.**
+- If two classes need the same functionality (combat, health, movement), create a COMPONENT
+- Components emit standardized SIGNALS that other systems can connect to
+- Example: `CombatComponent` handles combat state for BOTH ClickableUnit AND Animal
+- DO NOT write parallel implementations with slightly different APIs
+
+### Behavior Trees Over Hardcoded Logic
+**Use LimboAI behavior trees for ALL agent logic. NEVER hardcode state machines in scripts.**
+- Combat, gathering, fleeing, patrolling - ALL belongs in BT
+- Scripts should provide atomic ACTIONS and CONDITIONS for BT to compose
+- If you find yourself writing `if state == X: do_thing()` chains, STOP and use BT instead
+- Officers are the ONLY exception (player-controlled, no BT)
+
+### Standardized Signals
+**All combatants MUST emit these signals via CombatComponent:**
+- `combat_started(target: Node3D)`
+- `combat_ended`
+- `took_damage(amount: float, attacker: Node3D)`
+- `died`
+- `health_changed(new_health: float, max_health: float)`
 
 ---
 

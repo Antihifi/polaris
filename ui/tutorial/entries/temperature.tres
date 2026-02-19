@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Temperature"
+brief_tooltip = "Warmth drains in cold weather, faster at night.
+Shelter and fire reduce cold damage.
+Below -40°C is deadly even with gear."
+implemented = true
+detailed_text = "[b]Cold Is Your Greatest Enemy[/b]
+
+[i]Arctic temperatures on King William Island regularly plunge below -40°C in winter. The Franklin expedition's men, weakened by bad rations and lead poisoning, had little defence against it.[/i]
+
+The colder it gets, the faster your men lose warmth — and the danger rises sharply as temperatures drop. A man caught outside at -40°C with no shelter can freeze to death in hours. At night the cold is even worse.
+
+[b]Staying Warm[/b]
+
+[b]Fire[/b] — The best source of warmth. Keep fires burning near where your men work and rest.
+[b]Tents[/b] — Provide steady warmth and cut exposure during storms.
+[b]Sunlight[/b] — Daytime provides a small warmth benefit.
+
+Combine these — a tent near a fire is far safer than either alone.
+
+[b]Blizzards[/b]
+
+A heavy blizzard on top of already freezing temperatures can be lethal in the open. Inside a tent, the worst of the storm is blunted. Men caught outside during a blizzard should be recalled immediately.
+
+[b]What to Watch[/b]
+
+• The temperature display in the top-right corner turns blue as conditions worsen
+• Build tents and stockpile firewood before winter arrives in December
+• Keep everyone sheltered after dark during winter months
+• Night is always colder than day — plan outdoor work for daylight hours"

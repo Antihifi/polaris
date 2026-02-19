@@ -6,8 +6,12 @@ class_name BTFindNearestResource
 @export_enum("shelters", "heat_sources", "containers", "barrels", "crates", "beds", "seats", "fire_positions", "barrel_positions", "bed_positions", "ship_scrap_wood", "ship_nails", "ship_rope", "ship_scrap_sails", "workbenches", "construction_sites") var resource_group: String = "shelters"
 @export var target_position_var: StringName = &"target_position"
 @export var target_node_var: StringName = &"target_node"
+## Maximum search distance in meters. 0 = unlimited.
+@export var max_distance: float = 100.0
 
 func _generate_name() -> String:
+	if max_distance > 0.0:
+		return "FindNearest [%s] (%.0fm)" % [resource_group, max_distance]
 	return "FindNearest [%s]" % resource_group
 
 
@@ -17,14 +21,17 @@ func _tick(_delta: float) -> Status:
 		print("[BTFindResource] ERROR: No agent!")
 		return FAILURE
 
+	var effective_max_distance := max_distance
+
 	# If agent is already moving, don't interrupt with a new search
 	# This prevents BTDynamicSelector re-evaluation from causing jitter mid-journey
 	# NOTE: Do NOT check is_animation_locked here - it causes stale target contamination
 	# when sequences are aborted (e.g., sitting at crate → seek food uses old seat target)
-	var existing_target: Vector3 = blackboard.get_var(target_position_var, Vector3.INF)
-	if existing_target != Vector3.INF:
-		if "is_moving" in agent and agent.is_moving:
-			return SUCCESS  # Already moving to target, don't change it
+	if blackboard.has_var(target_position_var):
+		var existing_target: Vector3 = blackboard.get_var(target_position_var, Vector3.INF)
+		if existing_target != Vector3.INF:
+			if "is_moving" in agent and agent.is_moving:
+				return SUCCESS  # Already moving to target, don't change it
 
 	var nearest: Node3D = null
 	var nearest_dist := INF
@@ -66,6 +73,9 @@ func _tick(_delta: float) -> Status:
 				continue
 
 		var dist: float = agent.global_position.distance_to(node.global_position)
+		# Skip resources beyond max search distance
+		if effective_max_distance > 0.0 and dist > effective_max_distance:
+			continue
 		if dist < nearest_dist:
 			nearest_dist = dist
 			nearest = node
@@ -97,5 +107,5 @@ func _tick(_delta: float) -> Status:
 	if total_nodes == 0:
 		print("[BTFindResource] FAIL: No nodes in group '%s'" % resource_group)
 	else:
-		print("[BTFindResource] FAIL: %d nodes in '%s' but all occupied" % [total_nodes, resource_group])
+		print("[BTFindResource] FAIL: %d nodes in '%s' but all occupied or too far" % [total_nodes, resource_group])
 	return FAILURE

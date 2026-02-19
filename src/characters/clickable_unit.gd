@@ -24,6 +24,8 @@ enum UnitRank { MAN, OFFICER, CAPTAIN }
 ## Movement speed in units/second. Also controls animation and footstep sound speed.
 @export var movement_speed: float = 1.0
 @export var rotation_speed: float = 10.0
+## Slope penalty curve: X = slope angle (0-60° mapped to 0-1), Y = speed multiplier
+@export var slope_penalty_curve: Curve
 ## Speed multiplier (set by BT for carrying penalty, etc.)
 var speed_multiplier: float = 1.0
 
@@ -70,8 +72,20 @@ var is_animation_locked: bool = false
 var _time_manager: Node = null
 var _last_energy_signal: float = 100.0  # Track last energy value for signal emission
 var _terrain_cache: Node = null  # Cached Terrain3D reference for floor checks
+var _weather_controller_cache: Node = null  # Cached DynamicWeatherController
+var _terrain_mod_cache: float = 1.0  # Cached terrain/stat modifier for animation sync
 var _last_nav_warning_target: Vector3 = Vector3.INF  # Rate-limit nav warnings
 var _nav_finish_warned: bool = false  # Only warn once per navigation attempt
+
+## Auto-unstick system: detects when unit is moving but not making progress
+var _stuck_check_interval: float = 0.5  # Check every 0.5 seconds
+var _stuck_check_timer: float = 0.0
+var _stuck_last_position: Vector3 = Vector3.INF
+var _stuck_no_progress_time: float = 0.0  # Accumulated time without progress
+const STUCK_THRESHOLD_DISTANCE: float = 0.3  # Must move at least this far per check
+const STUCK_TIMEOUT: float = 2.0  # Auto-nudge after this many seconds stuck
+const STUCK_NUDGE_HEIGHT: float = 0.3  # How high to lift when nudging
+const STUCK_NUDGE_HORIZONTAL: float = 0.5  # Max horizontal displacement
 
 ## Animation offset (0-1) to desync animations between units
 var animation_offset: float = 0.0
@@ -85,9 +99,81 @@ const INVENTORY_GRID_SIZE := Vector2i(3, 3)
 var _active_heat_sources: Array[Node] = []  # WarmthArea nodes currently in range
 var _current_shelter: Node = null  # ShelterArea node if inside shelter
 
+## Trait system
+var traits: Array[SurvivorTrait] = []
+
+## Morale aura tracking (set by MoraleAura Area3D enter/exit signals)
+var _in_captain_aura: bool = false
+var _in_personable_aura: bool = false
+
+## Aurora morale buff (set when aurora event fires, counts down over time)
+var _aurora_morale_buff_active: bool = false
+var _aurora_buff_hours_remaining: float = 0.0
+
+## Butchering horror (indefinite morale decay until counteracted)
+var _butchering_horror_active: bool = false
+
+## Destination indicator tracking
+var _reparented_destination_indicator: Node3D = null
+
 ## Leash system - restricts AI movement to area around camp (for errant groups)
 @export var leash_center: Vector3 = Vector3.INF
 @export var leash_radius: float = 20.0
+
+## Combat system - delegates to CombatComponent
+## These signals forward from CombatComponent for backwards compatibility
+signal combat_started(target: Node3D)
+signal combat_ended
+signal took_damage(amount: float, attacker: Node3D)
+
+## CombatComponent handles combat state; set in _ready()
+var combat: CombatComponent = null
+
+var _is_fleeing: bool = false
+var _last_attacker: Node3D = null  ## For auto-defend (men only)
+
+## Computed properties delegate to CombatComponent
+var _combat_target: Node3D:
+	get: return combat.combat_target if combat else null
+	set(value):
+		if combat:
+			combat.combat_target = value
+
+var combat_target: Node3D:
+	get: return combat.combat_target if combat else null
+
+var _is_in_combat: bool:
+	get: return combat.is_in_combat if combat else false
+	set(value):
+		if combat and value:
+			combat.is_in_combat = value
+		elif combat and not value:
+			combat.stop_combat()
+
+var is_in_combat: bool:
+	get: return combat.is_in_combat if combat else false
+
+var is_fleeing: bool:
+	get: return _is_fleeing
+
+var last_attacker: Node3D:
+	get: return _last_attacker
+
+## Mental break system
+signal mental_break_started(break_type: int)
+signal mental_break_ended
+
+enum MentalBreakType { NONE, BERSERK, WENDIGO }
+var _mental_break: MentalBreakType = MentalBreakType.NONE
+
+var is_berserk: bool:
+	get: return _mental_break == MentalBreakType.BERSERK
+
+var is_wendigo: bool:
+	get: return _mental_break == MentalBreakType.WENDIGO
+
+var mental_break_type: MentalBreakType:
+	get: return _mental_break
 
 
 func _ready() -> void:
@@ -146,6 +232,17 @@ func _ready() -> void:
 	# Get sled puller component if present
 	sled_puller = get_node_or_null("SledPullerComponent")
 
+	# Get CombatComponent and forward signals for backwards compatibility
+	combat = get_node_or_null("CombatComponent")
+	if combat:
+		combat.external_stats = stats  # Delegate health to SurvivorStats
+		combat.combat_started.connect(func(t): combat_started.emit(t))
+		combat.combat_ended.connect(func(): combat_ended.emit())
+		combat.took_damage.connect(func(a, b): took_damage.emit(a, b))
+		combat.died.connect(_on_combat_death)  # Trigger death animation immediately
+	else:
+		push_warning("[ClickableUnit] %s missing CombatComponent - combat won't work" % unit_name)
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	# F9 toggles debug physics mode (bypasses navigation)
@@ -165,6 +262,25 @@ func _physics_process(delta: float) -> void:
 	# Skip physics during locked animations (sitting, sleeping)
 	if is_animation_locked:
 		return
+
+	# Safety: Ensure death is processed even if take_damage() somehow didn't trigger it
+	if stats and stats.health <= 0.0 and not is_dead:
+		stats.dying_cause = SurvivorStats.DeathCause.VIOLENCE
+		_on_death()
+		return
+
+	# =========================================================================
+	# COMBAT - Handled by PassiveAIController behavior tree (passive_bt.tres)
+	# BT tasks: BTFindEnemy -> BTHasCombatTarget -> BTAttack -> BTChaseToAttackRange -> BTDealDamage
+	# =========================================================================
+
+	# Auto-end combat if target is dead or invalid (hides health bar)
+	if combat and combat.is_in_combat:
+		var target := combat.combat_target
+		if not target or not is_instance_valid(target):
+			stop_combat()
+		elif _is_target_dead(target):
+			stop_combat()
 
 	# =========================================================================
 	# SLED PULLING BEHAVIOR
@@ -219,13 +335,21 @@ func _physics_process(delta: float) -> void:
 			if not is_carrying():
 				_play_animation("idle")
 			_stop_footsteps()
+			hide_destination_indicator()
 			reached_destination.emit()
 		else:
 			var next_pos: Vector3 = navigation_agent.get_next_path_position()
 			var dist_to_next := global_position.distance_to(next_pos)
 
+			# Compute terrain/stat movement modifier
+			var stat_mult: float = stats.get_work_efficiency() if stats else 1.0
+			var slope_mult: float = _get_slope_modifier()
+			var weather_ctrl := _find_weather_controller()
+			var weather_mult: float = weather_ctrl.get_movement_penalty(velocity) if weather_ctrl else 1.0
+			_terrain_mod_cache = maxf(0.25, stat_mult * slope_mult * weather_mult)
+
 			# Note: Engine.time_scale handles speed scaling via move_and_slide() delta
-			var velocity_xz := (next_pos - global_position).normalized() * movement_speed * speed_multiplier
+			var velocity_xz := (next_pos - global_position).normalized() * movement_speed * speed_multiplier * _terrain_mod_cache
 			velocity.x = velocity_xz.x
 			velocity.z = velocity_xz.z
 
@@ -256,6 +380,9 @@ func _physics_process(delta: float) -> void:
 		navigation_agent.set_velocity(velocity)
 	else:
 		_on_velocity_computed(velocity)
+
+	# Auto-unstick detection: check if we're moving but not making progress
+	_check_auto_unstick(delta)
 
 	# Post-physics terrain safety net for discovered units
 	# Only correct if we've fallen below terrain (don't fight slopes going up)
@@ -350,13 +477,45 @@ func _find_node_by_class(node: Node, class_name_str: String) -> Node:
 	return null
 
 
-func move_to(target_position: Vector3) -> void:
+func _find_weather_controller() -> Node:
+	## Find DynamicWeatherController (cached).
+	if _weather_controller_cache and is_instance_valid(_weather_controller_cache):
+		return _weather_controller_cache
+	var root := get_tree().current_scene
+	if root:
+		var nodes := root.find_children("*", "DynamicWeatherController", true, false)
+		if nodes.size() > 0:
+			_weather_controller_cache = nodes[0]
+	return _weather_controller_cache
+
+
+func _get_slope_modifier() -> float:
+	## Get speed multiplier based on terrain slope. Uses exported curve.
+	var terrain := _find_terrain3d()
+	if not terrain or not "data" in terrain or not terrain.data:
+		return 1.0
+	var normal: Vector3 = terrain.data.get_normal(global_position)
+	if is_nan(normal.x) or normal.length_squared() < 0.5:
+		return 1.0
+	var slope_deg: float = rad_to_deg(acos(clampf(normal.dot(Vector3.UP), 0.0, 1.0)))
+	if slope_penalty_curve:
+		return slope_penalty_curve.sample(clampf(slope_deg / 60.0, 0.0, 1.0))
+	# Fallback if no curve: linear penalty above 15 degrees
+	return lerpf(1.0, 0.3, clampf((slope_deg - 15.0) / 45.0, 0.0, 1.0))
+
+
+func move_to(target_position: Vector3, is_combat_chase: bool = false) -> void:
 	## Navigate to target position.
 	## Dead and undiscovered units cannot move.
+	## is_combat_chase: if true, don't disengage combat (used by BTChaseToAttackRange).
 	if is_dead:
 		return
 	if not is_discovered:
 		return
+
+	# Disengage combat when receiving regular movement command (not combat chase)
+	if _is_in_combat and not is_combat_chase:
+		stop_combat()
 
 	# Clear any leftover animation lock from aborted BT sequences
 	# (e.g., BTDynamicSelector aborting SitOnCrate mid-animation)
@@ -376,18 +535,19 @@ func move_to(target_position: Vector3) -> void:
 	_update_speed_scale()
 
 	# Debug: Log path info to diagnose NavMesh issues (rate-limited per unique target)
-	var nav_map := navigation_agent.get_navigation_map()
-	if nav_map.is_valid():
-		var closest_on_nav := NavigationServer3D.map_get_closest_point(nav_map, target_position)
-		var snap_distance := target_position.distance_to(closest_on_nav)
-		# Only warn once per unique target (within 0.5m tolerance)
-		if snap_distance > 1.0 and target_position.distance_to(_last_nav_warning_target) > 0.5:
-			_last_nav_warning_target = target_position
-			print("[%s] WARNING: Target snapped %.1fm! Clicked: %s -> NavMesh: %s" % [
-				unit_name, snap_distance, target_position, closest_on_nav])
-		var path := NavigationServer3D.map_get_path(nav_map, global_position, target_position, true)
-		if path.size() < 2 and target_position.distance_to(_last_nav_warning_target) > 0.5:
-			print("[%s] ERROR: No path found to target!" % unit_name)
+	# PERF: Only run expensive nav queries for NEW targets (not every tick during chase)
+	if target_position.distance_to(_last_nav_warning_target) > 0.5:
+		var nav_map := navigation_agent.get_navigation_map()
+		if nav_map.is_valid():
+			var closest_on_nav := NavigationServer3D.map_get_closest_point(nav_map, target_position)
+			var snap_distance := target_position.distance_to(closest_on_nav)
+			if snap_distance > 1.0:
+				_last_nav_warning_target = target_position
+				print("[%s] WARNING: Target snapped %.1fm! Clicked: %s -> NavMesh: %s" % [
+					unit_name, snap_distance, target_position, closest_on_nav])
+			var path := NavigationServer3D.map_get_path(nav_map, global_position, target_position, true)
+			if path.size() < 2:
+				print("[%s] ERROR: No path found to target!" % unit_name)
 
 
 func stop() -> void:
@@ -402,6 +562,319 @@ func stop() -> void:
 	if not is_carrying():
 		_play_animation("idle")
 	_stop_footsteps()
+	# Reset stuck tracking
+	_stuck_no_progress_time = 0.0
+	_stuck_last_position = Vector3.INF
+
+
+func _check_auto_unstick(delta: float) -> void:
+	## Auto-unstick detection for Officers and Captain only.
+	## Men use BT-based stuck detection in bt_move_to_blackboard.gd.
+	if rank == UnitRank.MAN:
+		return
+	if not is_moving:
+		_stuck_no_progress_time = 0.0
+		_stuck_last_position = Vector3.INF
+		return
+
+	_stuck_check_timer += delta
+	if _stuck_check_timer < _stuck_check_interval:
+		return
+	_stuck_check_timer = 0.0
+
+	# First check - initialize position
+	if _stuck_last_position == Vector3.INF:
+		_stuck_last_position = global_position
+		return
+
+	# Check distance moved since last check
+	var distance_moved: float = global_position.distance_to(_stuck_last_position)
+	_stuck_last_position = global_position
+
+	if distance_moved < STUCK_THRESHOLD_DISTANCE:
+		_stuck_no_progress_time += _stuck_check_interval
+		if _stuck_no_progress_time >= STUCK_TIMEOUT:
+			print("[%s] Auto-unstick triggered after %.1fs with no progress" % [unit_name, _stuck_no_progress_time])
+			_perform_subtle_nudge()
+			_stuck_no_progress_time = 0.0
+	else:
+		# Making progress, reset timer
+		_stuck_no_progress_time = 0.0
+
+
+func _perform_subtle_nudge() -> void:
+	## Subtle nudge to unstick: small vertical lift + random horizontal displacement.
+	## Used by auto-unstick system.
+	var nudge_offset := Vector3(
+		randf_range(-STUCK_NUDGE_HORIZONTAL, STUCK_NUDGE_HORIZONTAL),
+		STUCK_NUDGE_HEIGHT,
+		randf_range(-STUCK_NUDGE_HORIZONTAL, STUCK_NUDGE_HORIZONTAL)
+	)
+	global_position += nudge_offset
+	# Re-request navigation to same target to get fresh path
+	if navigation_agent.target_position != Vector3.ZERO:
+		var target := navigation_agent.target_position
+		navigation_agent.target_position = global_position  # Reset
+		call_deferred("move_to", target)  # Re-navigate next frame
+
+
+func nudge(aggressive: bool = false) -> void:
+	## Manual nudge to unstick unit. Called by UI UNSTUCK button.
+	## aggressive=false: subtle nudge (0.3m up, 0.5m horizontal)
+	## aggressive=true: strong nudge (1m up, 1m horizontal)
+	var height: float = 1.0 if aggressive else STUCK_NUDGE_HEIGHT
+	var horizontal: float = 1.0 if aggressive else STUCK_NUDGE_HORIZONTAL
+
+	var nudge_offset := Vector3(
+		randf_range(-horizontal, horizontal),
+		height,
+		randf_range(-horizontal, horizontal)
+	)
+	global_position += nudge_offset
+	print("[%s] Manual nudge applied (aggressive=%s)" % [unit_name, aggressive])
+
+	# Reset stuck tracking
+	_stuck_no_progress_time = 0.0
+	_stuck_last_position = Vector3.INF
+
+	# Re-request navigation if we were moving
+	if is_moving and navigation_agent.target_position != Vector3.ZERO:
+		var target := navigation_agent.target_position
+		navigation_agent.target_position = global_position
+		call_deferred("move_to", target)
+
+
+# --- Combat System ---
+
+func attack_target(target: Node3D) -> void:
+	## Start attacking a target. Sets blackboard var for BT to handle combat.
+	## Combat sequence (chase, animate, damage) is handled by passive_bt.tres.
+	if not target or not is_instance_valid(target):
+		return
+	if stats and stats.is_dead():
+		return
+	if not combat:
+		push_error("[ClickableUnit] %s has no CombatComponent!" % unit_name)
+		return
+
+	combat.start_combat(target)
+	_is_fleeing = false
+
+	# Set blackboard var for PassiveAIController BT to pick up
+	var ai: Node = get_node_or_null("PassiveAIController")
+	if ai and ai.has_method("get_blackboard"):
+		var bb: Blackboard = ai.get_blackboard()
+		if bb:
+			bb.set_var(&"combat_target", target)
+
+	# Face the target
+	var dir := (target.global_position - global_position).normalized()
+	if dir.length_squared() > 0.01:
+		rotation.y = atan2(dir.x, dir.z)
+
+
+func take_damage(amount: float, attacker: Node3D = null) -> void:
+	## Receive combat damage. Called by attacker's _perform_attack().
+	if not stats or stats.is_dead():
+		return
+
+	# Apply damage via CombatComponent (emits took_damage signal)
+	if combat:
+		combat.take_damage(amount, attacker)
+		# Explicitly emit health_changed for health bar updates (SurvivorStats max is always 100)
+		combat.health_changed.emit(stats.health, 100.0)
+	else:
+		# Fallback if no CombatComponent
+		stats.health = maxf(0.0, stats.health - amount)
+		took_damage.emit(amount, attacker)
+
+	# Track attacker for auto-defend (men only)
+	if attacker and is_instance_valid(attacker):
+		_last_attacker = attacker
+
+	# Check if we should flee
+	if _check_flee():
+		_start_flee()
+		return
+
+	# Check for death
+	if stats.health <= 0.0:
+		stats.dying_cause = SurvivorStats.DeathCause.VIOLENCE
+		_on_death()
+		return
+
+	# Auto-defend for men (not officers/captain) when attacked
+	if rank == UnitRank.MAN and not is_in_combat and attacker:
+		attack_target(attacker)
+
+	stats_changed.emit()
+
+
+func stop_combat() -> void:
+	## End combat state and return to idle.
+	if not is_in_combat:
+		return
+
+	if combat:
+		combat.stop_combat()  # Emits combat_ended signal
+	_is_fleeing = false
+	_last_attacker = null
+
+	# Unequip weapon back to back
+	var equipment = get_node_or_null("EquipmentAnimationComponent")
+	if equipment and equipment.weapon_equipped:
+		equipment.move_to_back()
+
+	# Clear blackboard combat target
+	var ai: Node = get_node_or_null("PassiveAIController")
+	if ai and ai.has_method("get_blackboard"):
+		var bb: Blackboard = ai.get_blackboard()
+		if bb:
+			bb.set_var(&"combat_target", null)
+
+	stop()
+
+
+func get_equipped_weapon() -> WeaponStats:
+	## Returns the best weapon in inventory, or unarmed if none.
+	if inventory:
+		if inventory.has_item_with_prototype_id("hatchet"):
+			return WeaponDatabase.get_weapon(&"hatchet")
+		if inventory.has_item_with_prototype_id("knife"):
+			return WeaponDatabase.get_weapon(&"knife")
+	return WeaponDatabase.get_unarmed()
+
+
+func get_damage_modifier() -> float:
+	## Returns total damage modifier from traits (multiplicative).
+	var modifier: float = 1.0
+	for t: SurvivorTrait in traits:
+		modifier *= t.damage_modifier
+	return modifier
+
+
+func _is_target_dead(target: Node3D) -> bool:
+	## Check if combat target is dead (works for both units and animals).
+	if "is_dead" in target and target.is_dead:
+		return true
+	if "stats" in target and target.stats and target.stats.has_method("is_dead"):
+		return target.stats.is_dead()
+	return false
+
+
+func _check_flee() -> bool:
+	## Check if unit should flee based on health and traits.
+	if not stats:
+		return false
+
+	var health_pct := stats.health / 100.0
+
+	# Combative trait: never flee
+	for t: SurvivorTrait in traits:
+		if t.damage_modifier > 1.0:  # Combative has 1.3x damage
+			return false
+
+	# Coward trait: flee at 50% HP
+	for t: SurvivorTrait in traits:
+		if t.flees_combat and health_pct < 0.5:
+			return true
+
+	# Default: flee at 15% HP
+	return health_pct < 0.15
+
+
+func _start_flee() -> void:
+	## Begin fleeing from combat.
+	if _is_fleeing:
+		return
+
+	_is_fleeing = true
+	_is_in_combat = false
+
+	# Flee away from combat target
+	if _combat_target and is_instance_valid(_combat_target):
+		var flee_dir := (global_position - _combat_target.global_position).normalized()
+		var flee_target := global_position + flee_dir * 30.0
+		move_to(flee_target)
+
+	_combat_target = null
+	combat_ended.emit()
+
+
+# --- Mental Break System ---
+
+func trigger_mental_break(break_type: MentalBreakType) -> void:
+	## Trigger a violent mental break (Berserk or Wendigo).
+	if _mental_break != MentalBreakType.NONE:
+		return  # Already broken
+
+	_mental_break = break_type
+	mental_break_started.emit(break_type)
+
+	match break_type:
+		MentalBreakType.BERSERK:
+			print("[%s] has gone BERSERK!" % unit_name)
+		MentalBreakType.WENDIGO:
+			print("[%s] has become a WENDIGO!" % unit_name)
+
+	# Broken units attack nearby survivors via BT
+	# The BT will handle finding targets and attacking
+
+
+func end_mental_break() -> void:
+	## End the mental break state (morale recovered or subdued).
+	if _mental_break == MentalBreakType.NONE:
+		return
+
+	print("[%s] mental break ended" % unit_name)
+	_mental_break = MentalBreakType.NONE
+	stop_combat()
+	mental_break_ended.emit()
+
+
+func check_mental_break() -> void:
+	## Check if unit should enter a mental break state.
+	## Called periodically (e.g., hourly by TimeManager).
+	if not stats:
+		return
+	if stats.is_dead():
+		return
+	if _mental_break != MentalBreakType.NONE:
+		# Already broken - check for recovery
+		if stats.morale >= 35.0:
+			end_mental_break()
+		return
+
+	# Only check if morale is critically low
+	if stats.morale >= 25.0:
+		return
+
+	# Calculate break chance
+	var break_chance: float = 0.10  # 10% base per check
+
+	# +5% per additional critical stat
+	if stats.hunger < 25.0:
+		break_chance += 0.05
+	if stats.warmth < 25.0:
+		break_chance += 0.05
+	if stats.energy < 25.0:
+		break_chance += 0.05
+
+	# Trait modifiers
+	if has_trait("combative"):
+		break_chance += 0.10
+	if has_trait("leader"):
+		break_chance -= 0.05
+
+	break_chance = clampf(break_chance, 0.0, 0.5)
+
+	# Roll for break
+	if randf() < break_chance:
+		# Determine break type based on hunger
+		if stats.hunger <= 0.0:
+			trigger_mental_break(MentalBreakType.WENDIGO)
+		else:
+			trigger_mental_break(MentalBreakType.BERSERK)
 
 
 func select() -> void:
@@ -446,30 +919,48 @@ func show_destination_indicator(target_pos: Vector3) -> void:
 	## Show the destination indicator at the target position.
 	## Reparents to scene root so it stays stationary while unit moves.
 	## Aligns to terrain slope via Terrain3D normal query.
+
+	# Hide any existing indicator before showing at the new position
+	if _reparented_destination_indicator and is_instance_valid(_reparented_destination_indicator):
+		hide_destination_indicator()
+
 	var indicator := get_node_or_null("DestinationIndicator")
 	if not indicator:
 		# Check if already reparented to scene root
 		indicator = get_tree().current_scene.get_node_or_null("DestinationIndicator_" + str(get_instance_id()))
+
 	if indicator:
 		# Reparent to scene root if still our child
 		if indicator.get_parent() == self:
 			remove_child(indicator)
 			indicator.name = "DestinationIndicator_" + str(get_instance_id())
 			get_tree().current_scene.add_child(indicator)
+		
+		# Store the reparented reference
+		_reparented_destination_indicator = indicator
+
 		# Position at destination (world space) slightly above terrain
 		indicator.global_position = target_pos + Vector3(0, 0.1, 0)
 		_align_indicator_to_terrain(indicator, target_pos)
 		indicator.visible = true
 
+		# Safety timeout — hide indicator if unit never reaches destination
+		var ind_ref := indicator
+		get_tree().create_timer(60.0).timeout.connect(func() -> void:
+			if _reparented_destination_indicator == ind_ref and is_instance_valid(ind_ref):
+				hide_destination_indicator()
+				print("[ClickableUnit] Destination indicator timed out for %s" % unit_name)
+		)
+	else:
+		# If indicator somehow doesn't exist at all, print a warning
+		push_warning("DestinationIndicator node not found for unit %s (ID: %s)" % [unit_name, str(get_instance_id())])
+
 
 func hide_destination_indicator() -> void:
-	## Hide the destination indicator.
-	var indicator := get_node_or_null("DestinationIndicator")
-	if not indicator:
-		# Check scene root if already reparented
-		indicator = get_tree().current_scene.get_node_or_null("DestinationIndicator_" + str(get_instance_id()))
-	if indicator:
-		indicator.visible = false
+	## Hide the destination indicator (stays in scene root for reuse).
+	if _reparented_destination_indicator and is_instance_valid(_reparented_destination_indicator):
+		_reparented_destination_indicator.visible = false
+	_reparented_destination_indicator = null
 
 
 func _find_animation_player(node: Node) -> AnimationPlayer:
@@ -545,17 +1036,18 @@ func _update_speed_scale() -> void:
 	## At movement_speed=1 and time_scale=1, animation plays at base_animation_speed
 	## and footsteps play at base_footstep_speed.
 	var time_scale := _get_time_scale()
+	var terrain_mod := _terrain_mod_cache if is_moving else 1.0
 
 	# Animation: scale by both movement speed and time scale
 	# Animation speed_scale can be 0 (paused), but we use maxf to prevent negative values
 	if animation_player:
-		animation_player.speed_scale = maxf(0.0, base_animation_speed * movement_speed * speed_multiplier * time_scale)
+		animation_player.speed_scale = maxf(0.0, base_animation_speed * movement_speed * speed_multiplier * terrain_mod * time_scale)
 
 	# Footsteps: scale pitch by both movement speed and time scale
 	# IMPORTANT: pitch_scale must be > 0 or Godot throws an error
 	# When paused (time_scale=0), we stop footsteps instead of setting pitch to 0
 	if is_instance_valid(_footstep_player):
-		var pitch := base_footstep_speed * movement_speed * speed_multiplier * time_scale
+		var pitch := base_footstep_speed * movement_speed * speed_multiplier * terrain_mod * time_scale
 		if pitch > 0.01:  # Minimum viable pitch
 			_footstep_player.pitch_scale = pitch
 		else:
@@ -667,13 +1159,29 @@ func _update_encumbrance_speed() -> void:
 
 
 func update_needs(delta_hours: float, in_shelter: bool, near_fire: bool, ambient_temp: float, in_sunlight: bool = true, is_blizzard: bool = false) -> void:
-	## Called by TimeManager each in-game hour to update survival needs.
+	## Called by TimeManager every 10 in-game minutes to update survival needs.
 	if not stats:
 		return
 
 	var is_working := is_moving  # For now, moving counts as working
 	var in_bed := is_in_bed()  # Check if sleeping in actual bed for 2X bonus
-	stats.apply_hourly_decay(is_working, in_shelter, in_bed, near_fire, ambient_temp, in_sunlight, is_blizzard)
+	stats.apply_hourly_decay(delta_hours, is_working, in_shelter, in_bed, near_fire, ambient_temp, in_sunlight, is_blizzard,
+		_in_captain_aura, _in_personable_aura, _butchering_horror_active)
+
+	# Tick aurora buff countdown
+	tick_aurora_buff(delta_hours)
+
+	# Butchering horror counteraction checks (generous — any morale-positive condition clears it)
+	if _butchering_horror_active:
+		if _in_captain_aura:
+			clear_butchering_horror()
+			_trigger_bark_category("butchering_cheer_captain")
+		elif _in_personable_aura:
+			clear_butchering_horror()
+			_trigger_bark_category("butchering_cheer_well_liked")
+		elif _aurora_morale_buff_active:
+			clear_butchering_horror()
+
 	stats_changed.emit()
 
 	# Check for death
@@ -681,9 +1189,19 @@ func update_needs(delta_hours: float, in_shelter: bool, near_fire: bool, ambient
 		_on_death()
 
 
+func _on_combat_death() -> void:
+	## Called immediately when CombatComponent detects death (signal-based, no polling).
+	if stats:
+		stats.dying_cause = SurvivorStats.DeathCause.VIOLENCE
+	_on_death()
+
+
 func _on_death() -> void:
-	## Handle unit death from needs.
+	## Handle unit death from needs or combat.
 	## Unit remains selectable but cannot move or receive commands.
+	## Guard against multiple calls.
+	if not is_physics_processing():
+		return  # Already dead
 	print("[ClickableUnit] ", unit_name, " has died!")
 
 	# Stop all movement and lock position
@@ -700,19 +1218,28 @@ func _on_death() -> void:
 	# Play death animation
 	_play_animation("dying")
 
-	# Disable AI behavior tree
+	# Disable AI behavior trees (both ManAIController for Men and PassiveAIController for Officers)
 	var ai_controller := get_node_or_null("ManAIController")
 	if ai_controller and ai_controller.has_method("set_enabled"):
 		ai_controller.set_enabled(false)
+	var passive_controller := get_node_or_null("PassiveAIController")
+	if passive_controller and passive_controller.has_method("set_enabled"):
+		passive_controller.set_enabled(false)
 
-	# Lay collision shape flat so raycasts can hit the corpse on the ground.
-	var col_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if col_shape:
-		col_shape.rotation.z = deg_to_rad(90)
-		col_shape.position = Vector3(0, 0.3, 0)
+	# Switch InteractionCollider to corpse layer for click detection
+	var interaction_area := find_child("InteractionCollider", true, false) as Area3D
+	if interaction_area:
+		interaction_area.collision_layer = 1 << 15  # Layer 16
+	# Change CharacterBody3D collision layer to corpse-only (layer 16) - for physics only
+	collision_layer = 1 << 15  # Layer 16 (0-indexed as 15)
+	collision_mask = 1  # Only collide with terrain
 
 	# Disable physics processing (movement, gravity, etc.)
 	set_physics_process(false)
+
+	# Notify CombatComponent so it emits died signal (hides health bar)
+	if combat and not combat._is_dead:
+		combat._on_death()
 
 	# Remove from survivors group (TimeManager won't update stats anymore)
 	remove_from_group("survivors")
@@ -785,10 +1312,18 @@ func eat_food_item(item: InventoryItem) -> void:
 	var nutrition: float = item.get_property("nutritional_value", 10.0)
 	var morale_boost: float = item.get_property("morale_value", 0.0)
 	var warmth_boost: float = item.get_property("warmth_value", 0.0)
+	var item_id: String = item.get_property("id", "")
 
 	stats.hunger = minf(stats.hunger + nutrition, 100.0)
 	stats.morale = minf(stats.morale + morale_boost, 100.0)
 	stats.warmth = minf(stats.warmth + warmth_boost, 100.0)
+
+	# Food/drink with morale value counteracts butchering horror
+	if _butchering_horror_active and morale_boost > 0.0:
+		clear_butchering_horror()
+		# Alcohol triggers specific bark; regular food just clears the horror
+		if item_id == "rum":
+			_trigger_bark_category("butchering_drink")
 
 	inventory.remove_item(item)
 	stats_changed.emit()
@@ -898,27 +1433,153 @@ func is_in_sunlight() -> bool:
 
 func is_near_captain() -> bool:
 	## Returns true if unit is within range of a captain's morale aura.
-	return false
+	return _in_captain_aura
 
 
 func is_near_personable() -> bool:
 	## Returns true if unit is within range of a personable crew member's aura.
-	return false
+	return _in_personable_aura
+
+
+func enter_captain_aura() -> void:
+	## Called by MoraleAura when this unit enters captain's aura radius.
+	_in_captain_aura = true
+	# Captain presence counteracts butchering horror
+	if _butchering_horror_active:
+		clear_butchering_horror()
+		_trigger_bark_category("butchering_cheer_captain")
+	stats_changed.emit()
+
+
+func exit_captain_aura() -> void:
+	## Called by MoraleAura when this unit exits captain's aura radius.
+	_in_captain_aura = false
+	stats_changed.emit()
+
+
+func enter_personable_aura() -> void:
+	## Called by MoraleAura when this unit enters a personable crew member's aura.
+	_in_personable_aura = true
+	# Well-liked crew counteract butchering horror
+	if _butchering_horror_active:
+		clear_butchering_horror()
+		_trigger_bark_category("butchering_cheer_well_liked")
+	stats_changed.emit()
+
+
+func exit_personable_aura() -> void:
+	## Called by MoraleAura when this unit exits a personable crew member's aura.
+	_in_personable_aura = false
+	stats_changed.emit()
 
 
 func has_morale_aura() -> bool:
 	## Returns true if this unit provides a morale aura to nearby units.
+	for t: SurvivorTrait in traits:
+		if t.morale_aura != 0.0:
+			return true
+	# Captain has MoraleAura as scene child, not via traits
+	if rank == UnitRank.CAPTAIN:
+		return true
 	return false
 
 
 func get_morale_aura_name() -> String:
-	## Returns the name of this unit's morale aura (e.g., "Captain", "Well-Liked").
+	## Returns the name of this unit's morale aura (e.g., "Captain", "Personable").
+	if rank == UnitRank.CAPTAIN:
+		return "Captain's Morale Boost"
+	for t: SurvivorTrait in traits:
+		if t.morale_aura != 0.0:
+			return t.display_name
 	return ""
 
 
 func get_morale_aura_radius() -> float:
 	## Returns the radius of this unit's morale aura in meters.
+	if rank == UnitRank.CAPTAIN:
+		return MoraleAura.DEFAULT_CAPTAIN_RADIUS
+	for t: SurvivorTrait in traits:
+		if t.morale_aura != 0.0:
+			return MoraleAura.DEFAULT_WELL_LIKED_RADIUS
 	return 0.0
+
+
+# --- Trait System ---
+
+func add_trait(t: SurvivorTrait) -> void:
+	## Add a trait to this unit. Creates MoraleAura child if trait has morale_aura.
+	traits.append(t)
+	if t.morale_aura > 0.0:
+		var aura := MoraleAura.new()
+		aura.name = "PersonableAura"
+		aura.aura_type = MoraleAura.AuraType.WELL_LIKED
+		aura.radius = MoraleAura.DEFAULT_WELL_LIKED_RADIUS
+		add_child(aura)
+
+
+func has_trait(trait_id: String) -> bool:
+	## Returns true if this unit has a trait with the given id.
+	for t: SurvivorTrait in traits:
+		if t.id == trait_id:
+			return true
+	return false
+
+
+# --- Aurora Morale Buff ---
+
+func apply_aurora_boost(duration_hours: int) -> void:
+	## Apply aurora morale boost: +25 flat points, lasts duration_hours.
+	if not stats:
+		return
+	stats.boost_morale(25.0)
+	_aurora_morale_buff_active = true
+	_aurora_buff_hours_remaining = float(duration_hours)
+	# Aurora also counteracts butchering horror
+	if _butchering_horror_active:
+		clear_butchering_horror()
+	stats_changed.emit()
+
+
+func tick_aurora_buff(delta_hours: float = 1.0) -> void:
+	## Called each stat update tick to count down aurora buff duration.
+	if not _aurora_morale_buff_active:
+		return
+	_aurora_buff_hours_remaining -= delta_hours
+	if _aurora_buff_hours_remaining <= 0.0:
+		_aurora_morale_buff_active = false
+		_aurora_buff_hours_remaining = 0.0
+		stats_changed.emit()
+
+
+func is_aurora_buffed() -> bool:
+	return _aurora_morale_buff_active
+
+
+# --- Butchering Horror ---
+
+func apply_butchering_horror() -> void:
+	## Apply butchering witness morale hit: instant 50% reduction + ongoing decay.
+	if not stats:
+		return
+	stats.morale *= 0.5
+	_butchering_horror_active = true
+	stats_changed.emit()
+
+
+func is_butchering_horrified() -> bool:
+	return _butchering_horror_active
+
+
+func clear_butchering_horror() -> void:
+	## Clear the butchering horror debuff (counteracted by captain, personable, alcohol, food, aurora).
+	_butchering_horror_active = false
+	stats_changed.emit()
+
+
+func _trigger_bark_category(category: String) -> void:
+	## Helper to trigger an important bark on this unit.
+	## Uses the unit's own bark() method which delegates to BarkManager.
+	bark(category, 4.0)
 
 
 # --- Discovery System (Errant Groups) ---
@@ -1391,6 +2052,17 @@ func stop_carrying() -> Dictionary:
 ## Property wrapper for BTCheckAgentProperty.
 var carrying: bool:
 	get: return is_carrying()
+
+## Property wrappers for equipment system (BTCheckAgentProperty).
+var weapon_equipped: bool:
+	get:
+		var equipment = get_node_or_null("EquipmentAnimationComponent")
+		return equipment.weapon_equipped if equipment else false
+
+var has_melee_weapon: bool:
+	get:
+		var equipment = get_node_or_null("EquipmentAnimationComponent")
+		return equipment.has_melee_weapon() if equipment else false
 
 
 func is_carrying() -> bool:

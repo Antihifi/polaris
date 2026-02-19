@@ -5,9 +5,9 @@ class_name MoraleAura extends Area3D
 
 enum AuraType { CAPTAIN, WELL_LIKED }
 
-## Default radii: Captain = 20m (close leadership), Well Liked = 50m (social influence)
+## Default radii: Captain = 20m (close leadership), Well Liked = 10m (nearby social influence)
 const DEFAULT_CAPTAIN_RADIUS: float = 20.0
-const DEFAULT_WELL_LIKED_RADIUS: float = 50.0
+const DEFAULT_WELL_LIKED_RADIUS: float = 10.0
 
 @export var aura_type: AuraType = AuraType.CAPTAIN
 @export var radius: float = 20.0

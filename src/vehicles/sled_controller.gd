@@ -66,7 +66,8 @@ func _ready() -> void:
 	# Disable collision on cargo StaticBody3D nodes to prevent physics conflicts
 	_disable_cargo_collision(self)
 
-
+	# Add sled inventory for hauling supplies
+	_setup_sled_inventory()
 
 
 ## Attach a unit as a puller. Returns true if successful.
@@ -237,3 +238,15 @@ func _disable_cargo_collision(node: Node) -> void:
 			child.collision_layer = 0
 			child.collision_mask = 0
 		_disable_cargo_collision(child)
+
+
+## Set up the sled's inventory for hauling supplies.
+func _setup_sled_inventory() -> void:
+	var storage := StorageContainer.new()
+	storage.name = "StorageContainer"
+	storage.display_name = "Sled Cargo"
+	storage.storage_type = StorageContainer.StorageType.GENERAL
+	storage.grid_width = 8
+	storage.grid_height = 12  # 96 slots total
+	add_child(storage)
+	print("[SledController] Sled inventory created (8x12 grid)")

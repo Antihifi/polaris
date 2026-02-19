@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Time System"
+brief_tooltip = "Survive 365+ days until rescue arrives.
+Seasons: Summer (mild) → Winter (deadly) → Spring (rescue)
+Space: Pause | 1/2/3: Speed controls"
+implemented = true
+detailed_text = "[b]Survive Until Rescue[/b]
+
+[i]The real expedition was abandoned by the Admiralty for over a year before search parties were sent. Your men must endure a full arctic cycle — summer, the long winter, and into the following spring — before any help can reach them.[/i]
+
+Your goal is to keep as many men alive as possible until rescue arrives, over a year from now.
+
+[b]Seasons[/b]
+
+[b]Summer[/b] (Jun-Aug) — The mildest season. Long daylight hours. Use this time to prepare.
+[b]Autumn[/b] (Sep-Nov) — Temperatures drop sharply. Last chance to build shelter before winter.
+[b]Winter[/b] (Dec-Feb) — Brutally cold, short days, frequent blizzards. The killing season.
+[b]Spring[/b] (Mar-May) — Slowly warming. Days lengthen. Rescue draws nearer.
+
+Temperatures also shift with the time of day — warmer at midday, colder at night. Storms make it worse still.
+
+[b]Speed Controls[/b]
+
+[b]Space[/b] — Pause the game to plan without time passing
+[b]1[/b] — Normal speed
+[b]2[/b] — Double speed
+[b]3[/b] — Quadruple speed
+
+Speed up during quiet stretches. Pause when a crisis hits.
+
+[b]Rescue[/b]
+
+Rescue arrives after roughly 13-18 months. You will receive a warning when 30 days remain. Everything you do — every tent built, every barrel of food rationed — is buying time until that day comes."

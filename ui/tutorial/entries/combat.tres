@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://duh6d688ss1jn"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Combat"
+brief_tooltip = "[Coming Soon]
+Wolves and polar bears threaten your crew.
+Armed units defend against wildlife."
+implemented = false
+detailed_text = "[b]Combat — Coming Soon[/b]
+
+[i]Polar bears and wolves were a constant threat to the real expedition. Weakened, starving men travelling alone across the ice were easy prey.[/i]
+
+The arctic is not empty. Wolves hunt the weak and the isolated. Polar bears are far more dangerous still.
+
+• Wolves target men who are alone or in poor condition
+• Polar bears are extremely difficult to fight off
+• Men armed with knives or hatchets will defend themselves
+• Wounded survivors need rest and time to recover
+
+Travel in groups. Keep tools distributed among your crew. A man caught alone and unarmed has little chance."

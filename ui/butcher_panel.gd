@@ -15,6 +15,7 @@ signal butcher_confirmed(corpse: Node3D)
 var _current_corpse: Node3D = null
 var _camera: Camera3D = null
 var _butcher_has_axe: bool = false
+var _corpse_name: String = ""
 
 @export var world_height_offset: float = 3.0
 @export var screen_offset: Vector2 = Vector2(0, -20)
@@ -43,12 +44,14 @@ func _input(event: InputEvent) -> void:
 			hide_panel()
 
 
-func show_for_corpse(corpse: Node3D, butcher_has_axe: bool, camera: Camera3D = null) -> void:
-	## Display the butcher confirmation for a dead unit.
+func show_for_corpse(corpse: Node3D, butcher_has_axe: bool, camera: Camera3D = null, corpse_name: String = "") -> void:
+	## Display the butcher confirmation for a dead unit or animal.
+	## corpse_name: Optional name to display (for animals with animal_name).
 	if not corpse or not is_instance_valid(corpse):
 		return
 	_current_corpse = corpse
 	_butcher_has_axe = butcher_has_axe
+	_corpse_name = corpse_name
 	_camera = camera if camera else get_viewport().get_camera_3d()
 	_update_display()
 	_update_panel_position()
@@ -57,6 +60,7 @@ func show_for_corpse(corpse: Node3D, butcher_has_axe: bool, camera: Camera3D = n
 
 func hide_panel() -> void:
 	_current_corpse = null
+	_corpse_name = ""
 	visible = false
 	closed.emit()
 
@@ -82,8 +86,16 @@ func _update_display() -> void:
 		hide_panel()
 		return
 	title_label.text = "BUTCHER"
-	var corpse_name: String = _current_corpse.unit_name if "unit_name" in _current_corpse else "this unit"
-	prompt_label.text = "Do you really want to butcher %s?" % corpse_name
+	# Use provided name, or fallback to unit_name/animal_name, or generic
+	var display_name: String = _corpse_name
+	if display_name.is_empty():
+		if "unit_name" in _current_corpse:
+			display_name = _current_corpse.unit_name
+		elif "animal_name" in _current_corpse:
+			display_name = _current_corpse.animal_name
+		else:
+			display_name = "this corpse"
+	prompt_label.text = "Do you really want to butcher %s?" % display_name
 	yes_button.disabled = not _butcher_has_axe
 	if _butcher_has_axe:
 		status_label.text = ""

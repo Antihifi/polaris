@@ -1,7 +1,7 @@
 class_name InventoryPanel extends PanelContainer
 ## Reusable inventory panel that wraps CtrlInventoryGrid.
 ## Used for both container and unit inventories.
-## Can be instantiated from inventory_panel.tscn or created programmatically.
+## Instantiate from inventory_panel.tscn.
 
 signal panel_closed
 signal item_action_requested(item: InventoryItem, action: String)
@@ -25,37 +25,38 @@ var _action_button: Button = null
 var _action_item: InventoryItem = null
 var _vbox: VBoxContainer = null
 var _carve_enabled: bool = false
+var _header: HBoxContainer = null
+
+# Drag-to-detach support
+var _dragger: PanelDragger = PanelDragger.new()
+## Whether this panel has been dragged away from auto-follow position.
+var is_detached: bool:
+	get: return _dragger.is_detached
 
 
 func _ready() -> void:
-	# Try to find scene nodes first, fallback to building programmatically
-	_title_label = get_node_or_null("%TitleLabel")
-	_close_button = get_node_or_null("%CloseButton")
-	_grid_container = get_node_or_null("%GridContainer")
+	_title_label = %TitleLabel
+	_close_button = %CloseButton
+	_grid_container = %GridContainer
+	_vbox = _grid_container.get_parent() as VBoxContainer
+	_header = _title_label.get_parent() as HBoxContainer
 
-	if _title_label and _close_button and _grid_container:
-		# Scene-based: connect and add grid to container
-		_close_button.pressed.connect(_on_close_pressed)
-		_title_label.text = title
-		_vbox = _grid_container.get_parent() as VBoxContainer
-		_setup_grid_control(_grid_container)
-	else:
-		# Programmatic fallback
-		_build_ui()
+	_close_button.pressed.connect(_on_close_pressed)
+	_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_close_button.z_index = 10
+	_title_label.text = title
 
-	# Ensure close button is always clickable (above grid, with correct mouse filter)
-	if _close_button:
-		_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
-		_close_button.z_index = 10  # Draw above grid elements
+	_header.gui_input.connect(_on_header_drag_input)
+	_header.mouse_filter = Control.MOUSE_FILTER_STOP
 
-	# Create action button (hidden by default, added below grid)
+	_setup_grid_control(_grid_container)
+
 	_action_button = Button.new()
 	_action_button.name = "ActionButton"
 	_action_button.visible = false
 	_action_button.pressed.connect(_on_action_button_pressed)
 	_action_button.mouse_filter = Control.MOUSE_FILTER_STOP
-	if _vbox:
-		_vbox.add_child(_action_button)
+	_vbox.add_child(_action_button)
 
 	hide()
 
@@ -78,54 +79,36 @@ func _setup_grid_control(parent: Control) -> void:
 	_grid_ctrl.inventory_item_clicked.connect(_on_grid_item_clicked)
 
 
-func _build_ui() -> void:
-	## Build the panel UI programmatically (fallback for non-scene usage).
+func _process(_delta: float) -> void:
+	if not visible:
+		return
+	var drag_data: Variant = get_viewport().gui_get_drag_data()
+	if drag_data is InventoryItem:
+		var item := drag_data as InventoryItem
+		if item.get_inventory() != _inventory:
+			# Another panel is dragging - lower this panel
+			z_index = -10
+			return
+	z_index = 0  # Default: no drag or this panel is the source
 
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
-	add_child(margin)
 
-	_vbox = VBoxContainer.new()
-	_vbox.add_theme_constant_override("separation", 8)
-	margin.add_child(_vbox)
+func _on_header_drag_input(event: InputEvent) -> void:
+	## Handle drag on header to detach panel from auto-follow.
+	_dragger.handle_input(event, self)
 
-	# Header with title and close button
-	var header := HBoxContainer.new()
-	_vbox.add_child(header)
 
-	_title_label = Label.new()
-	_title_label.text = title
-	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(_title_label)
-
-	_close_button = Button.new()
-	_close_button.text = "X"
-	_close_button.custom_minimum_size = Vector2(24, 24)
-	_close_button.pressed.connect(_on_close_pressed)
-	header.add_child(_close_button)
-
-	# Separator
-	var sep := HSeparator.new()
-	_vbox.add_child(sep)
-
-	# Grid container
-	_grid_container = MarginContainer.new()
-	_grid_container.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_grid_container.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_vbox.add_child(_grid_container)
-
-	_setup_grid_control(_grid_container)
+func reset_drag() -> void:
+	## Re-attach panel to auto-follow mode.
+	_dragger.reset()
 
 
 func show_inventory(inv: Inventory, display_title: String = "") -> void:
 	## Display the given inventory.
 	_inventory = inv
 	_grid_ctrl.inventory = inv
+	_dragger.reset()
 
-	if display_title.length() > 0:
+	if not display_title.is_empty():
 		title = display_title
 	_hide_action_button()
 	show()
@@ -133,15 +116,22 @@ func show_inventory(inv: Inventory, display_title: String = "") -> void:
 
 func hide_panel() -> void:
 	_inventory = null
-	if _grid_ctrl:
-		_grid_ctrl.inventory = null
+	_dragger.reset()
 	_hide_action_button()
-	hide()
+	hide()  # Hide first to prevent mouse events during cleanup
+	if _grid_ctrl:
+		# Defer inventory cleanup to avoid gloot crash during mouse_exited processing
+		call_deferred("_deferred_clear_grid")
 	panel_closed.emit()
 
 
+func _deferred_clear_grid() -> void:
+	## Clear grid inventory after frame completes. Skips if show_inventory() was called since.
+	if _inventory == null and _grid_ctrl:
+		_grid_ctrl.inventory = null
+
+
 func _on_close_pressed() -> void:
-	print("[InventoryPanel] Close button pressed")
 	hide_panel()
 
 
@@ -159,7 +149,7 @@ func set_carve_enabled(enabled: bool) -> void:
 
 func _on_grid_item_clicked(item: InventoryItem, _at_position: Vector2, _button_index: int) -> void:
 	## Show action button when a placeable or carveable item is clicked.
-	if not item or not is_instance_valid(item):
+	if not is_instance_valid(item):
 		_hide_action_button()
 		return
 	if item.get_property("placeable", false):

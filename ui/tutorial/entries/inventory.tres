@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://cpcs4oq7diike"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Inventory"
+brief_tooltip = "Right-click containers to open their inventory.
+Drag items between containers and units.
+Press I to open a unit's personal inventory."
+detailed_text = "[b]Supplies & Storage[/b]
+
+[i]The expedition carried years of provisions in thousands of tin canisters, barrels, and crates. Managing those dwindling stores was a matter of life and death.[/i]
+
+Every survivor carries a small personal inventory. Barrels and crates hold much more and serve as your main storage.
+
+[b]Unit Inventory[/b]
+
+• Each survivor has a small personal inventory (3x3 grid)
+• Press [b]I[/b] with a unit selected to open it
+• Small items like food, tools, and fuel fit here
+• Larger items like tents must stay in crates
+
+[b]Containers[/b]
+
+• [b]Barrels[/b] — Larger storage, ideal for food
+• [b]Crates[/b] — General storage for supplies and larger items
+• Right-click a container to open it
+• Drag items between a container and a unit's inventory
+
+[b]What You'll Find[/b]
+
+[b]Food:[/b] Hardtack, Salt Pork, Pemmican, Tinned Meat, Rum
+[b]Fuel:[/b] Firewood, Coal
+[b]Tools:[/b] Knife, Hatchet
+[b]Materials:[/b] Scrap Wood, Nails, Sail Scrap
+
+Hover over any item for a description. Items stack where possible.
+
+[b]Tips[/b]
+
+• Keep a hatchet on an officer — you may need it in an emergency
+• Spread food across several containers so men can find it easily
+• Men eat from nearby containers on their own when hungry
+• Press ESC to close any open panel"

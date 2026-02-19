@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=3 format=3 uid="uid://bl6f3kaqw14xl"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://ccj03o7kvjh52" path="res://ui/tutorial/tutorial_sleds.png" id="1_3hr1h"]
+
+[resource]
+script = ExtResource("1")
+title = "Sleds"
+brief_tooltip = "Right-click a sled to open the attachment panel.
+The lead puller navigates; the sled follows on a rope.
+Essential for hauling supplies across the island."
+detailed_text = "[b]Man-Hauling[/b]
+
+[i]With no pack animals, the real expedition's men dragged sledges weighing over 200 pounds per man across rough sea ice. It was gruelling, exhausting work that consumed more calories than their rations could replace.[/i]
+
+Sleds let you move large quantities of supplies across the island. A visible rope connects the pullers to the sled, and it follows them across the terrain.
+
+[b]How to Use[/b]
+
+1. Select a unit, then right-click a sled to open the sled panel
+2. Click [b]Attach[/b] to harness the unit
+3. Give the lead puller a move command — the sled follows
+4. Up to 4 men can pull a single sled
+
+The first man attached is the lead puller. Only he takes move commands — the rest follow his lead automatically. The sled travels only as fast as the weakest man pulling it.
+
+[b]Building a Sled[/b]
+
+Sleds are the most expensive project at the workbench:
+• 10 scrap wood, 5 nails
+• 10 days of construction time
+A significant investment, but essential for moving heavy loads.
+
+[b]Tips[/b]
+
+• Assign your strongest men to sled duty
+• Heavier loads slow the team — pack only what you need
+• Pulling a sled is tiring; plan rest stops on long hauls
+• To detach a man, right-click the sled and use the [b]Detach[/b] button"
+screenshot = ExtResource("1_3hr1h")

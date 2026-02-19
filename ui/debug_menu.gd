@@ -22,7 +22,6 @@ var _weather_status_label: Label = null
 
 # Camera controls
 var _camera_constraint_check: CheckBox = null
-var _camera_original_max_distance: float = 300.0
 var _camera_original_zoom_max: float = 50.0
 var _camera_original_speed: float = 20.0
 var _camera_original_zoom_speed: float = 20.0
@@ -864,15 +863,13 @@ func _update_weather_status() -> void:
 # --- Camera Controls ---
 
 func _on_camera_constraint_toggled(enabled: bool) -> void:
-	## Toggle free camera mode: no constraint, extended zoom, faster movement.
+	## Toggle free camera mode: no constraints, extended zoom, faster movement.
 	var camera := get_viewport().get_camera_3d()
 	if not camera:
 		return
 
 	if enabled:
 		# Store original values
-		if "max_distance_from_units" in camera:
-			_camera_original_max_distance = camera.max_distance_from_units
 		if "camera_zoom_max" in camera:
 			_camera_original_zoom_max = camera.camera_zoom_max
 		if "camera_speed" in camera:
@@ -884,15 +881,15 @@ func _on_camera_constraint_toggled(enabled: bool) -> void:
 		if "max_distance_from_units" in camera:
 			camera.max_distance_from_units = 0.0
 		if "camera_zoom_max" in camera:
-			camera.camera_zoom_max = 500.0  # Much further zoom out
+			camera.camera_zoom_max = 500.0
 		if "camera_speed" in camera:
-			camera.camera_speed = 160.0  # 8x faster WASD
+			camera.camera_speed = 160.0
 		if "camera_zoom_speed" in camera:
-			camera.camera_zoom_speed = 200.0  # 10x faster scroll
+			camera.camera_zoom_speed = 200.0
 	else:
 		# Restore original values
 		if "max_distance_from_units" in camera:
-			camera.max_distance_from_units = _camera_original_max_distance
+			camera.max_distance_from_units = 75.0
 		if "camera_zoom_max" in camera:
 			camera.camera_zoom_max = _camera_original_zoom_max
 		if "camera_speed" in camera:

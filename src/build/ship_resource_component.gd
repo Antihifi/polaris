@@ -23,8 +23,7 @@ var _ship: Node3D = null
 
 func _ready() -> void:
 	_ship = get_parent() as Node3D
-	if _ship:
-		_ship.add_to_group("ship_resources")
+	add_to_group("ship_resources")
 
 	# Register with WorkManager if available.
 	await get_tree().process_frame

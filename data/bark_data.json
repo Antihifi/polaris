@@ -236,5 +236,60 @@
 		"Another one lost.",
 		"May he find peace.",
 		"We've lost another."
+	],
+	"aurora": [
+		"God in heaven... have you ever seen such a sight?",
+		"The heavens themselves are ablaze. What magnificence...",
+		"If this is the last thing I see, it would be enough.",
+		"The northern lights... proof that beauty persists even here."
+	],
+	"butchering_cheer_well_liked": [
+		"Don't think on it, lad. We do what we must to survive.",
+		"Come now, brother. Keep your eyes on me. We'll get through this.",
+		"It's a terrible thing, aye. But we're still breathing. That counts.",
+		"Steady now. The living need you more than the dead."
+	],
+	"butchering_cheer_captain": [
+		"That's an order, sailor. Eyes forward. We carry on.",
+		"I know what I've asked of you. History will understand, even if we cannot.",
+		"This burden is mine to bear, not yours. You did your duty.",
+		"Steel yourself. The men need your strength now more than ever."
+	],
+	"butchering_drink": [
+		"Maybe the bottle will quell the unthinkable thought...",
+		"One sip to forget... just one more...",
+		"The rum burns, but not as much as the memory.",
+		"God forgive us all..."
+	],
+	"combat_start": [
+		"To arms!",
+		"Here it comes!",
+		"Stand and fight!",
+		"Defend yourselves!",
+		"I'll handle this!",
+		"Get behind me!"
+	],
+	"took_hit": [
+		"Agh!",
+		"I'm hit!",
+		"Damn it!",
+		"That hurt!",
+		"Bloody hell!"
+	],
+	"killed_animal": [
+		"Got the beast!",
+		"It's down!",
+		"That'll teach it!",
+		"One less threat.",
+		"Victory!",
+		"For the lads!"
+	],
+	"animal_attacking": [
+		"Bear!",
+		"Look out!",
+		"Run!",
+		"It's coming right for us!",
+		"Get to safety!",
+		"To arms, men!"
 	]
 }

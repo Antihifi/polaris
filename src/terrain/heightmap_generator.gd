@@ -820,10 +820,9 @@ static func _create_noise(seed_val: int, frequency: float, octaves: int, persist
 	return noise
 
 
-## Apply fast noise-based erosion effect to heightmap.
-## Creates carved, weathered look by adding slope-following noise displacement.
-## This is NOT real hydraulic erosion - it's a visual approximation that runs quickly.
-static func apply_erosion_effect(
+## LEGACY: Simple noise-based erosion (kept for reference/fallback)
+## This does NOT create branching channels - use apply_hydraulic_erosion instead.
+static func apply_erosion_effect_legacy(
 	heightmap: Image,
 	island_mask: Image,
 	erosion_rng: RandomNumberGenerator,
@@ -931,6 +930,261 @@ static func _smooth_heightmap_region(heightmap: Image, min_y: int, max_y: int, m
 				# Very light averaging (mostly keep original)
 				var avg := (h_center * 4.0 + h_left + h_right + h_up + h_down) / 8.0
 				heightmap.set_pixel(x, y, Color(avg, 0.0, 0.0, 1.0))
+
+
+# ==============================================================================
+# HYDRAULIC EROSION - Directional erosion with branching channel networks
+# Based on Clay John's Shadertoy algorithm (MIT License)
+# https://www.shadertoy.com/view/7ljcRW
+# ==============================================================================
+
+## 2D hash function for deterministic pseudo-random values
+## Returns Vector2 in range [-1, 1]
+static func _hash2(p: Vector2) -> Vector2:
+	var k := Vector2(0.3183099, 0.3678794)
+	var x := Vector2(p.x * k.x + k.y, p.y * k.y + k.x)
+	var dot_val: float = x.x * x.y * (x.x + x.y)
+	var frac_val: float = dot_val - floor(dot_val)
+	var result: float = 16.0 * k.x * frac_val
+	result = result - floor(result)
+	var result2: float = result * 1.3847
+	result2 = result2 - floor(result2)
+	return Vector2(-1.0 + 2.0 * result, -1.0 + 2.0 * result2)
+
+
+## Gradient noise with analytic derivatives
+## Returns Vector3(value, dvalue/dx, dvalue/dy)
+## Ported from IQ's gradient noise: https://www.shadertoy.com/view/XdXBRH
+static func _noised(p: Vector2) -> Vector3:
+	var i := Vector2(floor(p.x), floor(p.y))
+	var f := Vector2(p.x - i.x, p.y - i.y)
+
+	# Quintic interpolation for smoother derivatives
+	var u := Vector2(
+		f.x * f.x * f.x * (f.x * (f.x * 6.0 - 15.0) + 10.0),
+		f.y * f.y * f.y * (f.y * (f.y * 6.0 - 15.0) + 10.0)
+	)
+	var du := Vector2(
+		30.0 * f.x * f.x * (f.x * (f.x - 2.0) + 1.0),
+		30.0 * f.y * f.y * (f.y * (f.y - 2.0) + 1.0)
+	)
+
+	# Hash the four corners
+	var ga := _hash2(i + Vector2(0.0, 0.0))
+	var gb := _hash2(i + Vector2(1.0, 0.0))
+	var gc := _hash2(i + Vector2(0.0, 1.0))
+	var gd := _hash2(i + Vector2(1.0, 1.0))
+
+	# Gradient dots
+	var va := ga.dot(f - Vector2(0.0, 0.0))
+	var vb := gb.dot(f - Vector2(1.0, 0.0))
+	var vc := gc.dot(f - Vector2(0.0, 1.0))
+	var vd := gd.dot(f - Vector2(1.0, 1.0))
+
+	# Value
+	var value := va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * (va - vb - vc + vd)
+
+	# Derivatives
+	var deriv := ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd)
+	deriv += du * Vector2(
+		u.y * (va - vb - vc + vd) + (vb - va),
+		u.x * (va - vb - vc + vd) + (vc - va)
+	)
+
+	return Vector3(value, deriv.x, deriv.y)
+
+
+## Core erosion noise function - directional noise that follows flow direction
+## This is THE key function that creates the branching channel effect
+## Returns Vector3(height, gradient.x, gradient.y)
+static func _erosion_noise(p: Vector2, flow_dir: Vector2) -> Vector3:
+	var ip := Vector2(floor(p.x), floor(p.y))
+	var fp := Vector2(p.x - ip.x, p.y - ip.y)
+	var f := 2.0 * PI
+
+	var va := Vector3.ZERO
+	var wt := 0.0
+
+	# Sample 4x4 kernel around the point
+	for j in range(-2, 2):
+		for i in range(-2, 2):
+			var o := Vector2(float(i), float(j))
+			var h := _hash2(ip - o) * 0.5
+			var pp := fp + o - h
+			var d := pp.dot(pp)
+			var w := exp(-d * 2.0)
+			wt += w
+
+			# Directional influence - noise aligned with flow direction
+			var mag := pp.dot(flow_dir)
+			var cos_val := cos(mag * f)
+			var sin_val := -sin(mag * f)
+
+			va.x += cos_val * w
+			va.y += sin_val * flow_dir.x * w
+			va.z += sin_val * flow_dir.y * w
+
+	return va / wt if wt > 0.0 else Vector3.ZERO
+
+
+## Apply hydraulic erosion to an existing heightmap
+## Creates branching channel networks by accumulating directional noise along slopes
+## config: TerrainConfig resource with erosion parameters (or null for defaults)
+static func apply_hydraulic_erosion(
+	heightmap: Image,
+	island_mask: Image,
+	erosion_rng: RandomNumberGenerator,
+	config: Resource = null
+) -> void:
+	var width := heightmap.get_width()
+	var height := heightmap.get_height()
+
+	# Extract config values
+	var erosion_enabled: bool = config.erosion_enabled if config and "erosion_enabled" in config else true
+	if not erosion_enabled:
+		print("[HeightmapGenerator] Hydraulic erosion disabled, skipping")
+		return
+
+	# STOPGAP: CPU erosion is O(n² × octaves × 16) - too slow for large maps
+	# Skip until GPU compute shader is implemented
+	if width > 1024:
+		print("[HeightmapGenerator] Skipping CPU erosion for large map (%dx%d) - use GPU shader" % [width, height])
+		return
+
+	var erosion_tiles: float = config.erosion_tiles if config and "erosion_tiles" in config else 4.0
+	var erosion_octaves: int = config.erosion_octaves if config and "erosion_octaves" in config else 5
+	var erosion_gain: float = config.erosion_gain if config and "erosion_gain" in config else 0.5
+	var erosion_lacunarity: float = config.erosion_lacunarity if config and "erosion_lacunarity" in config else 2.0
+	var erosion_slope_strength: float = config.erosion_slope_strength if config and "erosion_slope_strength" in config else 3.0
+	var erosion_branch_strength: float = config.erosion_branch_strength if config and "erosion_branch_strength" in config else 3.0
+	var erosion_strength: float = config.erosion_strength if config and "erosion_strength" in config else 0.04
+
+	print("[HeightmapGenerator] Applying hydraulic erosion...")
+	print("[HeightmapGenerator]   tiles=%.1f, octaves=%d, slope=%.1f, branch=%.1f, strength=%.3f" % [
+		erosion_tiles, erosion_octaves, erosion_slope_strength, erosion_branch_strength, erosion_strength
+	])
+	print("[HeightmapGenerator]   resolution=%dx%d" % [width, height])
+	var start_time := Time.get_ticks_msec()
+
+	# Resolution scaling factor - gradients are smaller at higher resolutions
+	# because adjacent pixels are closer together. Normalize to 256 (preview size).
+	var resolution_scale: float = float(width) / 256.0
+
+	# Find height range for normalization
+	var min_h := INF
+	var max_h := -INF
+	for y in range(height):
+		for x in range(width):
+			var h: float = heightmap.get_pixel(x, y).r
+			min_h = minf(min_h, h)
+			max_h = maxf(max_h, h)
+	var height_range := max_h - min_h
+	if height_range < 1.0:
+		height_range = 1.0
+	print("[HeightmapGenerator]   height_range=%.1f (min=%.1f, max=%.1f)" % [height_range, min_h, max_h])
+
+	# Pre-compute gradients from heightmap (slope direction and magnitude)
+	# This tells us which way is "downhill" at each point
+	# Scale gradients by resolution to make them resolution-independent
+	var gradients: Dictionary = {}
+	for y in range(1, height - 1):
+		for x in range(1, width - 1):
+			var h_left: float = heightmap.get_pixel(x - 1, y).r
+			var h_right: float = heightmap.get_pixel(x + 1, y).r
+			var h_up: float = heightmap.get_pixel(x, y - 1).r
+			var h_down: float = heightmap.get_pixel(x, y + 1).r
+
+			# Gradient points in direction of steepest ascent
+			# Scale by resolution to make slope calculations resolution-independent
+			var grad := Vector2(
+				(h_right - h_left) * 0.5 * resolution_scale,
+				(h_down - h_up) * 0.5 * resolution_scale
+			)
+			gradients[Vector2i(x, y)] = grad
+
+	# Apply erosion per pixel
+	var modified_heights: Dictionary = {}
+
+	for y in range(2, height - 2):
+		for x in range(2, width - 2):
+			var mask_val: float = island_mask.get_pixel(x, y).r
+			if mask_val < 0.2:
+				continue  # Skip ocean/ice
+
+			var current_h: float = heightmap.get_pixel(x, y).r
+
+			# Get terrain slope (gradient) at this point
+			var terrain_grad: Vector2 = gradients.get(Vector2i(x, y), Vector2.ZERO)
+
+			# Normalized coordinates [0, 1]
+			var uv := Vector2(float(x) / float(width), float(y) / float(height))
+
+			# === EROSION FBM ===
+			# Start with slope direction scaled by strength
+			# The curl (perpendicular) gives us the flow direction
+			var flow_dir := Vector2(terrain_grad.y, -terrain_grad.x) * erosion_slope_strength
+
+			var h := Vector3.ZERO  # Accumulated (height, grad.x, grad.y)
+			var amplitude := 0.5
+			var frequency := 1.0
+
+			for _octave in range(erosion_octaves):
+				# Sample erosion noise at this frequency
+				var sample_pos := uv * erosion_tiles * frequency
+
+				# KEY: flow_dir is modified by previous octave's gradient
+				# This creates the branching effect!
+				var erosion_sample := _erosion_noise(
+					sample_pos,
+					flow_dir + Vector2(h.y, h.z) * erosion_branch_strength
+				)
+
+				# Accumulate with proper scaling
+				h.x += erosion_sample.x * amplitude
+				h.y += erosion_sample.y * amplitude * frequency
+				h.z += erosion_sample.z * amplitude * frequency
+
+				amplitude *= erosion_gain
+				frequency *= erosion_lacunarity
+
+			# Apply erosion: centered around 0.5, so (h.x - 0.5) gives displacement
+			# Multiply by height_range to convert normalized erosion to meters
+			var erosion_displacement := (h.x - 0.5) * erosion_strength * height_range
+
+			# Reduce erosion in flat areas (southern plains) to preserve walkable terrain
+			var slope_mag := terrain_grad.length()
+			var slope_factor := clampf(slope_mag / 10.0, 0.1, 1.0)  # More erosion on slopes
+			erosion_displacement *= slope_factor
+
+			# Also reduce erosion at island edges to preserve coastline shape
+			var edge_factor := clampf((mask_val - 0.2) / 0.3, 0.0, 1.0)
+			erosion_displacement *= edge_factor
+
+			var new_h := current_h + erosion_displacement
+			modified_heights[Vector2i(x, y)] = new_h
+
+	# Apply modified heights and track displacement stats
+	var total_displacement := 0.0
+	var max_displacement := 0.0
+	var min_displacement := 0.0
+	for pos in modified_heights:
+		var new_h: float = modified_heights[pos]
+		var old_h: float = heightmap.get_pixel(pos.x, pos.y).r
+		var disp: float = new_h - old_h
+		total_displacement += absf(disp)
+		max_displacement = maxf(max_displacement, disp)
+		min_displacement = minf(min_displacement, disp)
+		heightmap.set_pixel(pos.x, pos.y, Color(new_h, 0.0, 0.0, 1.0))
+
+	# Light smoothing pass to blend erosion naturally
+	_smooth_heightmap_region(heightmap, 2, height - 2, 2, width - 2, 1)
+
+	var elapsed := Time.get_ticks_msec() - start_time
+	var avg_displacement: float = total_displacement / float(modified_heights.size()) if modified_heights.size() > 0 else 0.0
+	print("[HeightmapGenerator] Hydraulic erosion complete in %dms" % elapsed)
+	print("[HeightmapGenerator]   pixels=%d, avg_disp=%.2fm, range=[%.2f, %.2f]m" % [
+		modified_heights.size(), avg_displacement, min_displacement, max_displacement
+	])
 
 
 ## Carve traversable valleys through steep cliff formations.
@@ -1151,3 +1405,55 @@ static func _heavy_smooth_pass(heightmap: Image, island_mask: Image, iterations:
 		# Apply
 		for pos in new_heights:
 			heightmap.set_pixel(pos.x, pos.y, Color(new_heights[pos], 0.0, 0.0, 1.0))
+
+
+## Apply smoothing to pixels within a latitude band.
+## lat_start/lat_end are normalized Y coordinates (0.0 = north, 1.0 = south)
+## Used to eliminate sugarloaf peaks on north coast and smooth southern flatlands.
+static func smooth_by_latitude(
+	heightmap: Image,
+	island_mask: Image,
+	lat_start: float,
+	lat_end: float,
+	iterations: int = 2
+) -> void:
+	var width := heightmap.get_width()
+	var height := heightmap.get_height()
+
+	var y_start := int(lat_start * float(height))
+	var y_end := int(lat_end * float(height))
+
+	print("[HeightmapGenerator] Smoothing latitude band %.2f-%.2f (%d iterations)..." % [lat_start, lat_end, iterations])
+	var start_time := Time.get_ticks_msec()
+
+	for _iter in iterations:
+		# Use a temporary copy to avoid read-while-write
+		var new_heights: Dictionary = {}
+
+		for y in range(maxi(2, y_start), mini(height - 2, y_end)):
+			for x in range(2, width - 2):
+				var mask_val: float = island_mask.get_pixel(x, y).r
+				if mask_val < 0.2:
+					continue
+
+				# 3x3 kernel average
+				var sum := 0.0
+				var count := 0
+				for dy in range(-1, 2):
+					for dx in range(-1, 2):
+						sum += heightmap.get_pixel(x + dx, y + dy).r
+						count += 1
+
+				var avg := sum / float(count)
+				var current: float = heightmap.get_pixel(x, y).r
+
+				# Blend toward average
+				var smoothed := lerpf(current, avg, 0.5)
+				new_heights[Vector2i(x, y)] = smoothed
+
+		# Apply all changes
+		for pos in new_heights:
+			heightmap.set_pixel(pos.x, pos.y, Color(new_heights[pos], 0.0, 0.0, 1.0))
+
+	var elapsed := Time.get_ticks_msec() - start_time
+	print("[HeightmapGenerator] Latitude smoothing complete in %dms" % elapsed)

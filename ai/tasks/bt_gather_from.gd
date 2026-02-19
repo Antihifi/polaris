@@ -42,6 +42,10 @@ func _tick(delta: float) -> Status:
 
 
 func _gather_from_ship(agent: Node3D, delta: float) -> Status:
+	# Don't gather if already carrying (prevents material loss on interrupted sequences).
+	if agent.has_method("is_carrying") and agent.is_carrying():
+		return FAILURE
+
 	var ship_resource: ShipResourceComponent = null
 	for node in agent.get_tree().get_nodes_in_group("ship_resources"):
 		if node is ShipResourceComponent:
@@ -80,6 +84,13 @@ func _withdraw_from_workbench(agent: Node3D) -> Status:
 	var site: Node = blackboard.get_var(site_var, null)
 	if not workbench or not site or not is_instance_valid(site):
 		return FAILURE
+
+	# Already carrying from a previous interrupted delivery — skip withdrawal, just retarget.
+	if agent.has_method("is_carrying") and agent.is_carrying():
+		blackboard.set_var(retarget_node_var, site)
+		blackboard.set_var(retarget_position_var, site.global_position)
+		blackboard.set_var(&"is_delivering", true)
+		return SUCCESS
 
 	if not site.has_method("get_materials_needed"):
 		return FAILURE

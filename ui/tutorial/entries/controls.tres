@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://cud7dos6syeen"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Controls"
+brief_tooltip = "Left-click: Select | Right-click: Move/Interact
+Shift+click or drag: Multi-select
+WASD: Camera | Mouse wheel: Zoom
+C: Stats panel | I: Inventory"
+detailed_text = "[b]Mouse[/b]
+
+[b]Left-click[/b] — Select a unit
+[b]Double-click[/b] — Open character stats panel
+[b]Right-click ground[/b] — Move selected unit(s) there
+[b]Right-click object[/b] — Interact (open container, use workbench, etc.)
+[b]Shift + click[/b] — Add or remove a unit from your selection
+[b]Click + drag[/b] — Draw a box to select multiple units
+
+[b]Camera[/b]
+
+[b]WASD / Arrow keys[/b] — Pan the camera
+[b]Mouse wheel[/b] — Zoom in and out
+[b]Middle mouse button[/b] — Hold and drag to orbit
+[b]Shift[/b] — Hold for faster camera movement
+[b]Screen edges[/b] — Move the mouse to the edge of the screen to pan
+
+[b]Keyboard[/b]
+
+[b]Space[/b] — Pause / unpause
+[b]1 / 2 / 3[/b] — Game speed (1x / 2x / 4x)
+[b]C[/b] — Toggle stats panel for selected unit
+[b]I[/b] — Toggle inventory for selected unit
+[b]Z[/b] — Spyglass view (requires spyglass in inventory)
+[b]M[/b] — Sextant / map view (requires sextant in inventory)
+[b]Ctrl + 1-9[/b] — Save selected units as a control group
+[b]1-9[/b] — Recall a saved control group
+[b]ESC[/b] — Close any open panel
+
+[b]Right-Click Interactions[/b]
+
+Right-clicking different objects does different things:
+• [b]Barrel or Crate[/b] — Opens its inventory
+• [b]Workbench[/b] — Opens the crafting panel
+• [b]Sled[/b] — Opens the sled attachment panel
+• [b]Dead survivor[/b] — Opens the butcher panel (requires hatchet)
+• [b]Placed tent[/b] — Opens tent panel (store or manage)"

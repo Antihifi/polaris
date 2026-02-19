@@ -145,6 +145,10 @@ func _spawn_single_officer(position: Vector3, index: int) -> Node:
 	# Random rotation
 	unit.rotation.y = _rng.randf() * TAU
 
+	# ~30% chance to assign Personable trait (officers are more social)
+	if _rng.randf() < 0.3 and unit.has_method("add_trait"):
+		unit.add_trait(SurvivorTrait.create_personable())
+
 	return unit
 
 
@@ -166,6 +170,10 @@ func _spawn_errant_officer(position: Vector3) -> Node:
 	_randomize_stats(unit)
 	unit.movement_speed = _vary_value(base_movement_speed, 0.15)
 	unit.rotation.y = _rng.randf() * TAU
+
+	# ~30% chance to assign Personable trait (officers are more social)
+	if _rng.randf() < 0.3 and unit.has_method("add_trait"):
+		unit.add_trait(SurvivorTrait.create_personable())
 
 	_spawned_units.append(unit)
 	return unit
@@ -200,9 +208,9 @@ func _spawn_single_unit(position: Vector3, index: int) -> Node:
 	# Randomize initial rotation so they face different directions
 	unit.rotation.y = _rng.randf() * TAU
 
-	# Register with RuntimeNavBaker for multi-group navigation
-	# Note: Multi-unit NavMesh tracking removed - simpler single-region approach now used
-	# RuntimeNavBaker only tracks the player/captain for rebaking
+	# ~20% chance to assign Personable trait (well-liked crew member)
+	if _rng.randf() < 0.2 and unit.has_method("add_trait"):
+		unit.add_trait(SurvivorTrait.create_personable())
 
 	return unit
 
@@ -418,3 +426,151 @@ func print_survivor_summary() -> void:
 			else:
 				print("%d. %s (no stats)" % [i + 1, name_str])
 	print("=============================\n")
+
+
+# =============================================================================
+# POLAR BEAR SPAWNING
+# =============================================================================
+
+## Polar bear scene
+var _polar_bear_scene: PackedScene = null
+
+## Mesh node path for scaling polar bear size
+const POLAR_BEAR_MESH_PATH := "Sketchfab_Scene/Sketchfab_model/f15cec222ae14ed19735d1a5209e5257_fbx/Object_2/RootNode/Object_4"
+
+
+func spawn_polar_bears(count: int, island_mask: Image, world_size: float, is_demo: bool) -> Array[Node]:
+	## Spawn polar bears on the north coast with randomized stats and size.
+	## is_demo: true for 2km map (smaller roam/aggro), false for 10km map.
+	## Returns array of spawned bears.
+
+	if not _polar_bear_scene:
+		_polar_bear_scene = preload("res://characters/polar_bear/polar_bear.tscn")
+
+	var spawned: Array[Node] = []
+	var min_separation: float = 100.0 if is_demo else 200.0
+	var positions := _generate_polar_bear_positions(count, island_mask, world_size, min_separation)
+
+	for i in range(positions.size()):
+		var bear: Node3D = _polar_bear_scene.instantiate()
+		get_tree().current_scene.add_child(bear)
+		bear.global_position = positions[i]
+
+		# Randomize roaming distance (scaled by game size)
+		if is_demo:
+			bear.roam_radius = _rng.randf_range(40.0, 60.0)
+		else:
+			bear.roam_radius = _rng.randf_range(100.0, 150.0)
+
+		# Randomize aggro multiplier (0.6 = docile, 1.4 = aggressive)
+		bear.aggro_multiplier = _rng.randf_range(0.6, 1.4)
+
+		# Randomize investigation persistence (0.4 = gives up quickly, 0.8 = relentless hunter)
+		bear.investigation_persistence = _rng.randf_range(0.4, 0.8)
+
+		# Randomize speed (±20% of base 4.0)
+		bear.movement_speed = _vary_value(4.0, 0.2)
+
+		# Randomize size (25% small, 50% normal, 25% large)
+		var size_scale: float = _get_bear_size_scale()
+		_apply_bear_size(bear, size_scale)
+
+		# Random rotation
+		bear.rotation.y = _rng.randf() * TAU
+
+		spawned.append(bear)
+
+	print("[CharacterSpawner] Spawned %d polar bears on north coast" % spawned.size())
+	return spawned
+
+
+func _generate_polar_bear_positions(count: int, island_mask: Image, world_size: float, min_separation: float) -> Array[Vector3]:
+	## Generate positions on north coast (top 30% of map) with large separation.
+	## Bears are solitary, so enforce minimum distance between them.
+	var positions: Array[Vector3] = []
+	var max_attempts := 200
+
+	if not island_mask:
+		push_warning("[CharacterSpawner] No island mask for polar bear spawning")
+		return positions
+
+	var img_width := island_mask.get_width()
+	var img_height := island_mask.get_height()
+	var meters_per_pixel: float = world_size / float(img_width)
+
+	# Search in north region (top 30% of image, avoiding very edge)
+	var search_y_min := int(img_height * 0.05)
+	var search_y_max := int(img_height * 0.35)
+	var search_x_min := int(img_width * 0.05)
+	var search_x_max := int(img_width * 0.95)
+
+	for bear_idx in range(count):
+		var valid := false
+		var attempts := 0
+		var world_pos := Vector3.ZERO
+
+		while not valid and attempts < max_attempts:
+			attempts += 1
+
+			# Random pixel in north region
+			var px := _rng.randi_range(search_x_min, search_x_max)
+			var py := _rng.randi_range(search_y_min, search_y_max)
+
+			# Check island mask - want solid land or ice (mask >= 0.2)
+			var mask_value: float = island_mask.get_pixel(px, py).r
+			if mask_value < 0.2:
+				continue
+
+			# Convert pixel to world position (centered at origin)
+			var half_size := float(img_width) / 2.0
+			var world_x := (float(px) - half_size) * meters_per_pixel
+			var world_z := (float(py) - half_size) * meters_per_pixel
+
+			# Get terrain height
+			var world_y := _get_terrain_height(Vector3(world_x, 0, world_z))
+			world_pos = Vector3(world_x, world_y, world_z)
+
+			# Check separation from existing positions
+			valid = true
+			for existing_pos in positions:
+				if world_pos.distance_to(existing_pos) < min_separation:
+					valid = false
+					break
+
+		if valid:
+			positions.append(world_pos)
+		elif attempts >= max_attempts:
+			# Couldn't find valid position, skip this bear
+			push_warning("[CharacterSpawner] Could not place polar bear %d after %d attempts" % [bear_idx, max_attempts])
+
+	return positions
+
+
+func _get_bear_size_scale() -> float:
+	## Return bear size scale: 25% small (5-6), 50% normal (6.5-7.5), 25% large (7.5-8.5)
+	var roll := _rng.randf()
+	if roll < 0.25:
+		# Small (juvenile/female): 5.0 - 6.0
+		return _rng.randf_range(5.0, 6.0)
+	elif roll < 0.75:
+		# Normal (adult): 6.5 - 7.5
+		return _rng.randf_range(6.5, 7.5)
+	else:
+		# Large (dominant male): 7.5 - 8.5
+		return _rng.randf_range(7.5, 8.5)
+
+
+func _apply_bear_size(bear: Node3D, scale_value: float) -> void:
+	## Apply uniform scale to the polar bear mesh node and store for butchering yield.
+	# Store the size scale for butchering calculations
+	if "size_scale" in bear:
+		bear.size_scale = scale_value
+
+	var mesh_node: Node3D = bear.get_node_or_null(POLAR_BEAR_MESH_PATH)
+	if mesh_node:
+		mesh_node.transform = Transform3D(
+			Basis(Vector3(scale_value, 0, 0), Vector3(0, scale_value, 0), Vector3(0, 0, scale_value)),
+			mesh_node.transform.origin
+		)
+	else:
+		push_warning("[CharacterSpawner] Could not find polar bear mesh node for scaling")

@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://bhk5oxfkylosc"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Butchering"
+brief_tooltip = "Right-click a dead survivor with a hatchet to butcher.
+A desperate act that yields meat but devastates morale.
+Only available when a man has already died."
+detailed_text = "[b]A Last Resort[/b]
+
+[i]Inuit testimony and forensic evidence from the real expedition confirmed that some of Franklin's men resorted to cannibalism in their final days. Cut marks on bones found at several sites tell a grim story of men pushed beyond all limits.[/i]
+
+When a survivor dies and starvation threatens the rest, the dead can be butchered for meat. It is exactly as terrible as it sounds.
+
+[b]How It Works[/b]
+
+1. Select a unit who has a [b]hatchet[/b] in his inventory
+2. Right-click a [b]dead survivor's body[/b]
+3. A confirmation panel appears asking if you truly want to do this
+4. Click [b]YES[/b] to proceed, or close the panel to cancel
+
+The button is greyed out if the selected unit has no hatchet.
+
+[b]Consequences[/b]
+
+Butchering yields meat, but at a terrible cost to the morale of your surviving men. The psychological damage can cascade — demoralised men work slower, and if morale drops low enough, worse things may follow.
+
+[b]Tips[/b]
+
+• This should never be your plan — it is a failsafe for when everything else has gone wrong
+• Good food management (rationing, spreading supplies across containers) prevents this
+• Keep a hatchet on an officer, just in case"

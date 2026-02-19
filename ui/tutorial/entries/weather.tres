@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://bom3rxfgh4gm8"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Weather"
+brief_tooltip = "Dynamic procedural weather: clear, light snow, heavy blizzard.
+Blizzards drastically reduce visibility and warmth.
+No direct control — plan around storms."
+detailed_text = "[b]Arctic Weather[/b]
+
+[i]Arctic blizzards can reduce visibility to near zero and drop wind chill to lethal levels in minutes. The Franklin expedition endured some of the worst weather conditions on Earth, with winter storms that could last for days.[/i]
+
+Weather changes on its own throughout the game. You cannot control it — only prepare for it and react when it turns.
+
+[b]Conditions[/b]
+
+[b]Clear[/b] — Calm conditions. Good visibility. The best time for outdoor work.
+[b]Light Snow[/b] — Gentle snowfall. Slightly colder, but manageable. Keep working.
+[b]Heavy Blizzard[/b] — Dangerous. Visibility drops dramatically, temperatures plummet, and men caught in the open lose warmth fast.
+
+Weather transitions gradually — you will see snow building, fog rolling in, and wind picking up before a full blizzard hits.
+
+[b]What a Blizzard Does[/b]
+
+• Visibility shrinks to almost nothing — you may lose sight of your own camp
+• Temperatures drop sharply on top of the existing cold
+• Men outside lose warmth and morale quickly
+• Inside a tent, the worst of the storm is blunted
+• The sky darkens and wind noise rises
+
+[b]Seasonal Patterns[/b]
+
+• [b]Winter[/b] (Dec-Feb): Frequent blizzards, the most dangerous season
+• [b]Autumn/Spring[/b]: Mixed weather, occasional storms
+• [b]Summer[/b]: Mostly clear, rare snowfall
+
+[b]Tips[/b]
+
+• Light snow is nothing to worry about — keep working
+• When heavier snow starts, consider recalling men to shelter
+• A full blizzard is survivable in a tent but lethal in the open
+• Watch the temperature display — a sudden drop signals a storm building
+• Use clear spells to push construction and salvage work forward"

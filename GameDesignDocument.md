@@ -658,9 +658,16 @@ At new game start:
 - Sextant (navigation — +10m camera view height when held by focused officer)
 
 **Weapons:**
-- Rifle (ranged)
-- Pistol (ranged, short)
-- Knife (melee)
+| Weapon | Type | Damage | Range | Attack Speed | Notes |
+|--------|------|--------|-------|--------------|-------|
+| Unarmed | Melee | 3-5 | 1.5m | 1.0s | Always available |
+| Knife | Melee | 6-10 | 1.5m | 0.8s | Fast, low damage |
+| Hatchet | Melee | 10-15 | 2m | 1.2s | Also a tool |
+| Pistol | Ranged | 25-35 | 15m | 18s reload | Officers only |
+| Shotgun | Ranged | 40-60 | 20m | 20s reload | Wide spread, close range bonus |
+| Musket | Ranged | 35-50 | 40m | 22s reload | Best range, hunting primary |
+
+*Historical Note: All firearms are percussion cap/black powder (1845 era). The 15-25 second reload makes them useful for hunting or opening combat, then switching to melee.*
 
 ### Inventory System
 - **Personal Inventory:** Each survivor carries items (weight limit based on Strength)
@@ -861,18 +868,134 @@ Men (or dogs when available) pull sleds using rope harnesses:
 
 ## Combat
 
-### Threats
-| Enemy | Danger | Behavior | Drops |
-|-------|--------|----------|-------|
-| Wolf | Medium | Pack hunting, attacks weak/alone | Meat, Pelt |
-| Polar Bear | High | Solitary, very dangerous | Lots of meat, Pelt |
+### Design Philosophy
+Combat is **simple and deterministic** (inspired by Kenshi/Rimworld). No complex dice rolls or ability cooldowns. Weapons have fixed damage and attack speeds. The drama comes from *who* is fighting *whom* and *why*, not from combat mechanics themselves.
 
-### Combat System (Simple Rimworld-style)
-- Enemies spawn at map edges, frequency increases in winter
-- Survivors auto-attack if armed and enemy in range
-- Coward trait causes flee behavior
-- Health uses IndieBlueprintHealth component
-- Death on health reaching zero
+### Combat Initiation
+
+| Initiator | Target | Trigger |
+|-----------|--------|---------|
+| Player (Officer/Captain) | Any hostile | Right-click to attack |
+| Men | Hostile attacking them | Auto-defend when attacked |
+| Broken Man (violent break) | Nearby survivors | Automatic (see Mental Breaks) |
+| Animals | Survivors in territory | Proximity aggro |
+
+**Key Rules:**
+- Officers/Captain require explicit player commands to attack
+- Men auto-defend ONLY when directly attacked (not when allies are attacked)
+- Only Officers can intervene against broken men (Men will not auto-attack other men)
+- Right-click on hostile = attack command
+
+### Damage Calculation
+
+**Formula:** `Damage = WeaponBaseDamage × (0.8 + Strength/250)`
+
+- Deterministic: no random hit/miss rolls
+- Attack speed determines DPS (attacks hit on timer)
+- Strength modifies damage output (60-100 range means 1.04x to 1.2x multiplier)
+
+**Firearms Accuracy:**
+- Base accuracy from weapon type (pistol < shotgun < musket at range)
+- Modified by Shooting skill (+2% per skill level)
+- Marksman trait: +15% accuracy
+- Miss = no damage (simple binary)
+
+### Weapons
+
+See Items & Resources section for weapon stats table.
+
+**Implementation Priority:**
+1. Unarmed + Hatchet (MVP)
+2. Knife
+3. Firearms (shotgun, musket, pistol)
+
+### Flee Behavior
+
+| Trait | Flee Threshold | Notes |
+|-------|----------------|-------|
+| Coward | 50% HP | Flees early, runs far |
+| Normal | 15% HP | Attempts to disengage |
+| Combative | Never | Fights to death |
+| Animals | 25% HP | Always attempt to flee |
+
+Fleeing units can be chased and killed. Flee direction is away from attacker toward nearest safe location (camp, fire, shelter).
+
+### Wildlife
+
+**Spawning:** Animals are persistent world entities that roam the map. Not event-based spawns.
+
+| Animal | HP | Damage | Speed | Behavior | Drops |
+|--------|-----|--------|-------|----------|-------|
+| Seal | 40 | 5 | Slow | Passive, flees immediately | 2-4 seal meat, 1 blubber |
+| Caribou | 60 | 8 | Fast | Passive, flees when approached | 3-6 caribou meat, 1 pelt |
+| Arctic Fox | 25 | 4 | Fast | Passive, scavenges corpses | 1 meat, 1 pelt |
+| Wolf | 80 | 15 | Fast | Pack hunter, attacks weak/isolated | 2-3 meat, 1 pelt |
+| Polar Bear | 200 | 35 | Medium | Solitary, territorial, very dangerous | 6-10 meat, 1 large pelt, 1 fat |
+
+**Animal AI:**
+- Seals/Caribou: Graze, flee on player proximity
+- Wolves: Hunt in packs (2-4), target isolated or low-HP units
+- Polar Bears: Roam territory, attack anything that enters ~30m radius
+
+**Trichinosis Risk:** Eating raw polar bear or seal meat has chance of parasitic infection (health drain over time). Cooking eliminates risk.
+
+### Man-on-Man Combat
+
+Combat between survivors occurs due to:
+
+| Cause | Aggressor Behavior | Resolution |
+|-------|-------------------|------------|
+| Berserk (morale <25%, hunger >25%) | Attacks nearest survivor | Officer subdues or kills |
+| Wendigo (morale <25%, hunger =0) | Kills and eats survivors | Officer subdues or kills |
+| Deliberate attack (player command) | Officer attacks target man | Target defends |
+| Subduing broken man | Officer attacks to incapacitate | Broken man resists |
+
+**Key Rules:**
+- Men do NOT auto-defend against other men (even broken ones)
+- Only Officers/Captain can intervene against broken men
+- Broken men attack continuously until subdued, killed, or morale recovers
+- Subduing = reducing to <10% HP without killing (requires player to stop attack)
+
+### Combat Death
+
+Combat deaths follow the same rules as any death:
+- Body becomes lootable corpse
+- Corpse contains: equipment carried + 2-6 human meat
+- Standard cannibalism morale penalties apply if meat is consumed
+- Bodies can be butchered for additional yield (existing butcher task)
+
+### Mental Breaks (Violent)
+
+*Non-violent breaks (hysterical laughter, wandering, catatonia) are planned for later.*
+
+| Break | Trigger | Behavior | Duration |
+|-------|---------|----------|----------|
+| Berserk | Morale <25%, Hunger >25% | Attacks nearest survivor with equipped weapon | Until subdued or morale >35% |
+| Wendigo | Morale <25%, Hunger =0 | Kills survivor, attempts to eat corpse | Until subdued or fed |
+
+**Break Chance:** When morale drops below 25%, roll chance each hour:
+- Base: 10% per hour while under threshold
+- +5% per additional critical stat (<25%)
+- Combative trait: +10% for Berserk specifically
+- Leader trait: -5% (more composed)
+
+### Skills Affecting Combat
+
+| Skill | Effect |
+|-------|--------|
+| Shooting | +2% firearm accuracy per level |
+| Strength | Damage multiplier (see formula) |
+| Combat (new) | +5% attack speed per level |
+
+### Traits Affecting Combat
+
+| Trait | Effect |
+|-------|--------|
+| Combative | +15% damage, never flees, +10% Berserk chance |
+| Coward | -25% damage, flees at 50% HP, will not attack first |
+| Marksman | +15% firearm accuracy |
+| Strong | +50% to strength for damage calc |
+| Weak | -40% to strength for damage calc |
 
 ---
 

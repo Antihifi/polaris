@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://cm5xw6syht3nn"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Ship Salvage"
+brief_tooltip = "HMS Terror is breaking apart.
+Salvage scrap wood, nails, and sails before she sinks.
+Progressive destruction over days."
+detailed_text = "[b]The Ship Is Dying[/b]
+
+[i]HMS Terror was found in 2016 at the bottom of Terror Bay, remarkably intact. But in 1846, trapped in the ice and under immense pressure, she would have been breaking apart — her timbers, rigging, and stores the only resource her crew had left.[/i]
+
+Terror is caught in the pack ice and slowly being crushed. Over the first week, she will break apart piece by piece — rigging first, then her masts, then the hull itself. Eventually she will sink. Anything you haven't salvaged goes down with her.
+
+[b]What Happens[/b]
+
+The ship deteriorates in stages. You will hear her groaning and cracking. When a major piece gives way — a mast toppling, hull plates breaking free — you will see and hear it clearly. As damage worsens, the creaking grows louder and more constant.
+
+[b]What You Can Salvage[/b]
+
+Your men can gather materials from the wreck:
+• [b]Scrap Wood[/b] — Your primary building material
+• [b]Nails[/b] — Needed for most construction
+• [b]Sail Scraps[/b] — Used in tent construction
+
+Men with work to do will gather from the ship on their own and carry materials back to the workbench.
+
+[b]Tips[/b]
+
+• Start salvaging early — the ship will not wait for you
+• Watch for her beginning to list to one side; sinking is near
+• Once she goes down, you have only what you managed to pull off her
+• Everything you build comes from this ship — waste nothing"

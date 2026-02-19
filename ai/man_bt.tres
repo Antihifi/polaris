@@ -1,7 +1,10 @@
-[gd_resource type="BehaviorTree" load_steps=174 format=3 uid="uid://b12icb31evg1h"]
+[gd_resource type="BehaviorTree" load_steps=189 format=3 uid="uid://b12icb31evg1h"]
 
+[ext_resource type="Script" uid="uid://dbkjq8oglabfn" path="res://ai/tasks/bt_defend.gd" id="1_bxk66"]
 [ext_resource type="Script" uid="uid://bh616mm1sxk16" path="res://ai/tasks/bt_generate_wander_target.gd" id="1_wander"]
 [ext_resource type="Script" uid="uid://5cieec4vq4ck" path="res://ai/tasks/bt_move_to_blackboard.gd" id="2_move"]
+[ext_resource type="Script" uid="uid://dsisqp5psmvjq" path="res://ai/tasks/bt_attack.gd" id="2_mslhm"]
+[ext_resource type="Script" uid="uid://bxnaog530tvht" path="res://ai/tasks/bt_check_mental_break.gd" id="3_d5ls8"]
 [ext_resource type="Script" uid="uid://w162bukdvt4w" path="res://ai/tasks/bt_find_nearest_resource.gd" id="3_resource"]
 [ext_resource type="Script" uid="uid://blnycb7fe8v47" path="res://ai/tasks/bt_check_can_work.gd" id="6_brwnp"]
 [ext_resource type="Script" uid="uid://b8uhoin5thywl" path="res://ai/tasks/bt_align_with_marker.gd" id="7_3jy6i"]
@@ -11,6 +14,7 @@
 [ext_resource type="Script" uid="uid://dswo3ufdtkmg5" path="res://ai/tasks/bt_gather_from.gd" id="9_brwnp"]
 [ext_resource type="Script" uid="uid://darc1tfife328" path="res://ai/tasks/bt_deposit_materials.gd" id="10_8wn8u"]
 [ext_resource type="Script" uid="uid://dphd4vucjjkon" path="res://ai/tasks/bt_work_at_site.gd" id="10_mslhm"]
+[ext_resource type="Script" uid="uid://d1t0pcuknhrdp" path="res://ai/tasks/bt_check_idle.gd" id="15_bxk66"]
 
 [sub_resource type="BlackboardPlan" id="BlackboardPlan_bo4pt"]
 var/player_command_active/name = &"player_command_active"
@@ -55,6 +59,10 @@ var/is_delivering/type = 1
 var/is_delivering/value = false
 var/is_delivering/hint = 0
 var/is_delivering/hint_string = ""
+var/combat_target/name = &"combat_target"
+var/combat_target/type = 24
+var/combat_target/hint = 0
+var/combat_target/hint_string = ""
 
 [sub_resource type="BBVariant" id="BBVariant_ql6da"]
 type = 1
@@ -71,6 +79,24 @@ duration = 0.1
 [sub_resource type="BTSequence" id="BTSequence_iaxgs"]
 custom_name = "PlayerOverride"
 children = [SubResource("BTCheckVar_asu1a"), SubResource("BTWait_aa4xd")]
+
+[sub_resource type="BTCondition" id="BTCondition_kd5rg"]
+script = ExtResource("1_bxk66")
+
+[sub_resource type="BTAction" id="BTAction_j1a7u"]
+script = ExtResource("2_mslhm")
+
+[sub_resource type="BTSequence" id="BTSequence_43q60"]
+custom_name = "DefendBehavior"
+children = [SubResource("BTCondition_kd5rg"), SubResource("BTAction_j1a7u")]
+
+[sub_resource type="BTCondition" id="BTCondition_o5lmo"]
+script = ExtResource("3_d5ls8")
+break_type = "berserk"
+
+[sub_resource type="BTSequence" id="BTSequence_poor0"]
+custom_name = "BerserkBehavior"
+children = [SubResource("BTCondition_o5lmo")]
 
 [sub_resource type="BBVariant" id="BBVariant_8wn8u"]
 type = 1
@@ -162,6 +188,135 @@ value = SubResource("BBVariant_gstlw")
 [sub_resource type="BTSequence" id="BTSequence_20ryu"]
 custom_name = "HaulingSequence"
 children = [SubResource("BTCheckVar_hs587"), SubResource("BTCheckAgentProperty_sbexb"), SubResource("BTSetAgentProperty_43q60"), SubResource("BTPlayAnimation_ct5nu"), SubResource("BTAction_4ieae"), SubResource("BTAction_l8car"), SubResource("BTSetAgentProperty_dfl70"), SubResource("BTPlayAnimation_dt4te"), SubResource("BTSetAgentProperty_yica2"), SubResource("BTAction_3r3ns"), SubResource("BTSetAgentProperty_13mex")]
+
+[sub_resource type="BTCooldown" id="BTCooldown_bxk66"]
+duration = 5.0
+children = [SubResource("BTSequence_20ryu")]
+
+[sub_resource type="BTCondition" id="BTCondition_8wn8u"]
+script = ExtResource("6_brwnp")
+
+[sub_resource type="BTAction" id="BTAction_d5ls8"]
+script = ExtResource("3_resource")
+resource_group = "construction_sites"
+target_position_var = &"site_position"
+target_node_var = &"site_node"
+
+[sub_resource type="BTAction" id="BTAction_mslhm"]
+script = ExtResource("3_resource")
+resource_group = "workbenches"
+
+[sub_resource type="BTAction" id="BTAction_aul44"]
+script = ExtResource("2_move")
+stuck_timeout = 1.0
+
+[sub_resource type="BBVariant" id="BBVariant_hs587"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_y63l3"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_hs587")
+
+[sub_resource type="BTAction" id="BTAction_0m3en"]
+script = ExtResource("9_brwnp")
+source_type = "workbench"
+
+[sub_resource type="BBNode" id="BBNode_k7wm5"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_ullfr"]
+await_completion = 6.0
+animation_player = SubResource("BBNode_k7wm5")
+animation_name = &"taking_item"
+blend = 1.5
+speed = 0.5
+from_end = true
+
+[sub_resource type="BBVariant" id="BBVariant_mslhm"]
+type = 3
+saved_value = 0.5
+resource_name = "0.5"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_d5ls8"]
+property = &"speed_multiplier "
+value = SubResource("BBVariant_mslhm")
+
+[sub_resource type="BBVariant" id="BBVariant_43q60"]
+type = 1
+saved_value = false
+resource_name = "false"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_o5lmo"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_43q60")
+
+[sub_resource type="BBNode" id="BBNode_brwnp"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_8wn8u"]
+animation_player = SubResource("BBNode_brwnp")
+animation_name = &"carry_walk"
+blend = 1.5
+speed = 0.5
+
+[sub_resource type="BTAction" id="BTAction_ct5nu"]
+script = ExtResource("2_move")
+stuck_timeout = 1.0
+
+[sub_resource type="BBVariant" id="BBVariant_4ieae"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_l8car"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_4ieae")
+
+[sub_resource type="BTAction" id="BTAction_e4b4v"]
+script = ExtResource("10_8wn8u")
+
+[sub_resource type="BBNode" id="BBNode_dfl70"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_poor0"]
+await_completion = 6.0
+animation_player = SubResource("BBNode_dfl70")
+animation_name = &"taking_item"
+blend = 1.5
+speed = -0.5
+from_end = true
+
+[sub_resource type="BBVariant" id="BBVariant_8jgo4"]
+type = 1
+saved_value = false
+resource_name = "false"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_0m3en"]
+property = &"is_animation_locked"
+value = SubResource("BBVariant_8jgo4")
+
+[sub_resource type="BBVariant" id="BBVariant_aul44"]
+type = 3
+saved_value = 1.0
+resource_name = "1.0"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_kd5rg"]
+property = &"speed_multiplier "
+value = SubResource("BBVariant_aul44")
+
+[sub_resource type="BTSequence" id="BTSequence_d5ls8"]
+custom_name = "DeliverySequence"
+children = [SubResource("BTCondition_8wn8u"), SubResource("BTAction_d5ls8"), SubResource("BTAction_mslhm"), SubResource("BTAction_aul44"), SubResource("BTSetAgentProperty_y63l3"), SubResource("BTAction_0m3en"), SubResource("BTPlayAnimation_ullfr"), SubResource("BTSetAgentProperty_d5ls8"), SubResource("BTSetAgentProperty_o5lmo"), SubResource("BTPlayAnimation_8wn8u"), SubResource("BTAction_ct5nu"), SubResource("BTSetAgentProperty_l8car"), SubResource("BTAction_e4b4v"), SubResource("BTPlayAnimation_poor0"), SubResource("BTSetAgentProperty_0m3en"), SubResource("BTSetAgentProperty_kd5rg")]
+
+[sub_resource type="BTCooldown" id="BTCooldown_brwnp"]
+duration = 5.0
+trigger_on_failure = true
+children = [SubResource("BTSequence_d5ls8")]
 
 [sub_resource type="BBVariant" id="BBVariant_bxk66"]
 type = 3
@@ -336,6 +491,7 @@ resource_name = "UnitModel/AnimationPlayer"
 [sub_resource type="BTPlayAnimation" id="BTPlayAnimation_dfl70"]
 animation_player = SubResource("BBNode_s7c4l")
 animation_name = &"idle"
+speed = 0.5
 
 [sub_resource type="BTRandomWait" id="BTRandomWait_dt4te"]
 min_duration = 15.0
@@ -440,6 +596,7 @@ resource_name = "UnitModel/AnimationPlayer"
 animation_player = SubResource("BBNode_4ieae")
 animation_name = &"idle"
 blend = 1.0
+speed = 0.5
 
 [sub_resource type="BTRandomWait" id="BTRandomWait_k7wm5"]
 min_duration = 10.0
@@ -463,130 +620,24 @@ duration = 5.0
 trigger_on_failure = true
 children = [SubResource("BTSequence_rdl7w")]
 
-[sub_resource type="BTCondition" id="BTCondition_8wn8u"]
+[sub_resource type="BTCondition" id="BTCondition_rdl7w"]
 script = ExtResource("6_brwnp")
+stat_threshold = 20.0
 
-[sub_resource type="BTAction" id="BTAction_d5ls8"]
+[sub_resource type="BTAction" id="BTAction_k7wm5"]
 script = ExtResource("3_resource")
 resource_group = "construction_sites"
-target_position_var = &"site_position"
-target_node_var = &"site_node"
 
-[sub_resource type="BTAction" id="BTAction_mslhm"]
-script = ExtResource("3_resource")
-resource_group = "workbenches"
-
-[sub_resource type="BTAction" id="BTAction_aul44"]
+[sub_resource type="BTAction" id="BTAction_l2yjk"]
 script = ExtResource("2_move")
 stuck_timeout = 1.0
 
-[sub_resource type="BBVariant" id="BBVariant_hs587"]
-type = 1
-saved_value = true
-resource_name = "true"
+[sub_resource type="BTAction" id="BTAction_ullfr"]
+script = ExtResource("10_mslhm")
 
-[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_y63l3"]
-property = &"is_animation_locked"
-value = SubResource("BBVariant_hs587")
-
-[sub_resource type="BTAction" id="BTAction_0m3en"]
-script = ExtResource("9_brwnp")
-source_type = "workbench"
-
-[sub_resource type="BBNode" id="BBNode_k7wm5"]
-saved_value = NodePath("UnitModel/AnimationPlayer")
-resource_name = "UnitModel/AnimationPlayer"
-
-[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_ullfr"]
-await_completion = 6.0
-animation_player = SubResource("BBNode_k7wm5")
-animation_name = &"taking_item"
-blend = 1.5
-speed = 0.5
-from_end = true
-
-[sub_resource type="BBVariant" id="BBVariant_mslhm"]
-type = 3
-saved_value = 0.5
-resource_name = "0.5"
-
-[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_d5ls8"]
-property = &"speed_multiplier "
-value = SubResource("BBVariant_mslhm")
-
-[sub_resource type="BBVariant" id="BBVariant_43q60"]
-type = 1
-saved_value = false
-resource_name = "false"
-
-[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_o5lmo"]
-property = &"is_animation_locked"
-value = SubResource("BBVariant_43q60")
-
-[sub_resource type="BBNode" id="BBNode_brwnp"]
-saved_value = NodePath("UnitModel/AnimationPlayer")
-resource_name = "UnitModel/AnimationPlayer"
-
-[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_8wn8u"]
-animation_player = SubResource("BBNode_brwnp")
-animation_name = &"carry_walk"
-blend = 1.5
-speed = 0.5
-
-[sub_resource type="BTAction" id="BTAction_ct5nu"]
-script = ExtResource("2_move")
-stuck_timeout = 1.0
-
-[sub_resource type="BBVariant" id="BBVariant_4ieae"]
-type = 1
-saved_value = true
-resource_name = "true"
-
-[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_l8car"]
-property = &"is_animation_locked"
-value = SubResource("BBVariant_4ieae")
-
-[sub_resource type="BTAction" id="BTAction_e4b4v"]
-script = ExtResource("10_8wn8u")
-
-[sub_resource type="BBNode" id="BBNode_dfl70"]
-saved_value = NodePath("UnitModel/AnimationPlayer")
-resource_name = "UnitModel/AnimationPlayer"
-
-[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_poor0"]
-await_completion = 6.0
-animation_player = SubResource("BBNode_dfl70")
-animation_name = &"taking_item"
-blend = 1.5
-speed = -0.5
-from_end = true
-
-[sub_resource type="BBVariant" id="BBVariant_8jgo4"]
-type = 1
-saved_value = false
-resource_name = "false"
-
-[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_0m3en"]
-property = &"is_animation_locked"
-value = SubResource("BBVariant_8jgo4")
-
-[sub_resource type="BBVariant" id="BBVariant_aul44"]
-type = 3
-saved_value = 1.0
-resource_name = "1.0"
-
-[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_kd5rg"]
-property = &"speed_multiplier "
-value = SubResource("BBVariant_aul44")
-
-[sub_resource type="BTSequence" id="BTSequence_d5ls8"]
-custom_name = "DeliverySequence"
-children = [SubResource("BTCondition_8wn8u"), SubResource("BTAction_d5ls8"), SubResource("BTAction_mslhm"), SubResource("BTAction_aul44"), SubResource("BTSetAgentProperty_y63l3"), SubResource("BTAction_0m3en"), SubResource("BTPlayAnimation_ullfr"), SubResource("BTSetAgentProperty_d5ls8"), SubResource("BTSetAgentProperty_o5lmo"), SubResource("BTPlayAnimation_8wn8u"), SubResource("BTAction_ct5nu"), SubResource("BTSetAgentProperty_l8car"), SubResource("BTAction_e4b4v"), SubResource("BTPlayAnimation_poor0"), SubResource("BTSetAgentProperty_0m3en"), SubResource("BTSetAgentProperty_kd5rg")]
-
-[sub_resource type="BTCooldown" id="BTCooldown_brwnp"]
-duration = 5.0
-trigger_on_failure = true
-children = [SubResource("BTSequence_d5ls8")]
+[sub_resource type="BTSequence" id="BTSequence_mslhm"]
+custom_name = "ConstructingSequence"
+children = [SubResource("BTCondition_rdl7w"), SubResource("BTAction_k7wm5"), SubResource("BTAction_l2yjk"), SubResource("BTAction_ullfr")]
 
 [sub_resource type="BTCondition" id="BTCondition_d5ls8"]
 script = ExtResource("6_brwnp")
@@ -650,28 +701,9 @@ script = ExtResource("9_brwnp")
 custom_name = "GartheringSequence"
 children = [SubResource("BTCondition_d5ls8"), SubResource("BTCondition_y63l3"), SubResource("BTRandomSelector_0m3en"), SubResource("BTAction_y63l3"), SubResource("BTSetAgentProperty_8wn8u"), SubResource("BTPlayAnimation_sbexb"), SubResource("BTSetAgentProperty_m228g"), SubResource("BTAction_76sbw")]
 
-[sub_resource type="BTCondition" id="BTCondition_rdl7w"]
-script = ExtResource("6_brwnp")
-stat_threshold = 20.0
-
-[sub_resource type="BTAction" id="BTAction_k7wm5"]
-script = ExtResource("3_resource")
-resource_group = "construction_sites"
-
-[sub_resource type="BTAction" id="BTAction_l2yjk"]
-script = ExtResource("2_move")
-stuck_timeout = 1.0
-
-[sub_resource type="BTAction" id="BTAction_ullfr"]
-script = ExtResource("10_mslhm")
-
-[sub_resource type="BTSequence" id="BTSequence_mslhm"]
-custom_name = "ConstructingSequence"
-children = [SubResource("BTCondition_rdl7w"), SubResource("BTAction_k7wm5"), SubResource("BTAction_l2yjk"), SubResource("BTAction_ullfr")]
-
 [sub_resource type="BTSelector" id="BTSelector_d5ls8"]
 custom_name = "SeekWork"
-children = [SubResource("BTSequence_y63l3"), SubResource("BTSequence_mslhm")]
+children = [SubResource("BTSequence_mslhm"), SubResource("BTSequence_y63l3")]
 
 [sub_resource type="BTCooldown" id="BTCooldown_ct5nu"]
 duration = 5.0
@@ -773,8 +805,27 @@ duration = 5.0
 trigger_on_failure = true
 children = [SubResource("BTRandomSelector_mslhm")]
 
+[sub_resource type="BTCondition" id="BTCondition_mslhm"]
+script = ExtResource("15_bxk66")
+
+[sub_resource type="BBNode" id="BBNode_ullfr"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_m228g"]
+animation_player = SubResource("BBNode_ullfr")
+animation_name = &"idle"
+blend = 1.0
+speed = 0.5
+
+[sub_resource type="BTRandomWait" id="BTRandomWait_l2yjk"]
+
+[sub_resource type="BTSequence" id="BTSequence_ohlgy"]
+custom_name = "DefaultIdle"
+children = [SubResource("BTCondition_mslhm"), SubResource("BTPlayAnimation_m228g"), SubResource("BTRandomWait_l2yjk")]
+
 [sub_resource type="BTDynamicSelector" id="BTSelector_brwnp"]
-children = [SubResource("BTSequence_iaxgs"), SubResource("BTSequence_20ryu"), SubResource("BTCooldown_rdl7w"), SubResource("BTCooldown_4nm2s"), SubResource("BTCooldown_ihniq"), SubResource("BTCooldown_brwnp"), SubResource("BTCooldown_ct5nu"), SubResource("BTCooldown_g2gfv")]
+children = [SubResource("BTSequence_iaxgs"), SubResource("BTSequence_43q60"), SubResource("BTSequence_poor0"), SubResource("BTCooldown_bxk66"), SubResource("BTCooldown_brwnp"), SubResource("BTCooldown_rdl7w"), SubResource("BTCooldown_4nm2s"), SubResource("BTCooldown_ihniq"), SubResource("BTCooldown_ct5nu"), SubResource("BTCooldown_g2gfv"), SubResource("BTSequence_ohlgy")]
 
 [resource]
 blackboard_plan = SubResource("BlackboardPlan_bo4pt")

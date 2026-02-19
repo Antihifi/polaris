@@ -1,4 +1,4 @@
-[gd_resource type="AnimationLibrary" load_steps=38 format=3 uid="uid://b0ge5cs2gvvmk"]
+[gd_resource type="AnimationLibrary" load_steps=91 format=3 uid="uid://b0ge5cs2gvvmk"]
 
 [ext_resource type="Animation" uid="uid://d4e6787ptogww" path="res://characters/captain/zombie_dying.res" id="1_q6ypb"]
 [ext_resource type="Animation" uid="uid://bd8l0twbfypc3" path="res://characters/captain/walking.res" id="2_is6yv"]
@@ -36,6 +36,59 @@
 [ext_resource type="Animation" uid="uid://bvegxpverp0jb" path="res://characters/captain/crouch_to_stand.res" id="34_3vrv4"]
 [ext_resource type="Animation" uid="uid://dxvbyd4xup4my" path="res://characters/captain/stand_up_from_laying_down.res" id="35_is6yv"]
 [ext_resource type="Animation" uid="uid://ciyguj4e5cmmp" path="res://characters/captain/carry_walk.res" id="36_8ewem"]
+[ext_resource type="Animation" uid="uid://cq170kw2g6fa3" path="res://characters/captain/big_side_hit.res" id="37_ikfe1"]
+[ext_resource type="Animation" uid="uid://h5rx61k5i7u3" path="res://characters/captain/box_idle.res" id="38_wqpht"]
+[ext_resource type="Animation" uid="uid://cgv151e4asjym" path="res://characters/captain/box_walk_arc.res" id="39_6dvso"]
+[ext_resource type="Animation" uid="uid://cm0tbf8mojbfs" path="res://characters/captain/cheering.res" id="40_o3pys"]
+[ext_resource type="Animation" uid="uid://hcrjn7mc6yuq" path="res://characters/captain/climbing_to_top.res" id="41_x0iw8"]
+[ext_resource type="Animation" uid="uid://s8cconv78g6j" path="res://characters/captain/cow_milking.res" id="42_s4d4n"]
+[ext_resource type="Animation" uid="uid://cq2pu1s2orkxa" path="res://characters/captain/death_from_right.res" id="43_pdgsp"]
+[ext_resource type="Animation" uid="uid://d044ro2fip8ei" path="res://characters/captain/dismissing_gesture.res" id="44_4saj4"]
+[ext_resource type="Animation" uid="uid://cn64vqtwq705i" path="res://characters/captain/drunk_walk.res" id="45_17bam"]
+[ext_resource type="Animation" uid="uid://bxceuwf3o0mgx" path="res://characters/captain/golf_pre-_putt.res" id="46_cx274"]
+[ext_resource type="Animation" uid="uid://b15240atrnqra" path="res://characters/captain/grab_and_put_back_rifle.res" id="47_c6538"]
+[ext_resource type="Animation" uid="uid://by3v8hmmb8m3c" path="res://characters/captain/great_sword_slash.res" id="48_reoni"]
+[ext_resource type="Animation" uid="uid://cemf72hs08kyd" path="res://characters/captain/jab_cross.res" id="49_aic8o"]
+[ext_resource type="Animation" uid="uid://duyes3xsxxf0j" path="res://characters/captain/kick_to_the_groin.res" id="50_6p2o8"]
+[ext_resource type="Animation" uid="uid://dbel6nkxpa68p" path="res://characters/captain/kneeling_pointing.res" id="51_pce3k"]
+[ext_resource type="Animation" uid="uid://dsi6hwmvohkjp" path="res://characters/captain/laying_mild_cough.res" id="52_rqsxp"]
+[ext_resource type="Animation" uid="uid://c5by0rmmptrgp" path="res://characters/captain/laying_severe_cough.res" id="53_7pcbp"]
+[ext_resource type="Animation" uid="uid://cjfvo6u3mt3ef" path="res://characters/captain/mutant_punch.res" id="54_dt4st"]
+[ext_resource type="Animation" uid="uid://5fx63ywuy2yp" path="res://characters/captain/one_hand_sword_combo.res" id="55_5wk4v"]
+[ext_resource type="Animation" uid="uid://dptoruk2g2pyc" path="res://characters/captain/opening_(1).res" id="56_p8y1q"]
+[ext_resource type="Animation" uid="uid://bixr8jff0jf6n" path="res://characters/captain/praying.res" id="57_h83od"]
+[ext_resource type="Animation" uid="uid://tdhewel0etv5" path="res://characters/captain/praying_(1).res" id="58_43p07"]
+[ext_resource type="Animation" uid="uid://u5whxwo0nnss" path="res://characters/captain/praying_(2).res" id="59_5jxxl"]
+[ext_resource type="Animation" uid="uid://ccl5rwu4vda7" path="res://characters/captain/praying_(3).res" id="60_cqgoq"]
+[ext_resource type="Animation" uid="uid://e05nujfo64bd" path="res://characters/captain/punching.res" id="61_sy56a"]
+[ext_resource type="Animation" uid="uid://iarjtgbrn3s0" path="res://characters/captain/put_back_rifle_behind_shoulder.res" id="62_2eynd"]
+[ext_resource type="Animation" uid="uid://c65x636e0kmmb" path="res://characters/captain/run_with_sword.res" id="63_2eo2u"]
+[ext_resource type="Animation" uid="uid://dhk8kur74lbi3" path="res://characters/captain/sad_walk.res" id="64_vrcdv"]
+[ext_resource type="Animation" uid="uid://cwnpuhv3crdn7" path="res://characters/captain/salute.res" id="65_x8yim"]
+[ext_resource type="Animation" uid="uid://dlwm0332hrvjb" path="res://characters/captain/shooting_arrow.res" id="66_x8aqi"]
+[ext_resource type="Animation" uid="uid://cqry5j86u4tav" path="res://characters/captain/sitting3.res" id="67_3dk6b"]
+[ext_resource type="Animation" uid="uid://bbetou4bgiik2" path="res://characters/captain/sitting.res" id="68_nhngc"]
+[ext_resource type="Animation" uid="uid://csoyjmowsf3bb" path="res://characters/captain/sitting_(1).res" id="69_0qupi"]
+[ext_resource type="Animation" uid="uid://jh6ihdwcf18n" path="res://characters/captain/sitting_dazed.res" id="70_d8w4x"]
+[ext_resource type="Animation" uid="uid://65najy6j6ivj" path="res://characters/captain/sitting_yell.res" id="71_d0qkb"]
+[ext_resource type="Animation" uid="uid://dngb4tdl7w8h6" path="res://characters/captain/standard_walk.res" id="72_jy8po"]
+[ext_resource type="Animation" uid="uid://d378eh7wi0xcq" path="res://characters/captain/standing_greeting.res" id="73_4rj1t"]
+[ext_resource type="Animation" uid="uid://brx87qhpd6np4" path="res://characters/captain/standing_idle_to_fight_idle.res" id="74_085j0"]
+[ext_resource type="Animation" uid="uid://b4b3aur300vla" path="res://characters/captain/standing_melee_attack_360_low.res" id="75_nc8xf"]
+[ext_resource type="Animation" uid="uid://c7prg6nn0kqws" path="res://characters/captain/standing_melee_attack_downward.res" id="76_aua1o"]
+[ext_resource type="Animation" uid="uid://bagy035fqciyb" path="res://characters/captain/standing_melee_attack_horizontal.res" id="77_dpfdx"]
+[ext_resource type="Animation" uid="uid://d0r1kucrcygu4" path="res://characters/captain/standing_torch_idle_01.res" id="78_ev4rg"]
+[ext_resource type="Animation" uid="uid://bncx243vc3e4h" path="res://characters/captain/standing_torch_turn_left_180.res" id="79_6kbe0"]
+[ext_resource type="Animation" uid="uid://bldho5nnf47t6" path="res://characters/captain/standing_walk_forward.res" id="80_exi5w"]
+[ext_resource type="Animation" uid="uid://ck4o67kjdmvtf" path="res://characters/captain/strike_foward_jog.res" id="81_rrlwy"]
+[ext_resource type="Animation" uid="uid://iifdk1yfvxra" path="res://characters/captain/sword_and_shield_slash.res" id="82_tj1o8"]
+[ext_resource type="Animation" uid="uid://bhha0jwo4ehdx" path="res://characters/captain/unarmed_equip_over_shoulder.res" id="83_brek6"]
+[ext_resource type="Animation" uid="uid://cuh7w7thimmya" path="res://characters/captain/walking_backwards.res" id="84_5vs7w"]
+[ext_resource type="Animation" uid="uid://c4i4axbnp6ar2" path="res://characters/captain/yelling_while_standing.res" id="85_frjw6"]
+[ext_resource type="Animation" uid="uid://bjbl430r6ygkd" path="res://characters/captain/zombie_biting.res" id="86_1mqsb"]
+[ext_resource type="Animation" uid="uid://ce1mf1hd2vgyb" path="res://characters/captain/zombie_idle.res" id="87_pcda4"]
+[ext_resource type="Animation" uid="uid://dv80tbni207c0" path="res://characters/captain/zombie_idle_(1).res" id="88_h8aqv"]
+[ext_resource type="Animation" uid="uid://cycs10ggwhj1i" path="res://characters/captain/zombie_idle_(2).res" id="89_udnq2"]
 
 [sub_resource type="Animation" id="Animation_60dg1"]
 resource_name = "mixamo_com"
@@ -249,39 +302,92 @@ tracks/28/keys = PackedFloat32Array(0, 1, 0.31650126, -0.03156267, -0.04007384, 
 _data = {
 &"bash": ExtResource("3_8ewem"),
 &"being_carried": ExtResource("4_rl0u2"),
+&"big_side_hit": ExtResource("37_ikfe1"),
+&"box_idle": ExtResource("38_wqpht"),
+&"box_walk_arc": ExtResource("39_6dvso"),
 &"carry_walk": ExtResource("36_8ewem"),
 &"carrying": ExtResource("5_gm4up"),
 &"carrying_turn": ExtResource("6_kfw5d"),
+&"cheering": ExtResource("40_o3pys"),
+&"climbing_to_top": ExtResource("41_x0iw8"),
 &"closing_a_lid": ExtResource("7_6rhfq"),
+&"cow_milking": ExtResource("42_s4d4n"),
 &"crouch_to_stand": ExtResource("34_3vrv4"),
 &"crouching_idle": ExtResource("33_0ihd7"),
+&"death_from_right": ExtResource("43_pdgsp"),
+&"dismissing_gesture": ExtResource("44_4saj4"),
+&"drunk_walk": ExtResource("45_17bam"),
 &"dying": ExtResource("1_q6ypb"),
 &"firing_rifle": ExtResource("8_njd7c"),
 &"fishing_cast": ExtResource("9_rdjvj"),
+&"golf_pre-_putt": ExtResource("46_cx274"),
+&"grab_and_put_back_rifle": ExtResource("47_c6538"),
+&"great_sword_slash": ExtResource("48_reoni"),
 &"holding_walk": ExtResource("10_pagf0"),
 &"idle": SubResource("Animation_60dg1"),
+&"jab_cross": ExtResource("49_aic8o"),
+&"kick_to_the_groin": ExtResource("50_6p2o8"),
+&"kneeling_pointing": ExtResource("51_pce3k"),
+&"laying_mild_cough": ExtResource("52_rqsxp"),
+&"laying_severe_cough": ExtResource("53_7pcbp"),
 &"low_crawl": ExtResource("11_w1v5a"),
+&"mutant_punch": ExtResource("54_dt4st"),
+&"one_hand_sword_combo": ExtResource("55_5wk4v"),
+&"opening_(1)": ExtResource("56_p8y1q"),
 &"opening_a_lid": ExtResource("12_12t3s"),
 &"picking_up": ExtResource("13_oia4b"),
 &"pistol_idle": ExtResource("14_8ob20"),
 &"pistol_run": ExtResource("15_xeesw"),
 &"pistol_walk": ExtResource("16_q7y1h"),
+&"praying": ExtResource("57_h83od"),
+&"praying_(1)": ExtResource("58_43p07"),
+&"praying_(2)": ExtResource("59_5jxxl"),
+&"praying_(3)": ExtResource("60_cqgoq"),
+&"punching": ExtResource("61_sy56a"),
+&"put_back_rifle_behind_shoulder": ExtResource("62_2eynd"),
 &"rifle_idle": ExtResource("17_g6v4o"),
 &"rifle_run": ExtResource("18_xu2jm"),
 &"rifle_walk": ExtResource("19_cv1ut"),
 &"rifle_walk_to_stop": ExtResource("20_pks1r"),
+&"run_with_sword": ExtResource("63_2eo2u"),
+&"sad_walk": ExtResource("64_vrcdv"),
+&"salute": ExtResource("65_x8yim"),
+&"shooting_arrow": ExtResource("66_x8aqi"),
+&"sitting": ExtResource("68_nhngc"),
+&"sitting3": ExtResource("67_3dk6b"),
+&"sitting_(1)": ExtResource("69_0qupi"),
+&"sitting_dazed": ExtResource("70_d8w4x"),
 &"sitting_depressed": ExtResource("26_18m6u"),
 &"sitting_from_standing": ExtResource("30_ochv7"),
 &"sitting_gets_up_alerted": ExtResource("27_13ecw"),
 &"sitting_raising_hand": ExtResource("28_0d0dv"),
+&"sitting_yell": ExtResource("71_d0qkb"),
 &"sleeping_disturbed": ExtResource("29_nj3dn"),
 &"sleeping_idle": ExtResource("31_0d5u2"),
 &"sneaking_forward": ExtResource("21_ikktg"),
 &"stand_up": ExtResource("32_5cbkm"),
 &"stand_up_from_laying_down": ExtResource("35_is6yv"),
+&"standard_walk": ExtResource("72_jy8po"),
+&"standing_greeting": ExtResource("73_4rj1t"),
+&"standing_idle_to_fight_idle": ExtResource("74_085j0"),
+&"standing_melee_attack_360_low": ExtResource("75_nc8xf"),
+&"standing_melee_attack_downward": ExtResource("76_aua1o"),
+&"standing_melee_attack_horizontal": ExtResource("77_dpfdx"),
 &"standing_react_death_forward": ExtResource("22_yb11g"),
 &"standing_react_death_left": ExtResource("23_qdwqf"),
+&"standing_torch_idle_01": ExtResource("78_ev4rg"),
+&"standing_torch_turn_left_180": ExtResource("79_6kbe0"),
+&"standing_walk_forward": ExtResource("80_exi5w"),
+&"strike_foward_jog": ExtResource("81_rrlwy"),
 &"sword_and_shield_death": ExtResource("24_h5jng"),
+&"sword_and_shield_slash": ExtResource("82_tj1o8"),
 &"taking_item": ExtResource("25_5wkj5"),
-&"walking": ExtResource("2_is6yv")
+&"unarmed_equip_over_shoulder": ExtResource("83_brek6"),
+&"walking": ExtResource("2_is6yv"),
+&"walking_backwards": ExtResource("84_5vs7w"),
+&"yelling_while_standing": ExtResource("85_frjw6"),
+&"zombie_biting": ExtResource("86_1mqsb"),
+&"zombie_idle": ExtResource("87_pcda4"),
+&"zombie_idle_(1)": ExtResource("88_h8aqv"),
+&"zombie_idle_(2)": ExtResource("89_udnq2")
 }

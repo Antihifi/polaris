@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://15pgdibs1x2d"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Natives"
+brief_tooltip = "[Coming Soon]
+Discover Inuit camps to trade.
+Western goods for cold gear and food."
+implemented = false
+detailed_text = "[b]The Inuit — Coming Soon[/b]
+
+[i]Inuit families encountered Franklin's men on several occasions and offered food and aid. Their testimony, passed down through generations, was crucial to piecing together what happened to the expedition.[/i]
+
+Inuit communities on King William Island may become invaluable allies — if you can find them and earn their trust.
+
+• Discover Inuit camps on the island
+• Trade Western goods (tools, cloth, metal) for superior arctic gear and food
+• Inuit clothing and food are far better than anything you can salvage from the ship
+• How you treat them affects their willingness to trade
+
+Finding and befriending the Inuit dramatically improves your odds of survival."

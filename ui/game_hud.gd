@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## Main game HUD manager.
-## Contains time display (always visible) and character stats panel (on double-click).
+## Contains time display (always visible) and multi-panel stats system.
 ## Single-click selects, double-click opens stats panel.
+## Multiple stats panels can be open simultaneously.
 ## Add this as a CanvasLayer to your main scene.
 
 @onready var time_hud: Control = $TimeHUD
@@ -10,9 +11,20 @@ extends CanvasLayer
 
 var _selected_unit: ClickableUnit = null
 var _input_handler: Node = null
+var _panel_manager: UnitPanelManager = null
 
 
 func _ready() -> void:
+	# Create panel manager for multi-panel support
+	_panel_manager = UnitPanelManager.new()
+	_panel_manager.name = "UnitPanelManager"
+	add_child(_panel_manager)
+	_panel_manager.setup(self)
+
+	# Hide the static CharacterStats node (panels are now spawned dynamically)
+	if character_stats:
+		character_stats.visible = false
+
 	# Connect to input handler for double-click events
 	call_deferred("_connect_to_input_handler")
 	# Connect to units for deselection
@@ -58,33 +70,60 @@ func _on_survivors_spawned(_count: int) -> void:
 
 
 func _on_unit_double_clicked(unit: ClickableUnit) -> void:
-	## Show stats panel when unit is double-clicked.
+	## Open or focus stats panel for the double-clicked unit.
 	_selected_unit = unit
-	if character_stats and character_stats.has_method("show_for_unit"):
-		character_stats.show_for_unit(unit)
+	_panel_manager.open_stats_for_unit(unit)
 
 
 func _on_unit_deselected(unit: ClickableUnit) -> void:
-	## Hide stats panel if this was the selected unit.
+	## Track deselection but do NOT close panels.
+	## With multi-panel support, panels persist until explicitly closed.
 	if unit == _selected_unit:
 		_selected_unit = null
-		if character_stats and character_stats.has_method("hide_panel"):
-			character_stats.hide_panel()
+
+
+func _get_selected_unit() -> ClickableUnit:
+	## Get the currently selected unit for C key toggle.
+	if _selected_unit and is_instance_valid(_selected_unit):
+		return _selected_unit
+	# Fallback: query input handler
+	if _input_handler and _input_handler.has_method("has_selection") and _input_handler.has_selection():
+		var selected: Array = _input_handler.get_selected_units()
+		if not selected.is_empty() and selected[0] is ClickableUnit:
+			return selected[0] as ClickableUnit
+	# Fallback: SelectionManager
+	var selection_mgr := get_node_or_null("/root/SelectionManager")
+	if selection_mgr and selection_mgr.has_method("has_selection") and selection_mgr.has_selection():
+		var unit: Node = selection_mgr.get_first_selected()
+		if unit is ClickableUnit:
+			return unit as ClickableUnit
+	return null
 
 
 func _input(event: InputEvent) -> void:
-	# Note: ESC/ui_cancel is handled by DebugMenu
-	# Space to pause/unpause
-	if event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
-			KEY_SPACE:
-				_toggle_pause()
-			KEY_1:
-				_set_time_scale(1.0)
-			KEY_2:
-				_set_time_scale(2.0)
-			KEY_3:
-				_set_time_scale(4.0)
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+
+	var key := event as InputEventKey
+	match key.keycode:
+		KEY_SPACE:
+			_toggle_pause()
+		KEY_1:
+			_set_time_scale(1.0)
+		KEY_2:
+			_set_time_scale(2.0)
+		KEY_3:
+			_set_time_scale(4.0)
+		KEY_C:
+			# Toggle stats panel for the currently selected unit
+			var unit: ClickableUnit = _get_selected_unit()
+			if unit:
+				_panel_manager.toggle_stats_for_unit(unit)
+		KEY_ESCAPE:
+			# Close the most recently focused panel
+			if _panel_manager.has_any_panel_open():
+				_panel_manager.close_topmost()
+				get_viewport().set_input_as_handled()
 
 
 func _toggle_pause() -> void:

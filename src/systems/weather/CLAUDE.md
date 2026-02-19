@@ -17,20 +17,53 @@ Snow and blizzard effects with smooth transitions, integrating with Sky3D for re
 The weather system uses a multi-layer approach for realistic blizzard effects:
 
 ```
-SnowController
-├── Snow Particles (GPUParticles3D)
-│   └── Follow camera, spawn upwind, drift with wind
-├── Global Volumetric Fog (Environment)
-│   └── Base haze layer visible from all angles
-├── Screen-Space Post-Process Fog (MeshInstance3D + Shader)
-│   └── Raymarched volumetric bands with triangle noise
-├── Sky3D Integration
-│   └── Wind, sun/ambient energy, SkyDome clouds, light tint
-└── Camera Far Plane
-    └── Distance clipping for true visibility reduction
+DynamicWeatherController (orchestrator)
+├── 6 intensity levels: Clear, Very Light, Light, Light-Medium, Medium, Heavy
+├── Per-intensity cloud targets (cumulus_coverage, thickness, absorption, etc.)
+└── SnowController (manager)
+    ├── Two-Phase Transition State Machine
+    │   ├── Start: CLOUD_BUILDING -> WEATHER_ACTIVE
+    │   └── Stop:  WEATHER_CLEARING -> CLOUD_CLEARING
+    ├── Snow Particles (GPUParticles3D)
+    │   └── Follow camera, spawn upwind, drift with wind
+    ├── Global Volumetric Fog (Environment)
+    │   └── Base haze layer visible from all angles
+    ├── Screen-Space Post-Process Fog (MeshInstance3D + Shader)
+    │   └── Raymarched volumetric bands with triangle noise
+    ├── Sky3D Integration
+    │   └── Wind, sun/ambient energy, SkyDome clouds, light tint
+    └── Camera Far Plane
+        └── Distance clipping for true visibility reduction
 ```
 
 **Critical:** The camera far plane reduction is what actually hides distant mountains during blizzards, not just the fog.
+
+### Two-Phase Cloud Transition
+
+Clouds build up BEFORE snow starts and dissipate AFTER snow stops:
+
+**Starting snow:** `CLOUD_BUILDING` (4-8s) -> `WEATHER_ACTIVE` (transition_duration)
+- Phase 1: SkyDome cloud properties transition to overcast (cumulus_coverage, thickness, absorption, atmosphere)
+- Phase 2: Particles, fog, camera far, wind, sun energy transition in
+
+**Stopping snow:** `WEATHER_CLEARING` (transition_duration) -> `CLOUD_CLEARING` (5-10s)
+- Phase 1: Particles, fog, camera, lighting clear first
+- Phase 2: Clouds and atmosphere gradually return to original values
+
+**Intensity change while snowing:** Both cloud + weather transition simultaneously (no cloud buildup delay since clouds are already present).
+
+### Cloud Coverage by Intensity
+
+| Intensity | Cloud Cover | Sky Visible? | Shadow Opacity |
+|-----------|-------------|--------------|----------------|
+| Very Light | cumulus 0.70, partial | Yes | 0.7 |
+| Light | cumulus 0.80, moderate | Yes | 0.5 |
+| Light-Medium | cumulus 1.0, full | No | 0.2 |
+| Medium | cumulus 1.0, full | No | 0.1 |
+| Heavy | cumulus 1.0, full + dark | No (ominous) | 0.0 |
+
+Key properties for sky obscuring: `cumulus_coverage` (area), `cumulus_thickness` (depth), `cumulus_absorption` (opacity).
+Shadow opacity controlled via `sky3d.sun_shadow_opacity`.
 
 ---
 
@@ -166,28 +199,19 @@ signal snow_stopped
 signal snow_intensity_changed(from: SnowIntensity, to: SnowIntensity)
 ```
 
-### Snow Intensity Enum
+### Enums
 ```gdscript
-enum SnowIntensity {
-    NONE,   # Clear weather
-    LIGHT,  # Light snowfall, moderate visibility
-    HEAVY   # Blizzard, severely reduced visibility
-}
+enum SnowIntensity { NONE, LIGHT, HEAVY }
+enum TransitionPhase { IDLE, CLOUD_BUILDING, WEATHER_ACTIVE, WEATHER_CLEARING, CLOUD_CLEARING }
 ```
 
 ### Key Exports
 
 ```gdscript
-@export var sky3d: Node                        # Sky3D reference (auto-found if null)
-@export var transition_duration: float = 5.0  # Seconds for smooth transitions
-
-# Light Snow
-@export var light_fog_shader_density: float = 0.015
-@export var light_camera_far_ratio: float = 0.4
-
-# Heavy Blizzard
-@export var heavy_fog_shader_density: float = 0.04
-@export var heavy_camera_far_ratio: float = 0.0375
+@export var sky3d: Node                            # Sky3D reference (auto-found if null)
+@export var transition_duration: float = 5.0       # Weather transition duration (seconds)
+@export var cloud_buildup_duration: float = 6.0    # Cloud buildup before snow (seconds)
+@export var cloud_clearing_duration: float = 8.0   # Cloud clearing after snow (seconds)
 
 # Fog Shader Tuning
 @export var fog_noise_scale: float = 0.008
@@ -202,11 +226,26 @@ func start_snow(intensity: SnowIntensity = SnowIntensity.LIGHT) -> void
 func stop_snow() -> void
 func set_snow_immediate(intensity: SnowIntensity) -> void
 func is_snowing() -> bool
+func set_cloud_targets(targets: Dictionary) -> void      # Per-event cloud overrides
+func get_start_transition_duration() -> float             # cloud_buildup + transition
+func get_stop_transition_duration() -> float              # transition + cloud_clearing
 ```
 
 ---
 
 ## Implementation Details
+
+### Snapshot-Based Transitions
+
+Transitions use **state snapshots** to prevent abrupt jumps when interrupted mid-phase. At each phase boundary (start, stop, phase change), the actual current values are read from engine nodes and stored in `_snapshot_weather` and `_snapshot_clouds` dictionaries. The transition then lerps from snapshot → target, ensuring smooth behavior even if `stop_snow()` is called during cloud buildup or weather transition.
+
+### Shadow Fading
+
+Sun shadow opacity fades proportionally with cloud coverage via `sky3d.sun_shadow_opacity`. This is lerped during cloud transitions alongside SkyDome properties. Values range from 1.0 (clear) to 0.0 (heavy blizzard). DynamicWeatherController provides per-intensity shadow targets.
+
+### Event Durations
+
+DynamicWeatherController configures event durations in **game hours** (not minutes). At default 15-minute day cycle: 1 game hour ≈ 37.5 real seconds. Events range from ~37s (heavy blizzard) to ~300s (clear weather).
 
 ### Wind Speed Smoothing
 

@@ -47,6 +47,7 @@ var is_paused: bool = false
 # Internal tracking
 var _last_hour: int = -1
 var _last_day: int = -1
+var _last_ten_minute_mark: int = -1  # Tracks 10-minute intervals (0-143 per day)
 var _weather_controller: Node = null  # DynamicWeatherController reference
 
 # Season configurations (temperature only - Sky3D handles lighting)
@@ -98,7 +99,9 @@ func _find_sky3d() -> void:
 		var tod: Node = sky3d.tod
 		if tod:
 			tod.time_changed.connect(_on_sky3d_time_changed)
-			tod.day_changed.connect(_on_sky3d_day_changed)
+			# Day detection is handled by _sync_from_sky3d via _last_day tracking.
+			# Do NOT also connect day_changed — that causes _on_day_advanced to fire
+			# twice per day, doubling day counts for all listeners (destruction scheduler, etc.)
 			print("[TimeManager] Connected to Sky3D TimeOfDay signals")
 	else:
 		print("[TimeManager] WARNING: Sky3D not found, using fallback time system")
@@ -196,12 +199,19 @@ func _sync_from_sky3d() -> void:
 	var sky_hour := int(tod.current_time)
 	var sky_day: int = tod.day
 
-	# Check for hour change
+	# 10-minute stat update tick (6 per hour for smoother stat progression)
+	var ten_min_mark := int(tod.current_time * 6)  # 0-143 per day
+	if ten_min_mark != _last_ten_minute_mark:
+		_last_ten_minute_mark = ten_min_mark
+		_update_survivor_needs()
+
+	# Check for hour change (ambient barks, signals)
 	if sky_hour != _last_hour:
 		_last_hour = sky_hour
 		current_hour = sky_hour
 		hour_passed.emit(current_hour, current_day)
-		_update_survivor_needs()
+		_trigger_ambient_barks(get_tree().get_nodes_in_group("survivors"))
+		_check_mental_breaks(get_tree().get_nodes_in_group("survivors"))
 
 	# Check for day change
 	if sky_day != _last_day and _last_day != -1:
@@ -214,11 +224,6 @@ func _sync_from_sky3d() -> void:
 func _on_sky3d_time_changed(_value: float) -> void:
 	## Called when Sky3D time changes.
 	pass  # We handle this in _sync_from_sky3d for smoother tracking
-
-
-func _on_sky3d_day_changed(_value: int) -> void:
-	## Called when Sky3D day changes.
-	_on_day_advanced()
 
 
 func _on_day_advanced() -> void:
@@ -282,8 +287,11 @@ func _update_sky3d_time_scale() -> void:
 
 #TODO: FIX NEAR FIRE CHECK TO SEND TO TIME MANAGER?
 
+## Stat update interval: 10 in-game minutes = 1/6 hour
+const STAT_UPDATE_DELTA_HOURS: float = 1.0 / 6.0
+
 func _update_survivor_needs() -> void:
-	## Called each in-game hour to update all survivor needs.
+	## Called every 10 in-game minutes to update all survivor needs.
 	## Shelter/fire proximity is now tracked via Area3D on each unit.
 	var survivors := get_tree().get_nodes_in_group("survivors")
 	var temp := get_current_temperature()
@@ -302,10 +310,7 @@ func _update_survivor_needs() -> void:
 			var near_fire := false
 			if node.has_method("is_near_fire"):
 				near_fire = node.is_near_fire()
-			node.update_needs(1.0, in_shelter, near_fire, temp, in_sunlight, blizzard)
-
-	# Trigger ambient barks (Kenshi-style flavor dialog)
-	_trigger_ambient_barks(survivors)
+			node.update_needs(STAT_UPDATE_DELTA_HOURS, in_shelter, near_fire, temp, in_sunlight, blizzard)
 
 
 # --- Time Control ---
@@ -545,6 +550,7 @@ func reduce_rescue_timer(days: int) -> void:
 func _trigger_ambient_barks(survivors: Array) -> void:
 	## Trigger ambient barks from 1-2 random units each hour.
 	## Barks reflect current conditions (cold, hungry, etc.) or idle chatter.
+	## Barks are staggered with random delays to prevent overlapping.
 	if survivors.is_empty():
 		return
 
@@ -557,6 +563,8 @@ func _trigger_ambient_barks(survivors: Array) -> void:
 	var shuffled: Array = survivors.duplicate()
 	shuffled.shuffle()
 
+	# Stagger barks so they don't all fire in the same frame
+	var delay: float = randf_range(0.5, 3.0)
 	for i in mini(bark_count, shuffled.size()):
 		var unit: Node = shuffled[i]
 		if not unit.has_method("bark"):
@@ -567,7 +575,30 @@ func _trigger_ambient_barks(survivors: Array) -> void:
 			continue
 
 		var category := _pick_bark_category(unit)
-		unit.bark(category)
+		_schedule_delayed_bark(unit, category, delay)
+		delay += randf_range(5.0, 12.0)
+
+
+func _schedule_delayed_bark(unit: Node, category: String, delay: float) -> void:
+	## Fire a bark after a delay. Validates the unit is still alive when the timer fires.
+	get_tree().create_timer(delay).timeout.connect(func() -> void:
+		if is_instance_valid(unit) and unit.has_method("bark"):
+			if not ("is_dead" in unit and unit.is_dead):
+				unit.bark(category)
+	)
+
+
+func _check_mental_breaks(survivors: Array) -> void:
+	## Check each survivor for mental break conditions (morale < 25%).
+	for node in survivors:
+		if not is_instance_valid(node):
+			continue
+		# Skip dead units
+		if "is_dead" in node and node.is_dead:
+			continue
+		# Check mental break
+		if node.has_method("check_mental_break"):
+			node.check_mental_break()
 
 
 func _pick_bark_category(unit: Node) -> String:

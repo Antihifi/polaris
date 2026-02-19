@@ -22,6 +22,8 @@ var _snow_controller: PackedScene = preload("res://src/systems/weather/snow_cont
 var _scenario_panel_scene: PackedScene = preload("res://ui/scenario_panel.tscn")
 var _tutorial_panel_scene: PackedScene = preload("res://ui/tutorial_panel.tscn")
 var _terrain_config_scene: PackedScene = preload("res://terrain/procedural_terrain_config.tscn")
+## Terrain generation parameters (erosion, heights, etc.) - edited via TerrainParamsDock
+var _terrain_config: TerrainConfig = preload("res://terrain/terrain_params.tres")
 var _water_scene: PackedScene = preload("res://terrain/water.tscn")
 var _aurora_controller_scene: PackedScene = preload("res://src/effects/aurora_controller.tscn")
 var _ui_theme: Theme = preload("res://ui/MinimalUI.tres")
@@ -244,6 +246,19 @@ func _generate_heightmap() -> void:
 		TERRAIN_RESOLUTION, TERRAIN_RESOLUTION,
 		_island_mask, height_rng, config
 	)
+
+	# Post-processing: smooth steep slopes FIRST (creates nav-passable gaps)
+	HeightmapGenerator.smooth_steep_slopes(_heightmap, _island_mask, METERS_PER_PIXEL, 35.0, 80)
+
+	# Apply hydraulic erosion AFTER smoothing using GPU compute shader
+	# Uses erosion params from terrain_params.tres so editor changes apply
+	GPUErosion.apply_hydraulic_erosion_gpu(_heightmap, _island_mask, _terrain_config, METERS_PER_PIXEL)
+
+	# Eliminate sugarloaf peaks on north coast (aggressive smoothing)
+	HeightmapGenerator.smooth_by_latitude(_heightmap, _island_mask, 0.0, 0.35, 3)
+
+	# Smooth southern flatlands for easier navigation
+	HeightmapGenerator.smooth_by_latitude(_heightmap, _island_mask, 0.65, 1.0, 2)
 
 
 func _create_demo_terrain_config() -> TerrainConfig:
@@ -565,6 +580,9 @@ func _spawn_entities_at(spawn_pos: Vector3, ship_pos: Vector3) -> void:
 	# Errant groups
 	_spawn_errant_groups(rng, ship_pos)
 
+	# Polar bears on north coast (5 for demo - reduced for performance)
+	character_spawner.spawn_polar_bears(5, _island_mask, WORLD_SIZE_METERS, true)
+
 	# Finalize captain setup
 	_finalize_captain_setup.call_deferred()
 
@@ -600,6 +618,11 @@ func _spawn_fragmented_ship(ship_pos: Vector3) -> void:
 	_simplified_ship_node.name = "Errebus_Simplified_Pre_Destruction_Meshes"
 	_simplified_ship_node.position = Vector3.ZERO
 	ship.add_child(_simplified_ship_node)
+
+	# Add ShipResourceComponent early so units can gather before ship swap.
+	var resource_comp := ShipResourceComponent.new()
+	resource_comp.name = "ShipResourceComponent"
+	ship.add_child(resource_comp)
 
 	# Resource nodes on PORT side (+X), parented to scene root (won't sink with ship)
 	var resource_nodes: Node3D = _resource_nodes_scene.instantiate()
@@ -656,11 +679,6 @@ func _swap_to_fragmented_ship() -> void:
 	erebus.name = "ErebusFragmentedV1"
 	erebus.position = Vector3(0, SHIP_MODEL_Y_OFFSET, 0)
 	ship.add_child(erebus)
-
-	# Add ShipResourceComponent (on the erebus node, like ship_1.tscn)
-	var resource_comp := ShipResourceComponent.new()
-	resource_comp.name = "ShipResourceComponent"
-	erebus.add_child(resource_comp)
 
 	# Initialize demolition controller now that ship_root exists
 	var demolition := ship.get_node_or_null("DemolitionTestController")
@@ -1270,6 +1288,12 @@ func _on_butcher_confirmed(corpse: Node3D) -> void:
 	## Create corpse inventory with body parts after butcher confirmation.
 	if not corpse or not is_instance_valid(corpse):
 		return
+	# Validate: must have a selected unit with a hatchet
+	var selected: Array[Node] = _input_handler.get_selected_units() if _input_handler else []
+	var butcher_unit: Node = selected[0] if not selected.is_empty() else null
+	if not butcher_unit or not butcher_unit.has_method("has_item_by_id") or not butcher_unit.has_item_by_id("hatchet"):
+		push_warning("[DemoGame] Butcher attempted without selected unit with hatchet!")
+		return
 	var protoset: JSON = load("res://data/items_protoset.json")
 	var corpse_inv := Inventory.new()
 	corpse_inv.name = "CorpseInventory"
@@ -1309,6 +1333,12 @@ func _open_corpse_inventory(corpse: Node, corpse_inv: Inventory) -> void:
 
 func _handle_carve(item: InventoryItem) -> void:
 	if not item or not is_instance_valid(item):
+		return
+	# Validate: must have a selected unit with a knife
+	var selected: Array[Node] = _input_handler.get_selected_units() if _input_handler else []
+	var carver_unit: Node = selected[0] if not selected.is_empty() else null
+	if not carver_unit or not carver_unit.has_method("has_item_by_id") or not carver_unit.has_item_by_id("knife"):
+		push_warning("[DemoGame] Carve attempted without selected unit with knife!")
 		return
 	var inv: Inventory = item.get_inventory()
 	if not inv:

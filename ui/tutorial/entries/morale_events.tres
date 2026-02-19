@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://dft1p3ewr1ac"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Morale Events"
+brief_tooltip = "[Coming Soon]
+Low morale (<25%) triggers mental breaks.
+Berserk, food binge, or worse."
+implemented = false
+detailed_text = "[b]Mental Breaks — Coming Soon[/b]
+
+[i]Accounts from the real expedition's final days suggest men broke under the strain — some reportedly turned violent, others wandered off alone. Prolonged starvation, cold, and despair can destroy a man's mind as surely as his body.[/i]
+
+When morale falls dangerously low, a man may snap. The results are unpredictable and always destructive.
+
+• [b]Berserk[/b] — A man lashes out violently at those around him
+• [b]Food Binge[/b] — A man devours food stores recklessly, wasting precious supplies
+• [b]Wendigo[/b] — In the worst cases, a starving, broken man may kill and eat others
+
+Witnessing death, going hungry, enduring prolonged isolation, and certain personality traits all increase the risk.
+
+[b]Prevention[/b]
+
+Keep morale from collapsing. Shelter, food, companionship, and avoiding unnecessary deaths are your best tools. Once a man breaks, the damage is done."

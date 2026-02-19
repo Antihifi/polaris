@@ -296,9 +296,12 @@ func get_most_critical_need() -> String:
 	return most_critical
 
 
-func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, is_near_fire: bool,
-		ambient_temperature: float, is_in_sunlight: bool = true, is_blizzard: bool = false) -> void:
-	## Called once per in-game hour to update needs.
+func apply_hourly_decay(delta_hours: float, is_working: bool, is_in_shelter: bool, is_in_bed: bool, is_near_fire: bool,
+		ambient_temperature: float, is_in_sunlight: bool = true, is_blizzard: bool = false,
+		is_near_captain: bool = false, is_near_personable: bool = false,
+		is_butchering_horrified: bool = false) -> void:
+	## Called periodically (every 10 in-game minutes) to update needs.
+	## delta_hours scales all rates (1.0 = full hour, 1/6 = 10 minutes).
 	## Uses cascading multipliers: low energy/warmth increase hunger drain, etc.
 	## is_blizzard applies extra morale and warmth penalties per GDD.
 
@@ -312,7 +315,7 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 		var cold_x: float = -ambient_temperature - 10.0
 		hunger_drain += 0.003 * cold_x * cold_x  # +0.3/hr at -20, +1.2 at -30, +7.5 at -60
 
-	hunger -= hunger_drain
+	hunger -= hunger_drain * delta_hours
 
 	# Warmth affected by environment
 	var warmth_change: float = 0.0
@@ -338,7 +341,7 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 		cold_effect += 3.0  # Significant extra cold from blizzard winds
 
 	warmth_change -= maxf(cold_effect, 0.0)
-	warmth += warmth_change
+	warmth += warmth_change * delta_hours
 
 	# Energy management - affected by working, health, and other conditions
 	var energy_change: float = 0.0
@@ -372,7 +375,7 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 	if energy > max_energy:
 		energy_change -= minf(energy - max_energy, 5.0)
 
-	energy += energy_change
+	energy += energy_change * delta_hours
 
 	# Morale decay with critical state multiplier
 	var morale_drain := morale_decay_rate * get_critical_state_multiplier()
@@ -388,26 +391,37 @@ func apply_hourly_decay(is_working: bool, is_in_shelter: bool, is_in_bed: bool, 
 		else:
 			morale_drain += 1.0  # Full GDD blizzard penalty when exposed
 
-	morale -= morale_drain
+	# Butchering horror: extra morale drain until counteracted
+	if is_butchering_horrified:
+		morale_drain += 2.0
+
+	morale -= morale_drain * delta_hours
+
+	# Captain aura morale boost (+1/hr)
+	if is_near_captain:
+		morale += 1.0 * delta_hours
+	# Personable crew aura morale boost (+0.5/hr)
+	if is_near_personable:
+		morale += 0.5 * delta_hours
 
 	# Dying condition - stats at 0 cause rapid health loss
 	if is_dying():
 		dying_cause = get_dying_cause()
-		health -= DYING_HEALTH_DRAIN
+		health -= DYING_HEALTH_DRAIN * delta_hours
 	else:
 		# Health damage from critical needs (slower than dying)
 		if is_starving():
-			health -= 2.0
+			health -= 2.0 * delta_hours
 		if is_freezing():
-			health -= 3.0
+			health -= 3.0 * delta_hours
 
 	# Strength management - sapped by low stats, recovers when all stats healthy
 	var strength_drain: float = get_strength_drain()
 	if strength_drain > 0.0:
-		current_strength -= strength_drain
+		current_strength -= strength_drain * delta_hours
 	elif can_recover_strength() and current_strength < base_strength:
 		# Recovery: +0.5/hr when all stats above 75%
-		current_strength += 0.5
+		current_strength += 0.5 * delta_hours
 
 
 func get_energy_drain_multiplier() -> float:

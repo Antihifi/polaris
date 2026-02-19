@@ -92,6 +92,15 @@ const TOOLTIPS := {
 	"peak_3_y": "North-south position of peak 3 (0=north, 1=south).",
 	"peak_3_height": "Maximum height of peak 3 in meters.",
 	"peak_3_radius": "Size/spread of peak 3. Larger = wider mountain.",
+	# Hydraulic erosion parameters
+	"erosion_enabled": "Master toggle for hydraulic erosion pass. Creates branching channel networks.",
+	"erosion_tiles": "Scale of erosion pattern. Higher = smaller, more frequent erosion features.",
+	"erosion_octaves": "Detail levels for erosion. More octaves = finer branching channels.",
+	"erosion_gain": "Amplitude falloff per octave. Lower = sharper detail contrast.",
+	"erosion_lacunarity": "Frequency multiplier per octave. Higher = more variation between detail levels.",
+	"erosion_slope_strength": "How strongly erosion follows terrain slopes. Higher = erosion concentrates on steep areas.",
+	"erosion_branch_strength": "KEY PARAMETER: How much channels branch and split. Higher = more rivulet patterns.",
+	"erosion_strength": "Maximum height modification. Higher = deeper carved channels.",
 }
 
 
@@ -264,6 +273,19 @@ func _build_ui() -> void:
 
 	vbox.add_child(HSeparator.new())
 
+	# ============== HYDRAULIC EROSION ==============
+	_add_section_header(vbox, "HYDRAULIC EROSION")
+	_add_checkbox(vbox, "erosion_enabled", "Enable Erosion")
+	_add_slider(vbox, "erosion_tiles", "Erosion Scale", 1.0, 8.0, 0.5)
+	_add_slider(vbox, "erosion_octaves", "Detail Octaves", 1.0, 8.0, 1.0)
+	_add_slider(vbox, "erosion_slope_strength", "Slope Strength", 1.0, 6.0, 0.5)
+	_add_slider(vbox, "erosion_branch_strength", "Branch Strength", 1.0, 6.0, 0.5)
+	_add_slider(vbox, "erosion_strength", "Erosion Amount", 0.01, 0.20, 0.01)
+	_add_slider(vbox, "erosion_gain", "Octave Gain", 0.3, 0.7, 0.05)
+	_add_slider(vbox, "erosion_lacunarity", "Octave Lacunarity", 1.5, 3.0, 0.1)
+
+	vbox.add_child(HSeparator.new())
+
 	# ============== PEAK 1 ==============
 	_add_section_header(vbox, "MOUNTAIN PEAK 1")
 	_add_checkbox(vbox, "peak_1_enabled", "Peak 1 Enabled")
@@ -432,6 +454,11 @@ func _generate_preview() -> void:
 	var heightmap := HeightmapGenerator.generate_heightmap(
 		size, size, island_mask, height_rng, _config
 	)
+
+	# Apply hydraulic erosion (same as runtime generation)
+	var erosion_rng := RandomNumberGenerator.new()
+	erosion_rng.seed = 12345 + 999
+	HeightmapGenerator.apply_hydraulic_erosion(heightmap, island_mask, erosion_rng, _config)
 
 	# Cache heightmap for 3D mesh generation
 	_cached_heightmap = heightmap
@@ -822,6 +849,11 @@ func _generate_popup_mesh() -> void:
 	var height_rng := RandomNumberGenerator.new()
 	height_rng.seed = 12345
 	var heightmap := HeightmapGenerator.generate_heightmap(size, size, island_mask, height_rng, _config)
+
+	# Apply hydraulic erosion
+	var erosion_rng := RandomNumberGenerator.new()
+	erosion_rng.seed = 12345 + 999
+	HeightmapGenerator.apply_hydraulic_erosion(heightmap, island_mask, erosion_rng, _config)
 
 	var mesh := _heightmap_to_mesh(heightmap)
 	_popup_mesh_instance.mesh = mesh

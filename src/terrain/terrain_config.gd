@@ -77,6 +77,19 @@ extends Resource
 @export_range(100.0, 400.0, 10.0) var peak_3_height: float = 320.0
 @export_range(0.05, 0.3, 0.01) var peak_3_radius: float = 0.10
 
+## ============== HYDRAULIC EROSION ==============
+## Directional erosion that creates branching channel networks
+## Based on Clay John's Shadertoy algorithm
+@export_group("Hydraulic Erosion")
+@export var erosion_enabled: bool = true  ## Master toggle for erosion pass
+@export_range(1.0, 8.0, 0.5) var erosion_tiles: float = 4.0  ## Scale of erosion pattern
+@export_range(1, 8, 1) var erosion_octaves: int = 5  ## Detail levels (more = finer channels)
+@export_range(0.3, 0.7, 0.05) var erosion_gain: float = 0.5  ## Amplitude falloff per octave
+@export_range(1.5, 3.0, 0.1) var erosion_lacunarity: float = 2.0  ## Frequency multiplier per octave
+@export_range(1.0, 6.0, 0.5) var erosion_slope_strength: float = 3.0  ## How much erosion follows slopes
+@export_range(1.0, 6.0, 0.5) var erosion_branch_strength: float = 3.0  ## Branching intensity (KEY parameter)
+@export_range(0.01, 0.20, 0.01) var erosion_strength: float = 0.04  ## Max height modification factor
+
 ## ============== NAVIGATION PARAMETERS ==============
 @export_group("Navigation")
 @export_range(0.1, 2.0, 0.1) var nav_cell_size: float = 0.5  ## Horizontal voxel size
@@ -178,6 +191,15 @@ func reset_to_defaults() -> void:
 	peak_3_y = 0.25
 	peak_3_height = 320.0
 	peak_3_radius = 0.10
+
+	erosion_enabled = true
+	erosion_tiles = 4.0
+	erosion_octaves = 5
+	erosion_gain = 0.5
+	erosion_lacunarity = 2.0
+	erosion_slope_strength = 3.0
+	erosion_branch_strength = 3.0
+	erosion_strength = 0.04
 
 	nav_cell_size = 0.5
 	nav_cell_height = 0.15

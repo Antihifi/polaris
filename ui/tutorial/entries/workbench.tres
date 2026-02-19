@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://dmku5k5sjxjo6"]
+
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Workbench"
+brief_tooltip = "Right-click workbench to open crafting panel.
+View available recipes and material costs.
+Central hub for all construction projects."
+detailed_text = "[b]The Workbench[/b]
+
+[i]Shipwrecked crews throughout history have turned salvaged timber and fittings into shelters, boats, and tools. Everything your men build starts with raw materials pulled from the wreck of Terror.[/i]
+
+The workbench is where all construction begins. Your men deposit salvaged materials here, and you choose what to build with them.
+
+[b]How to Use[/b]
+
+1. Right-click the workbench to open the panel
+2. The left side shows what you can build; the right shows your stockpile
+3. Recipes you can afford are highlighted; those you cannot are greyed out
+4. Click a recipe to begin placement — a preview appears on the terrain
+5. Hover any recipe button for its full cost and build time
+
+[b]Materials[/b]
+
+Your men gather these from the ship and deposit them here automatically:
+• [b]Scrap Wood[/b] — The primary building material
+• [b]Nails[/b] — Required for most structures
+• [b]Sail Scraps[/b] — Needed for tents
+
+Your material stockpile is shared across all projects, so plan your build order.
+
+[b]Tips[/b]
+
+• Hover greyed-out recipes to see exactly what you are missing
+• Keep the workbench clear and accessible — men need to reach it
+• Prioritise what you build; you may not have enough materials for everything
+• Press ESC to close the panel without starting anything"

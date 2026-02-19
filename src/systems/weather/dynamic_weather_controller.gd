@@ -61,21 +61,21 @@ var _persistent_wind_direction: float = 0.0  # Radians, -PI to PI
 var _persistent_wind_speed: float = 3.0  # m/s, baseline light breeze
 
 # =============================================================================
-# TIMING CONFIGURATION (in GAME minutes)
+# TIMING CONFIGURATION (in GAME hours)
 # =============================================================================
 @export_category("Weather Timing")
 
-## Minimum clear weather duration (game minutes)
-@export var clear_weather_min_minutes: float = 4.0
+## Minimum clear weather duration (game hours)
+@export var clear_weather_min_hours: float = 4.0
 
-## Maximum clear weather duration (game minutes)
-@export var clear_weather_max_minutes: float = 6.0
+## Maximum clear weather duration (game hours)
+@export var clear_weather_max_hours: float = 8.0
 
-## Minimum light snow duration (game minutes)
-@export var light_snow_max_minutes: float = 5.0
+## Maximum light snow duration (game hours)
+@export var light_snow_max_hours: float = 5.0
 
-## Maximum heavy blizzard duration (game minutes)
-@export var heavy_blizzard_max_minutes: float = 2.0
+## Maximum heavy blizzard duration (game hours)
+@export var heavy_blizzard_max_hours: float = 2.0
 
 ## Transition duration (real seconds) - smooth fade between states
 @export var transition_duration: float = 8.0
@@ -136,10 +136,10 @@ func _ready() -> void:
 	_current_event.intensity_name = "Clear"
 	_current_event.wind_direction = _persistent_wind_direction
 	_current_event.wind_speed = _persistent_wind_speed
-	_current_event.duration_seconds = _get_game_minutes_as_seconds(_rng.randf_range(clear_weather_min_minutes, clear_weather_max_minutes))
+	_current_event.duration_seconds = _get_game_hours_as_seconds(_rng.randf_range(clear_weather_min_hours, clear_weather_max_hours))
 	_current_event.start_time = Time.get_ticks_msec() / 1000.0
 
-	print("[DynamicWeather] Initialized - starting with clear weather for %.1f game minutes" % (clear_weather_min_minutes))
+	print("[DynamicWeather] Initialized - starting with clear weather for %.1f game hours" % (clear_weather_min_hours))
 
 
 func _find_references() -> void:
@@ -298,8 +298,8 @@ func _start_clear_weather() -> void:
 	event.wind_direction = _persistent_wind_direction
 	event.fog_density = 0.0
 	event.particle_ratio = 0.0
-	event.duration_seconds = _get_game_minutes_as_seconds(
-		_rng.randf_range(clear_weather_min_minutes, clear_weather_max_minutes)
+	event.duration_seconds = _get_game_hours_as_seconds(
+		_rng.randf_range(clear_weather_min_hours, clear_weather_max_hours)
 	)
 	event.start_time = Time.get_ticks_msec() / 1000.0
 	event.is_blizzard = false
@@ -318,8 +318,11 @@ func _start_clear_weather() -> void:
 	_current_event = event
 	weather_event_started.emit(event)
 
-	# Wait for transition to complete
-	await get_tree().create_timer(transition_duration + 0.5).timeout
+	# Wait for full transition (weather clearing + cloud clearing)
+	var total_duration: float = transition_duration + 0.5
+	if _snow_controller:
+		total_duration = _snow_controller.get_stop_transition_duration() + 0.5
+	await get_tree().create_timer(total_duration).timeout
 	_is_transitioning = false
 	weather_event_ended.emit(event)
 
@@ -347,8 +350,11 @@ func _start_snow_event(intensity: String, is_midday: bool) -> void:
 	_current_event = event
 	weather_event_started.emit(event)
 
-	# Wait for transition
-	await get_tree().create_timer(transition_duration + 0.5).timeout
+	# Wait for full transition (cloud buildup + weather transition)
+	var total_duration: float = transition_duration + 0.5
+	if _snow_controller:
+		total_duration = _snow_controller.get_start_transition_duration() + 0.5
+	await get_tree().create_timer(total_duration).timeout
 	_is_transitioning = false
 
 
@@ -381,7 +387,7 @@ func _generate_snow_event(intensity: String) -> WeatherEvent:
 			target_speed_max = 6.0
 			event.fog_density = _rng.randf_range(0.005, 0.012)
 			event.particle_ratio = _rng.randf_range(0.05, 0.1)  # ~750-1500 particles
-			event.duration_seconds = _get_game_minutes_as_seconds(_rng.randf_range(2.0, light_snow_max_minutes))
+			event.duration_seconds = _get_game_hours_as_seconds(_rng.randf_range(3.0, light_snow_max_hours))
 			event.is_blizzard = false
 
 		"Light":
@@ -389,7 +395,7 @@ func _generate_snow_event(intensity: String) -> WeatherEvent:
 			target_speed_max = 10.0
 			event.fog_density = _rng.randf_range(0.012, 0.018)
 			event.particle_ratio = _rng.randf_range(0.1, 0.17)  # ~1500-2500 particles
-			event.duration_seconds = _get_game_minutes_as_seconds(_rng.randf_range(2.0, light_snow_max_minutes))
+			event.duration_seconds = _get_game_hours_as_seconds(_rng.randf_range(2.0, light_snow_max_hours))
 			event.is_blizzard = false
 
 		"Light-Medium":
@@ -397,7 +403,7 @@ func _generate_snow_event(intensity: String) -> WeatherEvent:
 			target_speed_max = 15.0
 			event.fog_density = _rng.randf_range(0.018, 0.025)
 			event.particle_ratio = _rng.randf_range(0.17, 0.25)  # ~2500-3750 particles
-			event.duration_seconds = _get_game_minutes_as_seconds(_rng.randf_range(1.5, 4.0))
+			event.duration_seconds = _get_game_hours_as_seconds(_rng.randf_range(2.0, 4.0))
 			event.is_blizzard = false
 
 		"Medium":
@@ -405,7 +411,7 @@ func _generate_snow_event(intensity: String) -> WeatherEvent:
 			target_speed_max = 22.0
 			event.fog_density = _rng.randf_range(0.025, 0.035)
 			event.particle_ratio = _rng.randf_range(0.25, 0.4)  # ~3750-6000 particles
-			event.duration_seconds = _get_game_minutes_as_seconds(_rng.randf_range(1.0, 3.0))
+			event.duration_seconds = _get_game_hours_as_seconds(_rng.randf_range(1.5, 3.0))
 			event.is_blizzard = false
 
 		"Heavy":
@@ -413,8 +419,7 @@ func _generate_snow_event(intensity: String) -> WeatherEvent:
 			target_speed_max = 30.0
 			event.fog_density = _rng.randf_range(0.035, 0.05)
 			event.particle_ratio = 1.0  # Full 15000 particles (3x previous max)
-			# Heavy blizzards are short - max 2 game minutes
-			event.duration_seconds = _get_game_minutes_as_seconds(_rng.randf_range(0.5, heavy_blizzard_max_minutes))
+			event.duration_seconds = _get_game_hours_as_seconds(_rng.randf_range(1.0, heavy_blizzard_max_hours))
 			event.is_blizzard = true
 
 		_:  # Default to very light
@@ -422,7 +427,7 @@ func _generate_snow_event(intensity: String) -> WeatherEvent:
 			target_speed_max = 6.0
 			event.fog_density = _rng.randf_range(0.005, 0.012)
 			event.particle_ratio = _rng.randf_range(0.05, 0.1)
-			event.duration_seconds = _get_game_minutes_as_seconds(_rng.randf_range(2.0, 4.0))
+			event.duration_seconds = _get_game_hours_as_seconds(_rng.randf_range(3.0, 5.0))
 			event.is_blizzard = false
 
 	# Drift wind speed toward target range (max 5 m/s change per event)
@@ -441,6 +446,12 @@ func _apply_event_to_snow_controller(event: WeatherEvent) -> void:
 
 	# Set transition duration for smooth changes
 	_snow_controller.transition_duration = transition_duration
+
+	# Set per-intensity cloud targets and buildup/clearing durations
+	var cloud_targets: Dictionary = _get_cloud_targets_for_intensity(event.intensity_name)
+	_snow_controller.set_cloud_targets(cloud_targets)
+	_snow_controller.cloud_buildup_duration = _get_cloud_buildup_for_intensity(event.intensity_name)
+	_snow_controller.cloud_clearing_duration = _get_cloud_clearing_for_intensity(event.intensity_name)
 
 	# Determine which base intensity to use
 	var base_intensity: int = SnowController.SnowIntensity.LIGHT
@@ -469,7 +480,7 @@ func _apply_event_to_snow_controller(event: WeatherEvent) -> void:
 		_snow_controller.heavy_camera_far_ratio = clampf(0.05 - event.fog_density * 0.5, 0.025, 0.1)
 		_snow_controller.heavy_sun_energy = clampf(0.3 - event.fog_density * 2.0, 0.15, 0.4)
 
-	# Start the snow
+	# Start the snow (SnowController handles cloud buildup -> weather phasing)
 	_snow_controller.start_snow(base_intensity)
 
 
@@ -530,6 +541,108 @@ func _get_game_minutes_as_seconds(game_minutes: float) -> float:
 	var real_seconds_per_game_minute := (minutes_per_day * 60.0) / 1440.0
 
 	return game_minutes * real_seconds_per_game_minute
+
+
+func _get_game_hours_as_seconds(game_hours: float) -> float:
+	## Convert game hours to real seconds.
+	return _get_game_minutes_as_seconds(game_hours * 60.0)
+
+
+# =============================================================================
+# CLOUD TARGET CONFIGURATION (per-intensity)
+# =============================================================================
+
+func _get_cloud_targets_for_intensity(intensity: String) -> Dictionary:
+	## Get cloud/atmosphere target values for a given intensity.
+	## Very Light / Light: some sky visible. Light-Medium+: FULL cloud cover.
+	## Heavy: full cover AND dark/ominous.
+	match intensity:
+		"Very Light":
+			return {
+				"cumulus_coverage": 0.70,
+				"cumulus_thickness": 0.04,
+				"cumulus_absorption": 2.5,
+				"cumulus_intensity": 0.50,
+				"cirrus_coverage": 0.60,
+				"atm_darkness": 0.55,
+				"atm_thickness": 0.9,
+				"atm_sun_intensity": 14.0,
+				"sun_shadow_opacity": 0.7,
+			}
+		"Light":
+			return {
+				"cumulus_coverage": 0.80,
+				"cumulus_thickness": 0.06,
+				"cumulus_absorption": 3.0,
+				"cumulus_intensity": 0.45,
+				"cirrus_coverage": 0.70,
+				"atm_darkness": 0.65,
+				"atm_thickness": 1.2,
+				"atm_sun_intensity": 10.0,
+				"sun_shadow_opacity": 0.5,
+			}
+		"Light-Medium":
+			return {
+				"cumulus_coverage": 1.0,
+				"cumulus_thickness": 0.13,
+				"cumulus_absorption": 4.5,
+				"cumulus_intensity": 0.30,
+				"cirrus_coverage": 0.90,
+				"atm_darkness": 0.80,
+				"atm_thickness": 1.8,
+				"atm_sun_intensity": 5.0,
+				"sun_shadow_opacity": 0.2,
+			}
+		"Medium":
+			return {
+				"cumulus_coverage": 1.0,
+				"cumulus_thickness": 0.15,
+				"cumulus_absorption": 5.0,
+				"cumulus_intensity": 0.25,
+				"cirrus_coverage": 0.95,
+				"atm_darkness": 0.85,
+				"atm_thickness": 2.0,
+				"atm_sun_intensity": 3.5,
+				"sun_shadow_opacity": 0.1,
+			}
+		"Heavy":
+			return {
+				"cumulus_coverage": 1.0,
+				"cumulus_thickness": 0.18,
+				"cumulus_absorption": 6.0,
+				"cumulus_intensity": 0.15,
+				"cirrus_coverage": 1.0,
+				"atm_darkness": 0.95,
+				"atm_thickness": 2.5,
+				"atm_sun_intensity": 2.0,
+				"sun_shadow_opacity": 0.0,
+			}
+		_:
+			return {}
+
+
+func _get_cloud_buildup_for_intensity(intensity: String) -> float:
+	## Cloud buildup duration (seconds) before snow starts.
+	## Heavier weather needs longer buildup for realistic cloud formation.
+	match intensity:
+		"Very Light": return 4.0
+		"Light": return 5.0
+		"Light-Medium": return 6.0
+		"Medium": return 7.0
+		"Heavy": return 8.0
+		_: return 5.0
+
+
+func _get_cloud_clearing_for_intensity(intensity: String) -> float:
+	## Cloud clearing duration (seconds) after snow stops.
+	## Heavier weather takes longer to fully clear.
+	match intensity:
+		"Very Light": return 5.0
+		"Light": return 6.0
+		"Light-Medium": return 7.0
+		"Medium": return 8.0
+		"Heavy": return 10.0
+		_: return 6.0
 
 
 # =============================================================================
@@ -620,3 +733,17 @@ func is_clear_weather() -> bool:
 	if not _current_event:
 		return true
 	return _current_event.intensity_name == "Clear"
+
+
+func get_movement_penalty(move_direction: Vector3) -> float:
+	## Returns movement speed multiplier based on wind.
+	## Walking into strong wind slows you down; tailwind gives slight boost.
+	## Returns 0.5-1.1 range.
+	if not _current_event or _current_event.wind_speed < 10.0:
+		return 1.0
+	var wind_vec := Vector3(sin(_current_event.wind_direction), 0.0, cos(_current_event.wind_direction))
+	var move_xz := Vector3(move_direction.x, 0.0, move_direction.z)
+	if move_xz.length_squared() < 0.01:
+		return 1.0
+	var headwind := -move_xz.normalized().dot(wind_vec)
+	return lerpf(1.0, 0.5, clampf(headwind * _current_event.wind_speed / 30.0, -0.2, 1.0))
