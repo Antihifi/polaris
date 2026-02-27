@@ -28,10 +28,13 @@ func _tick(_delta: float) -> Status:
 
 	# Check if target already set in blackboard (by attack_target() or previous find)
 	if blackboard.has_var(target_var):
-		var existing: Node3D = blackboard.get_var(target_var, null)
-		if existing and is_instance_valid(existing):
+		var existing_ref: Variant = blackboard.get_var(target_var, null)
+		if is_instance_valid(existing_ref):
+			var existing: Node3D = existing_ref as Node3D
 			if not _is_target_dead(existing):
 				return SUCCESS
+			else:
+				blackboard.set_var(target_var, null)
 
 	# Officers/Captain only engage when player explicitly commands - don't auto-find targets
 	if "rank" in agent and agent.rank >= 1:  # OFFICER=1, CAPTAIN=2

@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Wildlife"
+brief_tooltip = "Polar bears patrol the ice and attack intruders.
+Wounded animals may flee.
+Killed animals drop meat and pelts."
+implemented = true
+detailed_text = "[b]The Arctic Is Not Empty[/b]
+
+[i]Inuit hunters knew the polar bear as Nanuq — lord of the ice. A full-grown male weighs half a ton, can outrun a man over short distances, and has been known to stalk human camps for days. The men of Franklin's expedition, weakened by scurvy and starvation, were no match for such a predator.[/i]
+
+The island is home to dangerous wildlife. Polar bears are the greatest threat your men will face outside of the cold itself.
+
+[b]Polar Bears[/b]
+
+Polar bears are territorial. They patrol wide stretches of ice and coastline, and will investigate anything that enters their range.
+
+• A bear that spots your men will approach to investigate
+• If the intruders do not leave, the bear attacks
+• Bears are powerful — a single bear can kill an unarmed man quickly
+• Armed groups have a much better chance of driving one off
+
+[b]After the Kill[/b]
+
+A dead animal can be looted for meat and pelts. Bear meat feeds your crew; pelts may prove useful for warmth and crafting.
+
+[b]Tips[/b]
+
+• Never send a man alone into open ice — bears hunt the isolated
+• Keep officers armed with hatchets when scouting
+• A wounded bear may flee — do not assume the fight is over
+• If a bear approaches your camp, order armed officers to intercept it before it reaches the men"

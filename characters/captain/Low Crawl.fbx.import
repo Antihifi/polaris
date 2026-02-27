@@ -3,7 +3,7 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://bn77nnitqukbo"
+uid="uid://d20wfdcb2jg63"
 path="res://.godot/imported/Low Crawl.fbx-11e187743bb180d26167b31138ab21ba.scn"
 
 [deps]
@@ -41,9 +41,9 @@ _subresources={
 "animations": {
 "mixamo_com": {
 "save_to_file/enabled": true,
-"save_to_file/fallback_path": "res://low_crawl.res",
+"save_to_file/fallback_path": "res://characters/captain/low_crawl.res",
 "save_to_file/keep_custom_tracks": "",
-"save_to_file/path": "uid://iwo6l4uyyeqa",
+"save_to_file/path": "uid://cs45dcfx7shry",
 "settings/loop_mode": 0,
 "slice_1/end_frame": 0,
 "slice_1/loop_mode": 0,

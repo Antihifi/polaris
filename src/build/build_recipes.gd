@@ -42,16 +42,6 @@ static func _init_recipes() -> void:
 	tent.result_scene_path = "res://objects/small_tent1/small_tent_1.tscn"
 	_recipes[&"tent"] = tent
 
-	# Firewood Bundle - 1 day, no nails (no scene - uses default box)
-	var firewood := BuildRecipe.new()
-	firewood.id = &"firewood_bundle"
-	firewood.display_name = "Firewood Bundle"
-	firewood.description = "Processed wood for burning."
-	firewood.construction_days = 1
-	firewood.required_materials = {"scrap_wood": 2}
-	# No scene path - will use default box mesh
-	_recipes[&"firewood_bundle"] = firewood
-
 	# Sled - 4 days
 	var sled := BuildRecipe.new()
 	sled.id = &"sled"
@@ -61,6 +51,16 @@ static func _init_recipes() -> void:
 	sled.required_materials = {"scrap_wood": 10, "nails": 5}
 	sled.result_scene_path = "res://objects/sled1/sled_1.tscn"
 	_recipes[&"sled"] = sled
+
+	# Campfire - quick build, minimal materials
+	var campfire := BuildRecipe.new()
+	campfire.id = &"campfire"
+	campfire.display_name = "Campfire"
+	campfire.description = "A fire for warmth and cooking. Requires fuel to stay lit."
+	campfire.construction_days = 0.5  # Half a day
+	campfire.required_materials = {"firewood": 2}
+	campfire.result_scene_path = "res://objects/campfire_1.tscn"
+	_recipes[&"campfire"] = campfire
 
 
 static func get_recipe(id: StringName) -> BuildRecipe:

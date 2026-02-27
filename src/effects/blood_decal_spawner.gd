@@ -30,6 +30,7 @@ var _terrain: Node = null
 
 func _ready() -> void:
 	_find_combat_component()
+	_find_dismemberment_component()
 	_find_terrain()
 
 
@@ -43,6 +44,13 @@ func _find_combat_component() -> void:
 	elif "combat" in parent and parent.combat:
 		_combat_component = parent.combat
 		_combat_component.took_damage.connect(_on_took_damage)
+
+
+func _find_dismemberment_component() -> void:
+	var parent := get_parent()
+	var dc: Node = parent.get_node_or_null("DismembermentComponent")
+	if dc and dc.has_signal("limb_dismembered"):
+		dc.limb_dismembered.connect(_on_limb_dismembered)
 
 
 func _find_terrain() -> void:
@@ -66,7 +74,13 @@ func _on_took_damage(amount: float, _attacker: Node3D) -> void:
 		_spawn_drip()
 
 
-func _spawn_pool(position: Vector3) -> void:
+func _on_limb_dismembered(_part: int, position: Vector3, _limb: RigidBody3D) -> void:
+	print("[BloodDecal] Dismemberment pool at %s (has scene: %s)" % [position, pool_decal_scene != null])
+	if pool_decal_scene:
+		_spawn_pool(position, expand_duration * 4.0)
+
+
+func _spawn_pool(position: Vector3, duration: float = 0.0) -> void:
 	_enforce_limit()
 
 	var decal: Node3D = pool_decal_scene.instantiate()
@@ -91,19 +105,20 @@ func _spawn_pool(position: Vector3) -> void:
 	var tween: Tween = decal.create_tween()
 	tween.set_ease(Tween.EASE_OUT)
 	tween.set_trans(Tween.TRANS_QUAD)
-	tween.tween_property(decal, "size", target_size, expand_duration)
+	var actual_duration := duration if duration > 0.0 else expand_duration
+	tween.tween_property(decal, "size", target_size, actual_duration)
 
 	_schedule_cleanup(decal)
 
 
-func _spawn_drip() -> void:
+func _spawn_drip(target: Node3D = null) -> void:
 	_enforce_limit()
 
 	var decal: Node3D = drip_decal_scene.instantiate()
 	var target_size := Vector3(0.8, drip_height, 0.8)
 
-	# Parent to entity so it follows them
-	var parent := get_parent()
+	# Parent to target (severed limb) or owning entity
+	var parent: Node3D = target if target else get_parent()
 	decal.position = Vector3(0, 2.0, 0)  # Above entity center
 	decal.rotation.y = randf() * TAU
 	decal.set("size", Vector3(0.5, 1.0, 0.5))  # Start with enough Y to hit mesh

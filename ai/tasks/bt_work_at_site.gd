@@ -13,6 +13,7 @@ class_name BTWorkAtSite
 var _working: bool = false
 var _work_timer: float = 0.0
 var _registered: bool = false
+var _anim_player: AnimationPlayer = null
 
 
 func _generate_name() -> String:
@@ -23,17 +24,20 @@ func _enter() -> void:
 	_working = false
 	_work_timer = 0.0
 	_registered = false
+	_anim_player = null
 
 
 func _exit() -> void:
+	var agent: Node3D = get_agent()
+	# Unlock animation so unit can move again.
+	if agent and "is_animation_locked" in agent:
+		agent.is_animation_locked = false
+	# Stop bash animation.
+	if _anim_player and is_instance_valid(_anim_player):
+		_anim_player.stop()
+	_anim_player = null
 	# Unregister from site when leaving.
-	var site: Node = blackboard.get_var(target_node_var, null)
-	if site and _registered:
-		if site.has_method("unregister_worker"):
-			var agent: Node3D = get_agent()
-			if agent:
-				site.unregister_worker(agent)
-		_registered = false
+	_unregister_from_site(agent)
 
 
 func _tick(delta: float) -> Status:
@@ -41,9 +45,11 @@ func _tick(delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var site: Node = blackboard.get_var(target_node_var, null)
-	if not site or not is_instance_valid(site):
+	# Get as Variant first to avoid error on freed instance assignment.
+	var site_ref: Variant = blackboard.get_var(target_node_var, null)
+	if not is_instance_valid(site_ref):
 		return FAILURE
+	var site: Node = site_ref as Node
 
 	# Check if site has all materials.
 	if site.has_method("has_all_required_materials"):
@@ -54,6 +60,7 @@ func _tick(delta: float) -> Status:
 	# Check if site is complete.
 	if site.has_method("get_progress_percent"):
 		if site.get_progress_percent() >= 100.0:
+			_unregister_from_site(agent)
 			return SUCCESS
 
 	# Start working.
@@ -62,6 +69,15 @@ func _tick(delta: float) -> Status:
 			agent.stop()
 		_working = true
 		_work_timer = 0.0
+
+		# Lock agent in place (same pattern as sitting/sleeping).
+		if "is_animation_locked" in agent:
+			agent.is_animation_locked = true
+
+		# Start bash animation.
+		_anim_player = agent.get_node_or_null("UnitModel/AnimationPlayer")
+		if _anim_player and _anim_player.has_animation("bash"):
+			_anim_player.play("bash")
 
 		# Register with site.
 		if site.has_method("register_worker") and not _registered:
@@ -77,6 +93,10 @@ func _tick(delta: float) -> Status:
 	if _work_timer >= work_interval:
 		_work_timer = 0.0
 
+		# Re-trigger bash if it finished (one-shot ~2s animation).
+		if _anim_player and _anim_player.current_animation != "bash":
+			_anim_player.play("bash")
+
 		var efficiency: float = _get_work_efficiency(agent)
 		var hours_per_interval: float = 0.1
 
@@ -85,10 +105,22 @@ func _tick(delta: float) -> Status:
 
 		if site.has_method("get_progress_percent"):
 			if site.get_progress_percent() >= 100.0:
+				_unregister_from_site(agent)
 				blackboard.set_var(&"current_action", "Finished building")
 				return SUCCESS
 
 	return RUNNING
+
+
+func _unregister_from_site(agent: Node3D) -> void:
+	if not _registered:
+		return
+	var site_ref: Variant = blackboard.get_var(target_node_var, null)
+	if is_instance_valid(site_ref):
+		var site: Node = site_ref as Node
+		if site.has_method("unregister_worker"):
+			site.unregister_worker(agent)
+	_registered = false
 
 
 func _get_work_efficiency(agent: Node) -> float:

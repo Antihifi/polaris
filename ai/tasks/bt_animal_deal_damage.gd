@@ -15,9 +15,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var target: Node3D = blackboard.get_var(threat_target_var, null)
-	if not target or not is_instance_valid(target):
+	var target_ref: Variant = blackboard.get_var(threat_target_var, null)
+	if not is_instance_valid(target_ref):
 		return FAILURE
+	var target: Node3D = target_ref as Node3D
 
 	# Validate target is in attack hitbox (if hitbox exists)
 	if "attack_hitbox" in agent and agent.attack_hitbox:

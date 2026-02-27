@@ -24,14 +24,6 @@ func _tick(_delta: float) -> Status:
 	if not attacker or not is_instance_valid(attacker):
 		return FAILURE
 
-	# Don't defend if already in combat
-	if "is_in_combat" in agent and agent.is_in_combat:
-		return FAILURE
-
-	# Don't defend if we're fleeing
-	if "is_fleeing" in agent and agent.is_fleeing:
-		return FAILURE
-
 	# Check if attacker is still a threat (alive and nearby)
 	if _is_target_dead(attacker):
 		return FAILURE

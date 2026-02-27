@@ -1,13 +1,20 @@
-[gd_resource type="BehaviorTree" load_steps=189 format=3 uid="uid://b12icb31evg1h"]
+[gd_resource type="BehaviorTree" load_steps=270 format=3 uid="uid://b12icb31evg1h"]
 
 [ext_resource type="Script" uid="uid://dbkjq8oglabfn" path="res://ai/tasks/bt_defend.gd" id="1_bxk66"]
+[ext_resource type="Script" uid="uid://bf0qjoqshwe5s" path="res://ai/tasks/bt_entity_has_threat.gd" id="1_k7wm5"]
+[ext_resource type="Script" uid="uid://cjox2lutis041" path="res://ai/tasks/bt_flee.gd" id="1_sbexb"]
 [ext_resource type="Script" uid="uid://bh616mm1sxk16" path="res://ai/tasks/bt_generate_wander_target.gd" id="1_wander"]
 [ext_resource type="Script" uid="uid://5cieec4vq4ck" path="res://ai/tasks/bt_move_to_blackboard.gd" id="2_move"]
 [ext_resource type="Script" uid="uid://dsisqp5psmvjq" path="res://ai/tasks/bt_attack.gd" id="2_mslhm"]
 [ext_resource type="Script" uid="uid://bxnaog530tvht" path="res://ai/tasks/bt_check_mental_break.gd" id="3_d5ls8"]
+[ext_resource type="Script" uid="uid://dwlotmlvq7c2r" path="res://ai/tasks/bt_equip_to_hand.gd" id="3_e4b4v"]
 [ext_resource type="Script" uid="uid://w162bukdvt4w" path="res://ai/tasks/bt_find_nearest_resource.gd" id="3_resource"]
+[ext_resource type="Script" uid="uid://f4w2sejjuiyd" path="res://ai/tasks/bt_chase_to_attack_range.gd" id="4_sbexb"]
+[ext_resource type="Script" uid="uid://gxoxd0sibb5c" path="res://ai/tasks/bt_face_position.gd" id="5_k7wm5"]
 [ext_resource type="Script" uid="uid://blnycb7fe8v47" path="res://ai/tasks/bt_check_can_work.gd" id="6_brwnp"]
+[ext_resource type="Script" uid="uid://chiq07kv48mea" path="res://ai/tasks/bt_trigger_blood_particles.gd" id="6_ullfr"]
 [ext_resource type="Script" uid="uid://b8uhoin5thywl" path="res://ai/tasks/bt_align_with_marker.gd" id="7_3jy6i"]
+[ext_resource type="Script" uid="uid://b4s72p1oikl2f" path="res://ai/tasks/bt_deal_damage.gd" id="7_m228g"]
 [ext_resource type="Script" uid="uid://c6p0dtlmel5ub" path="res://ai/tasks/bt_check_can_gather.gd" id="8_brwnp"]
 [ext_resource type="Script" uid="uid://dxvrqd5dn6pml" path="res://ai/tasks/bt_consume_food.gd" id="8_hs587"]
 [ext_resource type="Script" uid="uid://dsy6mbaichwoq" path="res://ai/tasks/bt_find_fire_spot.gd" id="8_rdl7w"]
@@ -80,15 +87,338 @@ duration = 0.1
 custom_name = "PlayerOverride"
 children = [SubResource("BTCheckVar_asu1a"), SubResource("BTWait_aa4xd")]
 
+[sub_resource type="BTCondition" id="BTCondition_ullfr"]
+script = ExtResource("1_k7wm5")
+close_range_check = 50.0
+
+[sub_resource type="BBVariant" id="BBVariant_20ryu"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_76sbw"]
+property = &"is_dismembered"
+value = SubResource("BBVariant_20ryu")
+
+[sub_resource type="BTSelector" id="BTSelector_2afsi"]
+children = [SubResource("BTCondition_ullfr"), SubResource("BTCheckAgentProperty_76sbw")]
+
+[sub_resource type="BBVariant" id="BBVariant_xhv2t"]
+type = 2
+saved_value = 2
+resource_name = "2"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_a16jb"]
+property = &"legs_remaining"
+check_type = 1
+value = SubResource("BBVariant_xhv2t")
+
+[sub_resource type="BTSequence" id="BTSequence_yw5bs"]
+custom_name = "CrawlWhenLegLost"
+children = [SubResource("BTCheckAgentProperty_a16jb")]
+
+[sub_resource type="BBVariant" id="BBVariant_ct5nu"]
+type = 3
+saved_value = 25.0
+resource_name = "25.0"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_4ieae"]
+property = &"energy_percent"
+check_type = 1
+value = SubResource("BBVariant_ct5nu")
+
+[sub_resource type="BBVariant" id="BBVariant_dfl70"]
+type = 3
+saved_value = 0.25
+resource_name = "0.25"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_poor0"]
+property = &"speed_multiplier"
+value = SubResource("BBVariant_dfl70")
+
+[sub_resource type="BBNode" id="BBNode_l8car"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_s7c4l"]
+animation_player = SubResource("BBNode_l8car")
+animation_name = &"low_crawl"
+blend = 1.0
+speed = 0.7
+
+[sub_resource type="BTSequence" id="BTSequence_dfl70"]
+custom_name = "CrawlWhenExhausted"
+children = [SubResource("BTCheckAgentProperty_4ieae"), SubResource("BTSetAgentProperty_poor0"), SubResource("BTPlayAnimation_s7c4l")]
+
+[sub_resource type="BBVariant" id="BBVariant_l8car"]
+type = 3
+saved_value = 25.0
+resource_name = "25.0"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_s7c4l"]
+property = &"health_percent"
+check_type = 1
+value = SubResource("BBVariant_l8car")
+
+[sub_resource type="BBVariant" id="BBVariant_dt4te"]
+type = 3
+saved_value = 0.25
+resource_name = "0.25"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_ne3jb"]
+property = &"speed_multiplier"
+value = SubResource("BBVariant_dt4te")
+
+[sub_resource type="BBNode" id="BBNode_ne3jb"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_yica2"]
+animation_player = SubResource("BBNode_ne3jb")
+animation_name = &"low_crawl"
+blend = 1.0
+speed = 0.7
+
+[sub_resource type="BTSequence" id="BTSequence_gstlw"]
+custom_name = "CrawlWhenVeryInjured"
+children = [SubResource("BTCheckAgentProperty_s7c4l"), SubResource("BTSetAgentProperty_ne3jb"), SubResource("BTPlayAnimation_yica2")]
+
+[sub_resource type="BBVariant" id="BBVariant_13mex"]
+type = 3
+saved_value = 75.0
+resource_name = "75.0"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_20ryu"]
+property = &"health_percent"
+check_type = 1
+value = SubResource("BBVariant_13mex")
+
+[sub_resource type="BBVariant" id="BBVariant_yica2"]
+type = 3
+saved_value = 0.4
+resource_name = "0.4"
+
+[sub_resource type="BTSetAgentProperty" id="BTSetAgentProperty_3r3ns"]
+property = &"speed_multiplier"
+value = SubResource("BBVariant_yica2")
+
+[sub_resource type="BBNode" id="BBNode_76sbw"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_2afsi"]
+animation_player = SubResource("BBNode_76sbw")
+animation_name = &"injured_run"
+blend = 1.5
+speed = 0.3
+
+[sub_resource type="BTSequence" id="BTSequence_xhv2t"]
+custom_name = "LimpWhenInjured"
+children = [SubResource("BTCheckAgentProperty_20ryu"), SubResource("BTSetAgentProperty_3r3ns"), SubResource("BTPlayAnimation_2afsi")]
+
+[sub_resource type="BBNode" id="BBNode_a16jb"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_f22xx"]
+animation_player = SubResource("BBNode_a16jb")
+animation_name = &"running"
+blend = 2.0
+speed = 0.5
+
+[sub_resource type="BTSelector" id="BTSelector_u8now"]
+custom_name = "AnimationSelector"
+children = [SubResource("BTSequence_yw5bs"), SubResource("BTSequence_dfl70"), SubResource("BTSequence_gstlw"), SubResource("BTSequence_xhv2t"), SubResource("BTPlayAnimation_f22xx")]
+
+[sub_resource type="BTAction" id="BTAction_43q60"]
+script = ExtResource("1_sbexb")
+flee_distance = 10.0
+
+[sub_resource type="BTAction" id="BTAction_dfl70"]
+script = ExtResource("5_k7wm5")
+target_var = &"threat_position"
+
+[sub_resource type="BTWait" id="BTWait_ullfr"]
+
+[sub_resource type="BTSequence" id="BTSequence_o5lmo"]
+custom_name = "FleeWhenThreatened"
+children = [SubResource("BTSelector_2afsi"), SubResource("BTSelector_u8now"), SubResource("BTAction_43q60"), SubResource("BTAction_dfl70"), SubResource("BTWait_ullfr")]
+
 [sub_resource type="BTCondition" id="BTCondition_kd5rg"]
 script = ExtResource("1_bxk66")
 
 [sub_resource type="BTAction" id="BTAction_j1a7u"]
 script = ExtResource("2_mslhm")
 
+[sub_resource type="BBVariant" id="BBVariant_o5lmo"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_ct5nu"]
+property = &"has_melee_weapon"
+value = SubResource("BBVariant_o5lmo")
+
+[sub_resource type="BTAction" id="BTAction_s7c4l"]
+script = ExtResource("3_e4b4v")
+
+[sub_resource type="BBNode" id="BBNode_dt4te"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_ne3jb"]
+await_completion = 1.5
+animation_player = SubResource("BBNode_dt4te")
+animation_name = &"unarmed_equip_over_shoulder"
+blend = 1.0
+speed = 0.5
+
+[sub_resource type="BTSequence" id="BTSequence_3r3ns"]
+custom_name = "EquipWeapon"
+children = [SubResource("BTCheckAgentProperty_ct5nu"), SubResource("BTAction_s7c4l"), SubResource("BTPlayAnimation_ne3jb")]
+
+[sub_resource type="BTAlwaysSucceed" id="BTAlwaysSucceed_gstlw"]
+custom_name = "TryEquipWeapon"
+children = [SubResource("BTSequence_3r3ns")]
+
+[sub_resource type="BTAction" id="BTAction_n50f6"]
+script = ExtResource("4_sbexb")
+
+[sub_resource type="BBVariant" id="BBVariant_3r3ns"]
+type = 1
+saved_value = false
+resource_name = "<null>"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_gstlw"]
+property = &"right_arm_dismembered"
+value = SubResource("BBVariant_3r3ns")
+
+[sub_resource type="BBVariant" id="BBVariant_poor0"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_dt4te"]
+property = &"weapon_equipped"
+value = SubResource("BBVariant_poor0")
+
+[sub_resource type="BTAction" id="BTAction_ne3jb"]
+script = ExtResource("5_k7wm5")
+target_var = &"combat_target"
+
+[sub_resource type="BBNode" id="BBNode_yica2"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_3r3ns"]
+animation_player = SubResource("BBNode_yica2")
+animation_name = &"standing_melee_attack_horizontal"
+blend = 1.0
+speed = 0.3
+
+[sub_resource type="BTWait" id="BTWait_gstlw"]
+duration = 1.15
+
+[sub_resource type="BTAction" id="BTAction_13mex"]
+script = ExtResource("6_ullfr")
+
+[sub_resource type="BTWait" id="BTWait_20ryu"]
+duration = 1.9
+
+[sub_resource type="BTSequence" id="BTSequence_76sbw"]
+custom_name = "ArmedAttack"
+children = [SubResource("BTCheckAgentProperty_gstlw"), SubResource("BTCheckAgentProperty_dt4te"), SubResource("BTAction_ne3jb"), SubResource("BTPlayAnimation_3r3ns"), SubResource("BTWait_gstlw"), SubResource("BTAction_13mex"), SubResource("BTWait_20ryu")]
+
+[sub_resource type="BBVariant" id="BBVariant_2afsi"]
+type = 1
+saved_value = true
+resource_name = "true"
+
+[sub_resource type="BTCheckAgentProperty" id="BTCheckAgentProperty_xhv2t"]
+property = &"weapon_equipped"
+value = SubResource("BBVariant_2afsi")
+
+[sub_resource type="BTAction" id="BTAction_a16jb"]
+script = ExtResource("5_k7wm5")
+target_var = &"combat_target"
+
+[sub_resource type="BBNode" id="BBNode_f22xx"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_u8now"]
+animation_player = SubResource("BBNode_f22xx")
+animation_name = &"standing_melee_attack_horizontal"
+blend = 1.0
+speed = 0.3
+
+[sub_resource type="BTWait" id="BTWait_8o11o"]
+duration = 1.15
+
+[sub_resource type="BTAction" id="BTAction_wkkau"]
+script = ExtResource("6_ullfr")
+
+[sub_resource type="BTAction" id="BTAction_yw5bs"]
+script = ExtResource("7_m228g")
+
+[sub_resource type="BTWait" id="BTWait_gqd6p"]
+duration = 1.9
+
+[sub_resource type="BTAction" id="BTAction_u0xoi"]
+script = ExtResource("5_k7wm5")
+target_var = &"combat_target"
+
+[sub_resource type="BBNode" id="BBNode_yiiky"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_4nm2s"]
+await_completion = 2.0
+animation_player = SubResource("BBNode_yiiky")
+animation_name = &"bash"
+blend = 1.0
+speed = 0.3
+
+[sub_resource type="BBNode" id="BBNode_g2gfv"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_kn2ix"]
+await_completion = 2.0
+animation_player = SubResource("BBNode_g2gfv")
+animation_name = &"jab_cross"
+blend = 1.0
+speed = 0.3
+
+[sub_resource type="BBNode" id="BBNode_7tqal"]
+saved_value = NodePath("UnitModel/AnimationPlayer")
+resource_name = "UnitModel/AnimationPlayer"
+
+[sub_resource type="BTPlayAnimation" id="BTPlayAnimation_5ksus"]
+await_completion = 2.0
+animation_player = SubResource("BBNode_7tqal")
+animation_name = &"punching"
+blend = 1.0
+speed = 0.3
+
+[sub_resource type="BTProbabilitySelector" id="BTProbabilitySelector_1d7vf"]
+custom_name = "UnarmedAttack"
+children = [SubResource("BTPlayAnimation_4nm2s"), SubResource("BTPlayAnimation_kn2ix"), SubResource("BTPlayAnimation_5ksus")]
+
+[sub_resource type="BTAction" id="BTAction_3usvs"]
+script = ExtResource("7_m228g")
+
+[sub_resource type="BTSequence" id="BTSequence_kin0g"]
+custom_name = "UnarmedAttack"
+children = [SubResource("BTAction_u0xoi"), SubResource("BTProbabilitySelector_1d7vf"), SubResource("BTAction_3usvs")]
+
+[sub_resource type="BTSelector" id="BTSelector_at6jh"]
+custom_name = "AttackAnimation"
+children = [SubResource("BTSequence_76sbw"), SubResource("BTCheckAgentProperty_xhv2t"), SubResource("BTAction_a16jb"), SubResource("BTPlayAnimation_u8now"), SubResource("BTWait_8o11o"), SubResource("BTAction_wkkau"), SubResource("BTAction_yw5bs"), SubResource("BTWait_gqd6p"), SubResource("BTSequence_kin0g")]
+
 [sub_resource type="BTSequence" id="BTSequence_43q60"]
 custom_name = "DefendBehavior"
-children = [SubResource("BTCondition_kd5rg"), SubResource("BTAction_j1a7u")]
+children = [SubResource("BTCondition_kd5rg"), SubResource("BTAction_j1a7u"), SubResource("BTAlwaysSucceed_gstlw"), SubResource("BTAction_n50f6"), SubResource("BTSelector_at6jh")]
 
 [sub_resource type="BTCondition" id="BTCondition_o5lmo"]
 script = ExtResource("3_d5ls8")
@@ -201,6 +531,7 @@ script = ExtResource("3_resource")
 resource_group = "construction_sites"
 target_position_var = &"site_position"
 target_node_var = &"site_node"
+filter_needs_delivery = true
 
 [sub_resource type="BTAction" id="BTAction_mslhm"]
 script = ExtResource("3_resource")
@@ -825,7 +1156,7 @@ custom_name = "DefaultIdle"
 children = [SubResource("BTCondition_mslhm"), SubResource("BTPlayAnimation_m228g"), SubResource("BTRandomWait_l2yjk")]
 
 [sub_resource type="BTDynamicSelector" id="BTSelector_brwnp"]
-children = [SubResource("BTSequence_iaxgs"), SubResource("BTSequence_43q60"), SubResource("BTSequence_poor0"), SubResource("BTCooldown_bxk66"), SubResource("BTCooldown_brwnp"), SubResource("BTCooldown_rdl7w"), SubResource("BTCooldown_4nm2s"), SubResource("BTCooldown_ihniq"), SubResource("BTCooldown_ct5nu"), SubResource("BTCooldown_g2gfv"), SubResource("BTSequence_ohlgy")]
+children = [SubResource("BTSequence_iaxgs"), SubResource("BTSequence_o5lmo"), SubResource("BTSequence_43q60"), SubResource("BTSequence_poor0"), SubResource("BTCooldown_bxk66"), SubResource("BTCooldown_brwnp"), SubResource("BTCooldown_rdl7w"), SubResource("BTCooldown_4nm2s"), SubResource("BTCooldown_ihniq"), SubResource("BTCooldown_ct5nu"), SubResource("BTCooldown_g2gfv"), SubResource("BTSequence_ohlgy")]
 
 [resource]
 blackboard_plan = SubResource("BlackboardPlan_bo4pt")

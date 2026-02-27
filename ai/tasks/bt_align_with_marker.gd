@@ -16,9 +16,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var marker: Node3D = blackboard.get_var(marker_var, null)
-	if not marker or not is_instance_valid(marker):
+	var marker_ref: Variant = blackboard.get_var(marker_var, null)
+	if not is_instance_valid(marker_ref):
 		return FAILURE
+	var marker: Node3D = marker_ref as Node3D
 
 	# Validate marker position - reject if suspiciously near origin (likely invalid transform)
 	var marker_pos: Vector3 = marker.global_position

@@ -13,6 +13,9 @@ class_name Animal extends CharacterBody3D
 @export var movement_speed: float = 3.0
 @export var chase_speed_multiplier: float = 1.5
 
+## Runtime speed multiplier (used by BT tasks like flee, chase, etc.)
+var speed_multiplier: float = 1.0
+
 @export_category("Behavior")
 @export var aggro_range: float = 50.0
 @export var flee_threshold: float = 0.25
@@ -157,7 +160,7 @@ func stop_combat() -> void:
 		combat.stop_combat()
 
 
-func _move_to(target: Vector3) -> void:
+func move_to(target: Vector3) -> void:
 	if navigation_agent:
 		navigation_agent.target_position = target
 
@@ -206,7 +209,7 @@ func _process_movement(delta: float) -> void:
 	var direction := (next_pos - global_position).normalized()
 	direction.y = 0.0
 
-	var current_speed := movement_speed
+	var current_speed := movement_speed * speed_multiplier
 	if _is_chasing:
 		current_speed *= chase_speed_multiplier
 	velocity.x = direction.x * current_speed

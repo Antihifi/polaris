@@ -25,9 +25,7 @@ func _tick(_delta: float) -> Status:
 		return SUCCESS
 
 	# Navigate toward target
-	if agent.has_method("_move_to"):
-		agent._move_to(target)
-	elif "navigation_agent" in agent and agent.navigation_agent:
-		agent.navigation_agent.target_position = target
+	if agent.has_method("move_to"):
+		agent.move_to(target)
 
 	return RUNNING

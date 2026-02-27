@@ -18,9 +18,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var target: Node3D = blackboard.get_var(investigation_target_var)
-	if not target or not is_instance_valid(target):
+	var target_ref: Variant = blackboard.get_var(investigation_target_var)
+	if not is_instance_valid(target_ref):
 		return FAILURE
+	var target: Node3D = target_ref as Node3D
 
 	# Check if target is dead
 	if "stats" in target and target.stats and target.stats.has_method("is_dead"):

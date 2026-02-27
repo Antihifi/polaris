@@ -85,6 +85,9 @@ func set_player_command_active(active: bool) -> void:
 		_blackboard.set_var(&"player_command_active", active)
 		if active:
 			_blackboard.set_var(&"current_action", "Following orders")
+			# Clear threat so BTFlee returns SUCCESS and releases the unit
+			_blackboard.set_var(&"threat_target", null)
+			_blackboard.set_var(&"threat_position", Vector3.INF)
 
 
 func is_player_command_active() -> bool:

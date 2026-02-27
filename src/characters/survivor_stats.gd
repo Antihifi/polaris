@@ -5,6 +5,9 @@ class_name SurvivorStats extends Resource
 ## Death causes for tracking how a character died
 enum DeathCause { NONE, STARVATION, EXHAUSTION, HYPOTHERMIA, VIOLENCE, SCURVY, LEAD_POISONING }
 
+## Activity levels for energy recovery calculation
+enum ActivityLevel { SLEEPING, RESTING, LIGHT, INTENSIVE }
+
 ## Current death cause (set when entering dying state)
 var dying_cause: DeathCause = DeathCause.NONE
 
@@ -37,9 +40,14 @@ const DYING_HEALTH_DRAIN: float = 5.0
 
 # Decay rates (per in-game hour)
 @export_category("Decay Rates")
-@export var hunger_decay_rate: float = 2.0  # Hunger decreases by this per hour
-@export var energy_decay_rate: float = 1.5  # Energy decreases when working
+@export var hunger_decay_rate: float = 0.5  # Hunger decreases by this per hour (reduced for 3+ day food duration)
+@export var energy_decay_rate: float = 0.75  # Energy decreases when working (reduced 25% from 1.0)
 @export var morale_decay_rate: float = 0.5  # Base morale decay
+
+# Energy recovery rates per hour, by activity level
+const ENERGY_RECOVERY_SLEEPING: float = 40.0  # In bed - 2.5 hours for 0→100
+const ENERGY_RECOVERY_RESTING: float = 25.0   # Crouching by fire or sitting - 4 hours for 0→100
+const ENERGY_RECOVERY_LIGHT: float = 8.0      # Idle/standing - passive regen ~12.5 hours for 0→100
 
 # Skills (0-100, higher = better)
 @export_category("Skills")
@@ -296,14 +304,17 @@ func get_most_critical_need() -> String:
 	return most_critical
 
 
-func apply_hourly_decay(delta_hours: float, is_working: bool, is_in_shelter: bool, is_in_bed: bool, is_near_fire: bool,
+func apply_hourly_decay(delta_hours: float, activity_level: int, is_in_shelter: bool, is_in_bed: bool, is_near_fire: bool,
 		ambient_temperature: float, is_in_sunlight: bool = true, is_blizzard: bool = false,
 		is_near_captain: bool = false, is_near_personable: bool = false,
 		is_butchering_horrified: bool = false) -> void:
 	## Called periodically (every 10 in-game minutes) to update needs.
 	## delta_hours scales all rates (1.0 = full hour, 1/6 = 10 minutes).
+	## activity_level determines energy recovery/drain (see ActivityLevel enum).
 	## Uses cascading multipliers: low energy/warmth increase hunger drain, etc.
 	## is_blizzard applies extra morale and warmth penalties per GDD.
+
+	var is_working := activity_level == ActivityLevel.INTENSIVE
 
 	# Hunger decay with cascading multiplier
 	var hunger_drain := hunger_decay_rate * get_hunger_drain_multiplier()
@@ -343,32 +354,35 @@ func apply_hourly_decay(delta_hours: float, is_working: bool, is_in_shelter: boo
 	warmth_change -= maxf(cold_effect, 0.0)
 	warmth += warmth_change * delta_hours
 
-	# Energy management - affected by working, health, and other conditions
+	# Energy management - based on activity level
 	var energy_change: float = 0.0
-	if is_working:
-		# Base working drain with cascading multiplier
-		var work_drain := energy_decay_rate * get_energy_drain_multiplier()
-		energy_change -= work_drain
-	else:
-		# Resting recovery
-		var recovery := 3.0  # Base idle recovery
-		if is_in_bed:
-			recovery = 20.0  # Bed recovery (2X shelter rate)
-		elif is_in_shelter:
-			recovery = 10.0  # Tent recovery (~3.3x base)
-			# TODO: Improved shelter gives 12.0
-		if health < 50.0:
-			recovery *= health / 50.0  # Reduced recovery when injured
-		energy_change += recovery
+	match activity_level:
+		ActivityLevel.SLEEPING:
+			energy_change = ENERGY_RECOVERY_SLEEPING
+		ActivityLevel.RESTING:
+			energy_change = ENERGY_RECOVERY_RESTING
+		ActivityLevel.LIGHT:
+			energy_change = ENERGY_RECOVERY_LIGHT
+		ActivityLevel.INTENSIVE:
+			# Drain energy when working
+			energy_change = -energy_decay_rate * get_energy_drain_multiplier()
+
+	# Shelter bonus (small comfort bonus if not already sleeping/resting)
+	if is_in_shelter and activity_level > ActivityLevel.RESTING:
+		energy_change += 2.0
+
+	# Health penalty to recovery (reduced recovery when injured)
+	if health < 50.0 and energy_change > 0:
+		energy_change *= health / 50.0
 
 	# Sunlight bonus to energy recovery
-	if is_in_sunlight and not is_working:
+	if is_in_sunlight and activity_level != ActivityLevel.INTENSIVE:
 		energy_change += 0.5
 
 	# Direct cold energy penalty - body uses more energy to maintain warmth
 	if ambient_temperature < -10.0:
 		var cold_x: float = -ambient_temperature - 10.0
-		energy_change -= 0.005 * cold_x * cold_x  # -0.5/hr at -20, -2.0 at -30, -12.5 at -60
+		energy_change -= 0.00375 * cold_x * cold_x  # -0.375/hr at -20, -1.5 at -30, -9.4 at -60 (25% reduction)
 
 	# If energy exceeds max (health dropped), force it down
 	var max_energy := get_max_energy()

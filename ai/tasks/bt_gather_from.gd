@@ -80,10 +80,15 @@ func _gather_from_ship(agent: Node3D, delta: float) -> Status:
 
 
 func _withdraw_from_workbench(agent: Node3D) -> Status:
-	var workbench: Node = blackboard.get_var(retarget_node_var, null)
-	var site: Node = blackboard.get_var(site_var, null)
-	if not workbench or not site or not is_instance_valid(site):
+	var workbench_ref: Variant = blackboard.get_var(retarget_node_var, null)
+	if not is_instance_valid(workbench_ref):
 		return FAILURE
+	var workbench: Node = workbench_ref as Node
+	# Get as Variant first to avoid error on freed instance assignment.
+	var site_ref: Variant = blackboard.get_var(site_var, null)
+	if not is_instance_valid(site_ref):
+		return FAILURE
+	var site: Node = site_ref as Node
 
 	# Already carrying from a previous interrupted delivery — skip withdrawal, just retarget.
 	if agent.has_method("is_carrying") and agent.is_carrying():
@@ -94,7 +99,8 @@ func _withdraw_from_workbench(agent: Node3D) -> Status:
 
 	if not site.has_method("get_materials_needed"):
 		return FAILURE
-	var needed: Dictionary = site.get_materials_needed()
+	# Exclude already-reserved materials to prevent multiple units grabbing the same thing.
+	var needed: Dictionary = site.get_materials_needed(true)
 	if needed.is_empty():
 		return FAILURE
 
@@ -107,6 +113,11 @@ func _withdraw_from_workbench(agent: Node3D) -> Status:
 		return FAILURE
 
 	for mat_id: String in needed:
+		# Reserve at the site first (dibs).
+		if site.has_method("reserve_material"):
+			var reserved: int = site.reserve_material(mat_id, 1)
+			if reserved <= 0:
+				continue
 		var withdrawn: int = wb_comp.withdraw_material(mat_id, 1)
 		if withdrawn > 0:
 			if agent.has_method("start_carrying"):
@@ -116,6 +127,10 @@ func _withdraw_from_workbench(agent: Node3D) -> Status:
 			blackboard.set_var(&"is_delivering", true)
 			blackboard.set_var(&"current_action", "Hauling " + mat_id)
 			return SUCCESS
+		else:
+			# Withdrawal failed — unreserve the dibs.
+			if site.has_method("unreserve_material"):
+				site.unreserve_material(mat_id, 1)
 
 	return FAILURE
 

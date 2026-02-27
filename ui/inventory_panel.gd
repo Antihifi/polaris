@@ -42,21 +42,19 @@ func _ready() -> void:
 	_header = _title_label.get_parent() as HBoxContainer
 
 	_close_button.pressed.connect(_on_close_pressed)
-	_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
-	_close_button.z_index = 10
 	_title_label.text = title
 
 	_header.gui_input.connect(_on_header_drag_input)
-	_header.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	_setup_grid_control(_grid_container)
 
-	_action_button = Button.new()
-	_action_button.name = "ActionButton"
-	_action_button.visible = false
+	_action_button = %ActionButton
 	_action_button.pressed.connect(_on_action_button_pressed)
-	_action_button.mouse_filter = Control.MOUSE_FILTER_STOP
-	_vbox.add_child(_action_button)
+
+	# Shrink panel to fit grid content, don't stay at scene default width
+	size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	custom_minimum_size = Vector2.ZERO
+	reset_size()
 
 	hide()
 
@@ -77,6 +75,8 @@ func _setup_grid_control(parent: Control) -> void:
 	parent.add_child(_grid_ctrl)
 	# Connect item click for placeable items
 	_grid_ctrl.inventory_item_clicked.connect(_on_grid_item_clicked)
+	# Re-fit panel whenever grid resizes (gloot defers rebuilds to _process)
+	_grid_ctrl.resized.connect(reset_size)
 
 
 func _process(_delta: float) -> void:

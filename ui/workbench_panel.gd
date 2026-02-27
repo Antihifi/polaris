@@ -16,6 +16,7 @@ signal placement_started(recipe: BuildRecipe)
 @onready var tent_button: Button = $Panel/MarginContainer/VBoxContainer/Columns/BuildColumn/TentButton
 @onready var crate_button: Button = $Panel/MarginContainer/VBoxContainer/Columns/BuildColumn/CrateButton
 @onready var barrel_button: Button = $Panel/MarginContainer/VBoxContainer/Columns/BuildColumn/BarrelButton
+@onready var campfire_button: Button = $Panel/MarginContainer/VBoxContainer/Columns/BuildColumn/CampfireButton
 @onready var firewood_button: Button = $Panel/MarginContainer/VBoxContainer/Columns/BuildColumn/FirewoodButton
 @onready var upgrade_button: Button = $Panel/MarginContainer/VBoxContainer/Columns/BuildColumn/UpgradeButton
 
@@ -30,13 +31,13 @@ var _storage_labels: Dictionary = {}
 ## Screen space offset to nudge panel position
 @export var screen_offset: Vector2 = Vector2(0, -20)
 
-## Recipe ID mapping for buttons
+## Recipe ID mapping for build buttons (firewood is a conversion, not a recipe)
 const BUTTON_RECIPES: Dictionary = {
 	"sled": &"sled",
 	"tent": &"tent",
 	"crate": &"crate",
 	"barrel": &"barrel",
-	"firewood": &"firewood_bundle",
+	"campfire": &"campfire",
 	"upgrade": null  # Not yet implemented
 }
 
@@ -45,6 +46,7 @@ const MATERIAL_DISPLAY_NAMES: Dictionary = {
 	"scrap_wood": "WOOD SCRAP",
 	"nails": "NAILS",
 	"scrap_sails": "SAIL SCRAP",
+	"firewood": "FIREWOOD",
 	"seal_oil": "SEAL OIL",
 	"drift_wood": "DRIFT WOOD",
 	"cloth": "CLOTH",
@@ -58,7 +60,8 @@ func _ready() -> void:
 	tent_button.pressed.connect(_on_craft_pressed.bind("tent"))
 	crate_button.pressed.connect(_on_craft_pressed.bind("crate"))
 	barrel_button.pressed.connect(_on_craft_pressed.bind("barrel"))
-	firewood_button.pressed.connect(_on_craft_pressed.bind("firewood"))
+	campfire_button.pressed.connect(_on_craft_pressed.bind("campfire"))
+	firewood_button.pressed.connect(_on_firewood_pressed)
 	upgrade_button.pressed.connect(_on_craft_pressed.bind("upgrade"))
 	_setup_tooltips()
 	visible = false
@@ -156,6 +159,7 @@ func _update_display() -> void:
 
 
 func _update_buttons() -> void:
+	# Update recipe-based build buttons.
 	for button_id: String in BUTTON_RECIPES:
 		var recipe_id: Variant = BUTTON_RECIPES[button_id]
 		var button: Button = _get_button_for_id(button_id)
@@ -173,6 +177,12 @@ func _update_buttons() -> void:
 		else:
 			button.disabled = true
 
+	# Firewood conversion button - not recipe-based.
+	if _workbench_component:
+		firewood_button.disabled = not _workbench_component.can_convert_to_firewood()
+	else:
+		firewood_button.disabled = true
+
 
 func _get_button_for_id(button_id: String) -> Button:
 	match button_id:
@@ -184,8 +194,8 @@ func _get_button_for_id(button_id: String) -> Button:
 			return crate_button
 		"barrel":
 			return barrel_button
-		"firewood":
-			return firewood_button
+		"campfire":
+			return campfire_button
 		"upgrade":
 			return upgrade_button
 	return null
@@ -228,6 +238,7 @@ func _clear_storage_labels() -> void:
 
 
 func _setup_tooltips() -> void:
+	# Recipe-based build button tooltips.
 	for button_id: String in BUTTON_RECIPES:
 		var button: Button = _get_button_for_id(button_id)
 		if not button:
@@ -252,6 +263,9 @@ func _setup_tooltips() -> void:
 		lines.append("Build time: %d day(s)" % recipe.construction_days)
 		button.tooltip_text = "\n".join(lines)
 
+	# Firewood conversion tooltip.
+	firewood_button.tooltip_text = "Chop Firewood\nConvert 1 Wood Scrap into 5 Firewood.\nInstant."
+
 
 func _on_craft_pressed(button_id: String) -> void:
 	var recipe_id: Variant = BUTTON_RECIPES.get(button_id, null)
@@ -273,6 +287,11 @@ func _on_craft_pressed(button_id: String) -> void:
 	else:
 		var cost: int = recipe.get_material_cost("scrap_wood")
 		item_crafted.emit(button_id, cost)
+
+
+func _on_firewood_pressed() -> void:
+	if _workbench_component and _workbench_component.convert_to_firewood():
+		_update_display()
 
 
 func _on_component_placement_started(recipe: BuildRecipe) -> void:

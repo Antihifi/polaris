@@ -69,7 +69,7 @@ func _tick(delta: float) -> Status:
 
 	# Only call move_to ONCE
 	if not _moving and agent.has_method("move_to"):
-		agent.move_to(target)
+		agent.move_to(target)  # Default walking animation; BT can override with BTPlayAnimation
 		_moving = true
 		_current_target = target  # Track what we're moving to
 		_frames_since_move_called = 0
@@ -105,9 +105,6 @@ func _tick(delta: float) -> Status:
 				if dist < arrival_distance:
 					return SUCCESS
 				else:
-					# One-time log when stuck timeout triggers
-					var unit_name: String = agent.unit_name if "unit_name" in agent else "unit"
-					print("[BTMoveTo] %s: Stuck %.1fm from target after %.1fs" % [unit_name, dist, stuck_timeout])
 					return FAILURE
 		else:
 			# Making progress, reset timer

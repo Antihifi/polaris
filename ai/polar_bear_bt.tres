@@ -1,9 +1,10 @@
-[gd_resource type="BehaviorTree" load_steps=50 format=3 uid="uid://x3lk8pjv0hyo"]
+[gd_resource type="BehaviorTree" load_steps=53 format=3 uid="uid://x3lk8pjv0hyo"]
 
 [ext_resource type="Script" uid="uid://b3hku2bbe8dvd" path="res://ai/tasks/bt_animal_is_low_health.gd" id="1_77veu"]
 [ext_resource type="Script" uid="uid://cjox2lutis041" path="res://ai/tasks/bt_flee.gd" id="2_b5xyu"]
-[ext_resource type="Script" uid="uid://d1ty33qfd5kjk" path="res://ai/tasks/bt_animal_has_threat.gd" id="3_tm6ii"]
+[ext_resource type="Script" uid="uid://bf0qjoqshwe5s" path="res://ai/tasks/bt_entity_has_threat.gd" id="2_i81lx"]
 [ext_resource type="Script" uid="uid://c32no05sqsgid" path="res://ai/tasks/bt_animal_chase_target.gd" id="4_bvvx4"]
+[ext_resource type="Script" uid="uid://gxoxd0sibb5c" path="res://ai/tasks/bt_face_position.gd" id="5_i81lx"]
 [ext_resource type="Script" uid="uid://cq33eh2o0obro" path="res://ai/tasks/bt_animal_deal_damage.gd" id="5_ui7dk"]
 [ext_resource type="Script" uid="uid://djhnm7w0g4p1n" path="res://ai/tasks/bt_animal_pick_roam_target.gd" id="6_bvvx4"]
 [ext_resource type="Script" uid="uid://u1yefwug6grv" path="res://ai/tasks/bt_has_investigation_target.gd" id="6_i81lx"]
@@ -15,6 +16,10 @@
 
 [sub_resource type="BTCondition" id="BTCondition_mytth"]
 script = ExtResource("1_77veu")
+
+[sub_resource type="BTCondition" id="BTCondition_3og16"]
+script = ExtResource("2_i81lx")
+close_range_check = 30.0
 
 [sub_resource type="BBNode" id="BBNode_n55n5"]
 saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
@@ -31,10 +36,10 @@ flee_distance = 50.0
 
 [sub_resource type="BTSequence" id="BTSequence_3og16"]
 custom_name = "FleeWhenLow"
-children = [SubResource("BTCondition_mytth"), SubResource("BTPlayAnimation_b5xyu"), SubResource("BTAction_imwjx")]
+children = [SubResource("BTCondition_mytth"), SubResource("BTCondition_3og16"), SubResource("BTPlayAnimation_b5xyu"), SubResource("BTAction_imwjx")]
 
-[sub_resource type="BTCondition" id="BTCondition_r5pb0"]
-script = ExtResource("3_tm6ii")
+[sub_resource type="BTCondition" id="BTCondition_i81lx"]
+script = ExtResource("2_i81lx")
 
 [sub_resource type="BBNode" id="BBNode_ui7dk"]
 saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
@@ -58,6 +63,10 @@ blend = 2.0
 [sub_resource type="BTAction" id="BTAction_6gcch"]
 script = ExtResource("4_bvvx4")
 
+[sub_resource type="BTAction" id="BTAction_3og16"]
+script = ExtResource("5_i81lx")
+target_var = &"threat_target"
+
 [sub_resource type="BBNode" id="BBNode_b5xyu"]
 saved_value = NodePath("Sketchfab_Scene/AnimationPlayer")
 resource_name = "Sketchfab_Scene/AnimationPlayer"
@@ -73,7 +82,7 @@ script = ExtResource("5_ui7dk")
 
 [sub_resource type="BTSequence" id="BTSequence_8w0uv"]
 custom_name = "AttackThreat"
-children = [SubResource("BTCondition_r5pb0"), SubResource("BTPlayAnimation_imwjx"), SubResource("BTPlayAnimation_3og16"), SubResource("BTAction_6gcch"), SubResource("BTPlayAnimation_tm6ii"), SubResource("BTAction_eo7o5")]
+children = [SubResource("BTCondition_i81lx"), SubResource("BTPlayAnimation_imwjx"), SubResource("BTPlayAnimation_3og16"), SubResource("BTAction_6gcch"), SubResource("BTAction_3og16"), SubResource("BTPlayAnimation_tm6ii"), SubResource("BTAction_eo7o5")]
 
 [sub_resource type="BTCondition" id="BTCondition_8w0uv"]
 script = ExtResource("6_i81lx")

@@ -18,6 +18,9 @@ var linked_workbench: Node = null
 ## Materials that have been deposited at this site.
 var materials_deposited: Dictionary = {}
 
+## Materials currently being hauled to this site (reserved but not yet deposited).
+var materials_reserved: Dictionary = {}
+
 ## Construction progress (0.0 to 1.0).
 var construction_progress: float = 0.0
 
@@ -44,8 +47,9 @@ func get_progress_percent() -> float:
 	return construction_progress * 100.0
 
 
-func get_materials_needed() -> Dictionary:
+func get_materials_needed(exclude_reserved: bool = false) -> Dictionary:
 	## Get dictionary of materials still needed: {id: amount}.
+	## If exclude_reserved is true, also subtracts in-flight reservations.
 	if not recipe:
 		return {}
 	var needed: Dictionary = {}
@@ -53,6 +57,8 @@ func get_materials_needed() -> Dictionary:
 		var required: int = recipe.required_materials[mat_id]
 		var deposited: int = materials_deposited.get(mat_id, 0)
 		var remaining: int = required - deposited
+		if exclude_reserved:
+			remaining -= materials_reserved.get(mat_id, 0)
 		if remaining > 0:
 			needed[mat_id] = remaining
 	return needed
@@ -78,9 +84,34 @@ func deposit_material(material_id: String, count: int) -> int:
 
 	var accepted: int = mini(count, can_accept)
 	materials_deposited[material_id] = deposited + accepted
+	# Clear reservation for the deposited amount.
+	unreserve_material(material_id, accepted)
 	material_deposited.emit(material_id, accepted)
 
 	return accepted
+
+
+func reserve_material(material_id: String, count: int) -> int:
+	## Reserve materials for hauling. Returns amount actually reserved.
+	var needed: int = _get_unreserved_need(material_id)
+	var reserved: int = mini(count, needed)
+	if reserved > 0:
+		materials_reserved[material_id] = materials_reserved.get(material_id, 0) + reserved
+	return reserved
+
+
+func unreserve_material(material_id: String, count: int) -> void:
+	## Cancel a reservation (unit failed to deliver or materials deposited).
+	var current: int = materials_reserved.get(material_id, 0)
+	materials_reserved[material_id] = maxi(current - count, 0)
+
+
+func _get_unreserved_need(material_id: String) -> int:
+	## How many more of this material can be reserved?
+	var required: int = recipe.required_materials.get(material_id, 0) if recipe else 0
+	var deposited: int = materials_deposited.get(material_id, 0)
+	var reserved: int = materials_reserved.get(material_id, 0)
+	return maxi(required - deposited - reserved, 0)
 
 
 func add_work(hours: float, efficiency: float = 1.0) -> void:
@@ -156,6 +187,9 @@ func cancel_construction() -> void:
 				if count > 0:
 					linked_workbench.add_materials(mat_id, count)
 
+	# Clear all reservations.
+	materials_reserved.clear()
+
 	# Unregister all workers.
 	for worker in active_workers.duplicate():
 		unregister_worker(worker)
@@ -175,21 +209,26 @@ func cancel_construction() -> void:
 func _complete_construction() -> void:
 	## Handle construction completion.
 	# Spawn the result scene at this location.
-	if recipe and recipe.result_scene:
-		var result: Node3D = recipe.result_scene.instantiate()
-		# Elevate slightly to avoid falling through terrain on spawn.
-		result.global_position = global_position + Vector3(0, 0.5, 0)
-		result.global_rotation = global_rotation
+	var result_scene: PackedScene = recipe.get_result_scene() if recipe else null
+	if result_scene:
+		var result: Node3D = result_scene.instantiate()
+		# Add to tree first so global_position/rotation setters work.
 		get_parent().add_child(result)
-		# Unfreeze any RigidBody3D in the result after a frame delay.
-		_unfreeze_rigid_bodies_deferred(result)
+		result.global_rotation = global_rotation
+		# Elevate RigidBody3D results slightly so physics can settle them onto terrain.
+		# Static objects (campfires etc.) go directly at ground level.
+		if result is RigidBody3D:
+			result.global_position = global_position + Vector3(0, 0.5, 0)
+			_unfreeze_rigid_bodies_deferred(result)
+		else:
+			result.global_position = global_position
 		# If this is a tent, make it interactive for store/place.
 		if recipe.id == &"tent":
 			result.add_to_group("placed_tents")
 			TentPlacementManager.add_tent_click_area(result)
 
 	# Emit completion signal.
-	construction_complete.emit(recipe.result_scene if recipe else null)
+	construction_complete.emit(result_scene)
 
 	# Unregister from WorkManager.
 	var work_manager := _get_work_manager()

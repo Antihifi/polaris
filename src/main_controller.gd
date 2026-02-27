@@ -115,6 +115,7 @@ func _ready() -> void:
 	butcher_panel = butcher_panel_scene.instantiate()
 	add_child(butcher_panel)
 	input_handler.corpse_clicked.connect(_on_corpse_clicked)
+	input_handler.limb_clicked.connect(_on_limb_clicked)
 	butcher_panel.butcher_confirmed.connect(_on_butcher_confirmed)
 
 	# Connect inventory item action (e.g. Place Tent from crate, Carve body parts)
@@ -310,6 +311,18 @@ func _on_corpse_clicked(corpse: Node) -> void:
 	elif "unit_name" in corpse:
 		corpse_name = corpse.unit_name
 	butcher_panel.show_for_corpse(corpse, has_axe, rts_camera, corpse_name)
+
+
+func _on_limb_clicked(limb: SeveredLimb) -> void:
+	## Handle right-click on severed limb - collect if unit has knife.
+	if not limb or not is_instance_valid(limb):
+		return
+	var selected: Array[Node] = input_handler.get_selected_units()
+	if selected.is_empty():
+		return
+	var collector: Node = selected[0]
+	if collector.has_method("has_item_by_id") and collector.has_item_by_id("knife"):
+		limb.collect(collector)
 
 
 func _on_butcher_confirmed(corpse: Node3D) -> void:

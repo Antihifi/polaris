@@ -5,10 +5,12 @@ class_name BTChaseToAttackRange
 ## Returns SUCCESS when in range, RUNNING while moving, FAILURE if no target.
 
 @export var target_var: StringName = &"combat_target"
-@export var range_buffer: float = 2.0  # Extra distance to account for collision
+@export var range_buffer: float = 0.3  # Collision capsule radii (~0.25m per unit)
+@export var ray_height: float = 1.2  # Chest level for clear shot check
 
 ## PERF: Track last target pos to avoid recalculating path every tick
 var _last_target_pos: Vector3 = Vector3.INF
+var _side_offset: float = 0.0  # Perpendicular offset when blocked
 
 
 func _generate_name() -> String:
@@ -17,6 +19,7 @@ func _generate_name() -> String:
 
 func _enter() -> void:
 	_last_target_pos = Vector3.INF
+	_side_offset = 0.0
 
 
 func _tick(_delta: float) -> Status:
@@ -24,9 +27,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var target: Node3D = blackboard.get_var(target_var, null)
-	if not target or not is_instance_valid(target):
+	var target_ref: Variant = blackboard.get_var(target_var, null)
+	if not is_instance_valid(target_ref):
 		return FAILURE
+	var target: Node3D = target_ref as Node3D
 
 	# Get attack range from weapon or use default
 	var attack_range: float = 2.5
@@ -48,13 +52,53 @@ func _tick(_delta: float) -> Status:
 
 	if target_moved:
 		_last_target_pos = target.global_position
-		# Navigate toward target (pass true to indicate combat chase, don't disengage combat)
-		if agent.has_method("move_to"):
-			# Calculate position just within attack range
-			var dir_to_target := (target.global_position - agent.global_position).normalized()
+
+		var dir_to_target := (target.global_position - agent.global_position).normalized()
+		dir_to_target.y = 0.0
+
+		# Check if friendly blocks path - if so, offset sideways
+		if _is_blocked_by_friendly(agent, target):
+			# Alternate sides, increase offset each time
+			_side_offset = 2.5 if _side_offset <= 0.0 else -(_side_offset + 1.0)
+			var perp := Vector3(-dir_to_target.z, 0, dir_to_target.x)
+			var offset := perp * _side_offset
+			var attack_pos := target.global_position - dir_to_target * attack_range * 0.5 + offset
+			if agent.has_method("move_to"):
+				agent.move_to(attack_pos, true)
+		else:
+			_side_offset = 0.0
 			var attack_pos := target.global_position - dir_to_target * attack_range * 0.5
-			agent.move_to(attack_pos, true)  # is_combat_chase = true
-		elif "navigation_agent" in agent and agent.navigation_agent:
-			agent.navigation_agent.target_position = target.global_position
+			if agent.has_method("move_to"):
+				agent.move_to(attack_pos, true)
 
 	return RUNNING
+
+
+func _is_blocked_by_friendly(agent: Node3D, target: Node3D) -> bool:
+	var space_state := agent.get_world_3d().direct_space_state
+	if not space_state:
+		return false
+
+	var from := agent.global_position + Vector3.UP * ray_height
+	var to := target.global_position + Vector3.UP * ray_height
+
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collision_mask = 2
+	query.exclude = [agent.get_rid(), target.get_rid()]
+
+	var result := space_state.intersect_ray(query)
+	if result.is_empty():
+		return false
+
+	var collider: Node3D = result.get("collider")
+	if not collider:
+		return false
+
+	if collider.is_in_group("survivors"):
+		# Skip dead
+		if "stats" in collider and collider.stats and collider.stats.has_method("is_dead"):
+			if collider.stats.is_dead():
+				return false
+		return true
+
+	return false

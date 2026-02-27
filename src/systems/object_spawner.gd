@@ -66,12 +66,12 @@ func spawn_containers(barrel_count: int, crate_count: int, fire_count: int, cent
 			_spawned_containers.append(container)
 		pos_idx += 1
 		
-	# Then fires
+	# Then fires (use spawn_campfire, not _spawn_container — campfires have
+	# their own FireFuelComponent and don't need a general StorageContainer)
 	for i in range(fire_count):
-		var container := _spawn_container(fire_scene, positions[pos_idx], false)
-		if container:
-			spawned.append(container)
-			_spawned_containers.append(container)
+		var fire := spawn_campfire(positions[pos_idx])
+		if fire:
+			spawned.append(fire)
 		pos_idx += 1
 
 	containers_spawned.emit(spawned.size())

@@ -1,5 +1,7 @@
 extends Node
 
+signal impact_occurred(intensity: float, duration: float)
+
 const TerrainGenerator := preload("res://src/terrain/terrain_generator.gd")
 
 var _panel: Control = null
@@ -1070,14 +1072,10 @@ func _on_unfreeze_ship_pieces() -> void:
 	# Reset impact detection for this unfreeze
 	_ground_impact_detected = false
 
-	# Get camera for screen shake
-	var camera := get_viewport().get_camera_3d()
-
 	# Play wood splintering sound (30% quieter) and initial small shake
 	var wood_player := SoundManager.play_sound(_wood_crash_sound)
 	wood_player.volume_db = -3.1  # 30% quieter (linear 0.7)
-	if camera and camera.has_method("shake"):
-		camera.shake(0.15, 0.4)  # Small shake: intensity 0.15, duration 0.4s
+	impact_occurred.emit(0.15, 0.4)
 
 	var unfrozen_count: int = 0
 	for child in erebus_pieces.get_children():
@@ -1087,14 +1085,14 @@ func _on_unfreeze_ship_pieces() -> void:
 			child.max_contacts_reported = 1
 			# Connect body_entered signal to detect ground collision
 			if not child.body_entered.is_connected(_on_ship_piece_hit_ground):
-				child.body_entered.connect(_on_ship_piece_hit_ground.bind(camera))
+				child.body_entered.connect(_on_ship_piece_hit_ground)
 			child.freeze = false
 			unfrozen_count += 1
 
 	print("[DebugMenu] Unfroze %d RigidBody3D nodes in erebus_pieces" % unfrozen_count)
 
 
-func _on_ship_piece_hit_ground(body: Node, camera: Camera3D) -> void:
+func _on_ship_piece_hit_ground(body: Node) -> void:
 	## Called when a ship piece collides with something (terrain).
 	## Only triggers effects on the first impact.
 	if _ground_impact_detected:
@@ -1107,8 +1105,7 @@ func _on_ship_piece_hit_ground(body: Node, camera: Camera3D) -> void:
 	ground_player.volume_db = 4.9  # 1.75x louder
 
 	# Large screen shake for dramatic impact
-	if camera and camera.has_method("shake"):
-		camera.shake(0.5, 0.8)  # Large shake: intensity 0.5, duration 0.8s
+	impact_occurred.emit(0.5, 0.8)
 
 	print("[DebugMenu] Ship pieces hit ground - crash effect triggered")
 

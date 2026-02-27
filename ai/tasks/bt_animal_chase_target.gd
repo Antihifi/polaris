@@ -27,9 +27,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var target: Node3D = blackboard.get_var(threat_target_var, null)
-	if not target or not is_instance_valid(target):
+	var target_ref: Variant = blackboard.get_var(threat_target_var, null)
+	if not is_instance_valid(target_ref):
 		return FAILURE
+	var target: Node3D = target_ref as Node3D
 
 	var attack_range: float = agent.attack_range if "attack_range" in agent else 2.5
 	var dist: float = agent.global_position.distance_to(target.global_position)
@@ -39,9 +40,7 @@ func _tick(_delta: float) -> Status:
 		return SUCCESS
 
 	# Navigate toward target
-	if agent.has_method("_move_to"):
-		agent._move_to(target.global_position)
-	elif "navigation_agent" in agent and agent.navigation_agent:
-		agent.navigation_agent.target_position = target.global_position
+	if agent.has_method("move_to"):
+		agent.move_to(target.global_position)
 
 	return RUNNING

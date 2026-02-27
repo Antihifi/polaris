@@ -1,5 +1,7 @@
 extends Node
 class_name DemolitionTestController
+
+signal impact_occurred(intensity: float, duration: float)
 ## Realistic staged destruction controller for ship demolition testing.
 ##
 ## Simulates progressive structural failure with dependencies:
@@ -259,10 +261,8 @@ func _trigger_ground_impact(body: RigidBody3D) -> void:
 	# Play ground crash sound at impact position
 	_play_ship_sound(_ground_crash_sound, 0.0)
 
-	# Large camera shake
-	var camera := get_viewport().get_camera_3d()
-	if camera and camera.has_method("shake"):
-		camera.shake(0.5, 0.8)  # Large shake: intensity 0.5, duration 0.8s
+	# Large camera shake via signal
+	impact_occurred.emit(0.5, 0.8)
 
 	print("MAST GROUND IMPACT: ", mast_name)
 
@@ -562,9 +562,7 @@ func _destroy_mast_progressive() -> void:
 
 		# ONE sound + shake per mast destruction event
 		_play_ship_sound(_wood_crash_sound, -12.0)
-		var camera := get_viewport().get_camera_3d()
-		if camera and camera.has_method("shake"):
-			camera.shake(0.15, 0.4)
+		impact_occurred.emit(0.15, 0.4)
 
 		_current_mast_index = (idx + 1) % MAST_GROUPS.size()
 		return
@@ -660,9 +658,7 @@ func _destroy_hull_progressive() -> void:
 
 	# ONE sound + shake per hull destruction event
 	_play_ship_sound(_wood_crash_sound, -12.0)
-	var camera := get_viewport().get_camera_3d()
-	if camera and camera.has_method("shake"):
-		camera.shake(0.15, 0.4)
+	impact_occurred.emit(0.15, 0.4)
 
 
 # ============ DECK (progressive, edges first) ============
@@ -706,9 +702,7 @@ func _destroy_deck_progressive() -> void:
 
 	# ONE sound + shake per deck destruction event
 	_play_ship_sound(_wood_crash_sound, -12.0)
-	var camera := get_viewport().get_camera_3d()
-	if camera and camera.has_method("shake"):
-		camera.shake(0.15, 0.4)
+	impact_occurred.emit(0.15, 0.4)
 
 
 # ============ MAST SHAKE EFFECT ============

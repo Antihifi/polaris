@@ -28,7 +28,11 @@ func _tick(_delta: float) -> Status:
 			return SUCCESS
 
 	# PRIORITY 2: Take from nearby container (requires proximity)
-	var container_node: Node3D = blackboard.get_var(&"target_node", null)
+	var container_node_ref: Variant = blackboard.get_var(&"target_node", null)
+	if not is_instance_valid(container_node_ref):
+		blackboard.set_var(&"current_action", "No food source")
+		return FAILURE
+	var container_node: Node3D = container_node_ref as Node3D
 	if not container_node:
 		blackboard.set_var(&"current_action", "No food source")
 		return FAILURE

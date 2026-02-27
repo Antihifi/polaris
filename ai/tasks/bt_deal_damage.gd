@@ -5,6 +5,8 @@ class_name BTDealDamage
 
 @export var target_var: StringName = &"combat_target"
 
+var _axe_hit_sound: AudioStream = preload("res://sounds/axe_hit.mp3")
+
 
 func _generate_name() -> String:
 	return "DealDamage"
@@ -15,9 +17,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var target: Node3D = blackboard.get_var(target_var, null)
-	if not target or not is_instance_valid(target):
+	var target_ref: Variant = blackboard.get_var(target_var, null)
+	if not is_instance_valid(target_ref):
 		return FAILURE
+	var target: Node3D = target_ref as Node3D
 
 	# Check if target is dead
 	if "is_dead" in target and target.is_dead:
@@ -50,5 +53,9 @@ func _tick(_delta: float) -> Status:
 	# Deal damage (blood particles triggered by EquipmentAnimationComponent at 1.65s mark)
 	if target.has_method("take_damage"):
 		target.take_damage(damage, agent)
+
+	# Play axe hit sound for hatchet strikes
+	if weapon and weapon.id == &"hatchet":
+		SoundManager.play_sound(_axe_hit_sound)
 
 	return SUCCESS

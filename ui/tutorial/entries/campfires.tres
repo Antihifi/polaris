@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Campfires"
+brief_tooltip = "Fires need fuel to stay lit.
+Nearby units receive a warmth bonus.
+Fire goes out when fuel runs out."
+implemented = true
+detailed_text = "[b]Fire & Fuel[/b]
+
+[i]In the Arctic, fire is life. The expedition carried coal and spirit fuel, but supplies dwindled quickly. Men burned anything they could find — ship timbers, spare clothing, even books — to keep the cold at bay for one more night.[/i]
+
+A lit campfire provides warmth to all units nearby. Without fuel, it goes out.
+
+[b]How Fires Work[/b]
+
+• Right-click a campfire to open its fuel panel
+• Add fuel from a nearby unit's inventory — wood, coal, or other combustibles
+• Each fuel type burns for a different length of time
+• When the fuel runs out, the fire dies
+
+[b]Warmth[/b]
+
+Any unit standing near a burning fire receives a warmth bonus each hour. Combined with shelter, a fire can keep your men alive through the worst blizzards.
+
+[b]Tips[/b]
+
+• Keep a fire burning through the night — temperatures drop sharply after dark
+• Stockpile firewood at the workbench before winter arrives
+• Place fires near shelters so men benefit from both warmth sources
+• A fire without fuel is useless — check fuel levels regularly"

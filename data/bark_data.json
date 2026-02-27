@@ -291,5 +291,99 @@
 		"It's coming right for us!",
 		"Get to safety!",
 		"To arms, men!"
+	],
+	"bear_spotted": [
+		"Bear! BEAR!",
+		"Oh God, a bear!",
+		"Lord preserve us... a bear!",
+		"RUN! There's a bear!",
+		"White devil! RUN!"
+	],
+	"fleeing_terror": [
+		"It's gaining on me!",
+		"God help me!",
+		"I can't outrun it!",
+		"NO NO NO NO!",
+		"Please God, not like this!",
+		"HELP! SOMEONE HELP!",
+		"It's right behind me!",
+		"I'm going to die!"
+	],
+	"being_mauled": [
+		"OH GOD!",
+		"NOOOOOOO!",
+		"This is surely my end!",
+		"AAAAAAGH!",
+		"IT'S TEARING ME APART!",
+		"HELP ME! PLEASE!",
+		"LORD HAVE MERCY!",
+		"I CAN'T... I CAN'T...",
+		"SOMEONE... ANYONE...",
+		"Mother... I'm sorry..."
+	],
+	"dismember_arm_animal": [
+		"IT'S TEARING MY ARM OFF!",
+		"MY ARM! OH GOD, MY ARM!",
+		"THE BEAST HAS MY ARM!",
+		"AAAAAAGHHH! MY ARM!",
+		"IT RIPPED MY ARM OFF! OH GOD!",
+		"MY ARM! THE THING TOOK MY ARM!"
+	],
+	"dismember_arm_human": [
+		"MY ARM! HE CUT OFF MY ARM!",
+		"AAAGH! MY ARM!",
+		"HE'S HACKED MY ARM OFF!",
+		"NO! MY ARM!",
+		"HE TOOK MY ARM! OH GOD!",
+		"MY ARM... MY ARM IS GONE..."
+	],
+	"dismember_leg_animal": [
+		"MY LEG! IT'S GOT MY LEG!",
+		"IT'S TEARING ME APART!",
+		"AAAAAGH! MY LEG!",
+		"OH GOD, MY LEG!",
+		"THE BEAST TOOK MY LEG!",
+		"I CAN'T STAND! MY LEG!"
+	],
+	"dismember_leg_human": [
+		"MY LEG! HE'S TAKEN MY LEG!",
+		"AAAGH! MY LEG!",
+		"NO! NOT MY LEG!",
+		"HE'S CUT MY LEG OFF!",
+		"I CAN'T WALK! MY LEG!",
+		"MY LEG... OH GOD..."
+	],
+	"dismember_hand": [
+		"MY HAND! MY HAND!",
+		"AAAGH! MY HAND!",
+		"OH GOD NO! MY HAND!",
+		"I CAN'T... MY HAND...",
+		"HE TOOK MY HAND!"
+	],
+	"dismember_foot": [
+		"MY FOOT! MY FOOT!",
+		"AAAGH!",
+		"I CAN'T WALK! MY FOOT!",
+		"OH GOD! MY FOOT!",
+		"NO! MY FOOT!"
+	],
+	"dismember_generic": [
+		"AAAAAAAAAGGGHHH!",
+		"OH GOD! OH GOD!",
+		"NOOOOOOO!",
+		"THIS IS SURELY MY END!",
+		"SOMEONE... HELP ME...",
+		"Mother... I'm sorry..."
+	],
+	"witness_dismemberment": [
+		"Oh God... his arm...",
+		"Lord have mercy...",
+		"NO! Oh God, no!",
+		"We have to help him!",
+		"Jesus Christ!",
+		"I'm going to be sick...",
+		"The blood... oh God, the blood...",
+		"What have I just seen...",
+		"God save us all..."
 	]
 }

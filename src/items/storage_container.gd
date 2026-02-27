@@ -10,7 +10,8 @@ signal contents_changed
 
 enum StorageType {
 	FOOD,      ## Barrels: food and beverages only
-	GENERAL    ## Crates: wood, tools, fuel
+	GENERAL,   ## Crates: wood, tools, fuel
+	FUEL       ## Campfires: fuel items only
 }
 
 @export var display_name: String = "Storage Container"
@@ -24,6 +25,7 @@ const CONTAINER_COLLISION_LAYER: int = 8  # Layer 4 (1 << 3)
 ## Allowed item categories based on storage type
 const FOOD_CATEGORIES: Array[String] = ["food"]
 const GENERAL_CATEGORIES: Array[String] = ["fuel", "tool", "misc", "structure"]
+const FUEL_CATEGORIES: Array[String] = ["fuel"]
 
 var inventory: Inventory = null
 var grid_constraint: GridConstraint = null
@@ -44,6 +46,8 @@ func _ready() -> void:
 				parent.add_to_group("barrels")
 			StorageType.GENERAL:
 				parent.add_to_group("crates")
+			StorageType.FUEL:
+				parent.add_to_group("campfires")
 
 	# Load protoset
 	_protoset = load("res://data/items_protoset.json")
@@ -95,10 +99,13 @@ func _setup_click_area() -> void:
 
 	var box := BoxShape3D.new()
 	# Estimate size based on storage type
-	if storage_type == StorageType.FOOD:
-		box.size = Vector3(0.8, 1.2, 0.8)  # Barrel shape
-	else:
-		box.size = Vector3(1.0, 0.8, 1.0)  # Crate shape
+	match storage_type:
+		StorageType.FOOD:
+			box.size = Vector3(0.8, 1.2, 0.8)  # Barrel shape
+		StorageType.FUEL:
+			box.size = Vector3(1.5, 0.5, 1.5)  # Campfire shape (wide, low)
+		_:
+			box.size = Vector3(1.0, 0.8, 1.0)  # Crate shape
 
 	collision.shape = box
 	collision.position = Vector3(0, box.size.y * 0.5, 0)  # Center at bottom
@@ -117,6 +124,8 @@ func can_accept_item(item: InventoryItem) -> bool:
 			return category in FOOD_CATEGORIES
 		StorageType.GENERAL:
 			return category in GENERAL_CATEGORIES
+		StorageType.FUEL:
+			return category in FUEL_CATEGORIES
 
 	return false
 

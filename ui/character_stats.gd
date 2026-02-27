@@ -7,9 +7,14 @@ signal closed
 
 # Panel references
 @onready var name_panel: Panel = $Name
+@onready var action_panel: Panel = $Action
 @onready var stats_panel: Panel = $Stats
 @onready var skills_panel: Panel = $Stats/Skills
 @onready var effects_panel: Panel = $Stats/Effects
+@onready var flourish_top1: Panel = $FlourishTop1
+@onready var flourish_top2: Panel = $FlourishTop2
+@onready var flourish_bottom1: Panel = $FlourishTop3
+@onready var flourish_bottom2: Panel = $FlourishTop4
 
 # Toggle buttons
 @onready var skills_button: Button = $"Stats/MarginContainer/CenterContainer/VBoxContainer/Button"
@@ -56,7 +61,7 @@ var _warmth_trend: ColorRect
 var _morale_trend: ColorRect
 
 # Close button (inside header HBoxContainer)
-@onready var _close_button: Button = $Name/MarginContainer/CenterContainer/HBoxContainer/CloseButton
+@onready var _close_button: Button = $Name/MarginContainer/HBoxContainer/CloseButton
 
 # Unstuck button (added by user in editor, optional)
 var _unstuck_button: Button = null
@@ -72,7 +77,7 @@ func _ready() -> void:
 	_time_manager = get_node_or_null("/root/TimeManager")
 
 	# Get name label reference
-	name_label = $Name/MarginContainer/CenterContainer/HBoxContainer/Label
+	name_label = $Name/MarginContainer/HBoxContainer/Label
 
 	# Get action label reference
 	action_label = $Action/MarginContainer/CenterContainer/Label
@@ -118,11 +123,16 @@ func _ready() -> void:
 		if child is Label:
 			_effect_labels.append(child)
 
-	# Start with Skills and Effects panels hidden
+	# Start with Skills and Effects panels hidden, FlourishTop1 shown
 	skills_panel.visible = false
 	effects_panel.visible = false
 	skills_button.button_pressed = false
 	effects_button.button_pressed = false
+	flourish_top1.visible = true
+	flourish_top2.visible = false
+	flourish_bottom1.visible = true
+	flourish_bottom2.visible = false
+	_set_panel_width(false)
 
 	# Start hidden
 	visible = false
@@ -131,6 +141,23 @@ func _ready() -> void:
 	_unstuck_button = get_node_or_null("Stats/MarginContainer/CenterContainer/VBoxContainer/UnstuckButton")
 	if _unstuck_button:
 		_unstuck_button.pressed.connect(_on_unstuck_pressed)
+
+
+func _set_panel_width(skills_open: bool) -> void:
+	## Align name and action panels to match stats area.
+	## Mode 1 (default): -100 to 100 matching Stats panel.
+	## Mode 2 (skills):  -100 to 298 matching Stats + Skills.
+	var left: float = -100.0
+	var right: float = 298.0 if skills_open else 100.0
+	var width: float = right - left
+	name_panel.offset_left = left
+	name_panel.offset_right = right
+	name_panel.custom_minimum_size.x = width
+	action_panel.offset_left = left
+	action_panel.offset_right = right
+	action_panel.custom_minimum_size.x = width
+	# Push close button to right edge when expanded
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
 func _configure_skill_bar(bar: ProgressBar) -> void:
@@ -297,6 +324,13 @@ func _get_health_trend() -> float:
 func _on_skills_toggled(pressed: bool) -> void:
 	## Toggle skills panel visibility when button pressed.
 	skills_panel.visible = pressed
+	# Swap flourish panels: narrow for default view, wide for skills view
+	flourish_top1.visible = not pressed
+	flourish_top2.visible = pressed
+	flourish_bottom1.visible = not pressed
+	flourish_bottom2.visible = pressed
+	# Resize name/action panels: wider in skills view
+	_set_panel_width(pressed)
 	# If hiding skills, also hide effects (since effects button is in skills panel)
 	if not pressed:
 		effects_panel.visible = false
@@ -353,6 +387,11 @@ func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
 	effects_panel.visible = false
 	skills_button.button_pressed = false
 	effects_button.button_pressed = false
+	flourish_top1.visible = true
+	flourish_top2.visible = false
+	flourish_bottom1.visible = true
+	flourish_bottom2.visible = false
+	_set_panel_width(false)
 
 	# Hide skills button for Men (only Officers and Captain can view skills)
 	var is_officer_or_captain: bool = _current_unit.rank != ClickableUnit.UnitRank.MAN

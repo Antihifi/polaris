@@ -386,29 +386,23 @@ var _connected_animals: Dictionary = {}  # animal_id -> true
 
 func _connect_to_survivors() -> void:
 	## Connect to all survivors' combat signals.
-	await get_tree().process_frame
-	var survivors := get_tree().get_nodes_in_group("survivors")
-	for unit: Node in survivors:
-		_connect_unit_signals(unit)
-
-	# Also listen for new units added later
-	get_tree().node_added.connect(_on_node_added)
+	## Runs periodically to catch late-spawned units (groups aren't set when
+	## node_added fires, so a one-shot scan + signal approach misses them).
+	while true:
+		await get_tree().create_timer(1.0).timeout
+		var survivors := get_tree().get_nodes_in_group("survivors")
+		for unit: Node in survivors:
+			_connect_unit_signals(unit)
 
 
 func _connect_to_animals() -> void:
 	## Connect to all animals' combat signals.
-	await get_tree().process_frame
-	var animals := get_tree().get_nodes_in_group("animals")
-	for animal: Node in animals:
-		_connect_animal_signals(animal)
-
-
-func _on_node_added(node: Node) -> void:
-	## Auto-connect newly spawned units/animals.
-	if node.is_in_group("survivors"):
-		_connect_unit_signals.call_deferred(node)
-	elif node.is_in_group("animals"):
-		_connect_animal_signals.call_deferred(node)
+	## Same periodic approach as survivors.
+	while true:
+		await get_tree().create_timer(2.0).timeout
+		var animals := get_tree().get_nodes_in_group("animals")
+		for animal: Node in animals:
+			_connect_animal_signals(animal)
 
 
 func _connect_unit_signals(unit: Node) -> void:
@@ -427,6 +421,11 @@ func _connect_unit_signals(unit: Node) -> void:
 	var combat: Node = unit.get_node_or_null("CombatComponent")
 	if combat and combat.has_signal("died"):
 		combat.died.connect(_on_unit_died.bind(unit))
+
+	# Connect to dismemberment signal
+	var dismember: Node = unit.get_node_or_null("DismembermentComponent")
+	if dismember and dismember.has_signal("limb_dismembered"):
+		dismember.limb_dismembered.connect(_on_unit_dismembered.bind(unit))
 
 
 func _connect_animal_signals(animal: Node) -> void:
@@ -451,8 +450,27 @@ func _on_unit_combat_started(target: Node3D, unit: Node) -> void:
 		bark(unit, "combat_start", 2.0)
 
 
-func _on_unit_took_damage(_amount: float, _attacker: Node3D, unit: Node) -> void:
-	## Unit took damage - pain bark (30% chance).
+func _on_unit_took_damage(_amount: float, attacker: Node3D, unit: Node) -> void:
+	## Unit took damage - context-sensitive bark based on attacker type.
+	if not is_instance_valid(attacker):
+		if randf() < 0.3:
+			bark(unit, "took_hit", 1.5)
+		return
+
+	# Being attacked by animal (bear) - more dramatic
+	if attacker.is_in_group("animals"):
+		# Check if fleeing (being chased) vs in melee combat
+		if "is_fleeing" in unit and unit.is_fleeing:
+			# Being chased - terrified barks
+			if randf() < 0.5:
+				bark_immediate(unit, _get_random_line("fleeing_terror", unit), 2.0)
+		else:
+			# Being mauled in melee - horrific barks
+			if randf() < 0.7:
+				bark_immediate(unit, _get_random_line("being_mauled", unit), 2.0)
+		return
+
+	# Regular damage (from other sources)
 	if randf() < 0.3:
 		bark(unit, "took_hit", 1.5)
 
@@ -479,25 +497,30 @@ func _on_animal_died(animal: Node) -> void:
 
 
 func _on_animal_started_combat(target: Node3D, animal: Node) -> void:
-	## Animal attacked someone - nearby survivors warn (70% chance).
-	if not is_instance_valid(target) or randf() < 0.3:
+	## Animal attacked someone - victim screams, nearby survivors warn.
+	if not is_instance_valid(target):
 		return
 
-	# Find a nearby survivor (not the target) to yell warning
-	var survivors := get_tree().get_nodes_in_group("survivors")
-	for unit: Node in survivors:
-		if unit == target:
-			continue
-		if "is_dead" in unit and unit.is_dead:
-			continue
-		var dist: float = unit.global_position.distance_to(animal.global_position)
-		if dist < 25.0:
-			bark_immediate(unit, _get_random_line("animal_attacking", unit), 2.0)
-			break  # Only one warning
+	# VICTIM barks in terror (high chance - being attacked is terrifying)
+	if target.is_in_group("survivors") and randf() < 0.8:
+		bark_immediate(target, _get_random_line("being_mauled", target), 2.0)
+
+	# Nearby survivors warn (lower chance to avoid bark spam)
+	if randf() < 0.4:
+		var survivors := get_tree().get_nodes_in_group("survivors")
+		for unit: Node in survivors:
+			if unit == target:
+				continue
+			if "is_dead" in unit and unit.is_dead:
+				continue
+			var dist: float = unit.global_position.distance_to(animal.global_position)
+			if dist < 25.0:
+				bark(unit, "animal_attacking", 2.0)
+				break  # Only one warning
 
 
 func _on_unit_died(unit: Node) -> void:
-	## A survivor died - nearby survivors react.
+	## A survivor died - nearby survivors react (excludes the killer).
 	var survivors := get_tree().get_nodes_in_group("survivors")
 	var death_pos: Vector3 = unit.global_position
 
@@ -505,6 +528,9 @@ func _on_unit_died(unit: Node) -> void:
 		if other == unit:
 			continue
 		if "is_dead" in other and other.is_dead:
+			continue
+		# Skip the killer — they don't mourn their own victim
+		if _is_fighting(other, unit):
 			continue
 		var dist: float = other.global_position.distance_to(death_pos)
 		if dist < 20.0:
@@ -520,3 +546,83 @@ func _schedule_death_reaction(unit: Node, delay: float) -> void:
 		if is_instance_valid(unit) and not ("is_dead" in unit and unit.is_dead):
 			bark_immediate(unit, _get_random_line("death_nearby", unit), 3.0)
 	)
+
+
+# ============================================================================
+# DISMEMBERMENT BARKS
+# ============================================================================
+
+func _on_unit_dismembered(part: int, _position: Vector3, _limb: RigidBody3D, unit: Node) -> void:
+	## Victim lost a limb - immediate traumatic bark + witness reactions.
+	# Get attacker reference before anything clears it
+	var attacker: Node3D = null
+	var is_animal_attack := false
+	var combat: Node = unit.get_node_or_null("CombatComponent")
+	if combat and is_instance_valid(combat.combat_target):
+		attacker = combat.combat_target
+		is_animal_attack = attacker.is_in_group("animals")
+
+	# Head = instant death, no victim bark (they're dead)
+	if part == 0:  # BodyPart.HEAD
+		_trigger_witness_dismemberment(unit, attacker)
+		return
+
+	# Pick bark category based on limb + attacker type
+	var category := _get_dismemberment_category(part, is_animal_attack)
+	bark_immediate(unit, _get_random_line(category, unit), 3.0)
+
+	# Nearby witness reactions (excludes attacker)
+	_trigger_witness_dismemberment(unit, attacker)
+
+
+func _get_dismemberment_category(part: int, is_animal: bool) -> String:
+	## Map body part enum + attacker type to bark category.
+	match part:
+		1, 2:  # LEFT_ARM, RIGHT_ARM
+			return "dismember_arm_animal" if is_animal else "dismember_arm_human"
+		3, 4:  # LEFT_LEG, RIGHT_LEG
+			return "dismember_leg_animal" if is_animal else "dismember_leg_human"
+		5, 6:  # LEFT_HAND, RIGHT_HAND
+			return "dismember_hand"
+		7, 8:  # LEFT_FOOT, RIGHT_FOOT
+			return "dismember_foot"
+		_:
+			return "dismember_generic"
+
+
+func _trigger_witness_dismemberment(victim: Node, attacker: Node3D = null) -> void:
+	## Nearby survivors react to witnessing dismemberment (staggered).
+	## Excludes anyone fighting the victim — they're the ones doing it, not witnessing it.
+	var survivors := get_tree().get_nodes_in_group("survivors")
+	var witness_count: int = 0
+
+	for unit: Node in survivors:
+		if unit == victim or unit == attacker:
+			continue
+		if "is_dead" in unit and unit.is_dead:
+			continue
+		# Skip anyone whose combat target is the victim (they're an attacker)
+		if _is_fighting(unit, victim):
+			continue
+		if unit.global_position.distance_to(victim.global_position) < 20.0:
+			var delay: float = randf_range(1.0, 4.0)
+			_schedule_witness_bark(unit, delay)
+			witness_count += 1
+			if witness_count >= 2:
+				break  # Max 2 witnesses to avoid bark spam
+
+
+func _schedule_witness_bark(unit: Node, delay: float) -> void:
+	## Delayed witness reaction to dismemberment.
+	get_tree().create_timer(delay).timeout.connect(func() -> void:
+		if is_instance_valid(unit) and not ("is_dead" in unit and unit.is_dead):
+			bark_immediate(unit, _get_random_line("witness_dismemberment", unit), 3.0)
+	)
+
+
+func _is_fighting(unit: Node, target: Node) -> bool:
+	## Check if unit is actively in combat with target.
+	var combat: Node = unit.get_node_or_null("CombatComponent")
+	if not combat:
+		return false
+	return combat.is_in_combat and is_instance_valid(combat.combat_target) and combat.combat_target == target

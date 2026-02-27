@@ -1,4 +1,4 @@
-[gd_resource type="AnimationLibrary" load_steps=91 format=3 uid="uid://b0ge5cs2gvvmk"]
+[gd_resource type="AnimationLibrary" load_steps=94 format=3 uid="uid://b0ge5cs2gvvmk"]
 
 [ext_resource type="Animation" uid="uid://d4e6787ptogww" path="res://characters/captain/zombie_dying.res" id="1_q6ypb"]
 [ext_resource type="Animation" uid="uid://bd8l0twbfypc3" path="res://characters/captain/walking.res" id="2_is6yv"]
@@ -10,7 +10,7 @@
 [ext_resource type="Animation" uid="uid://cfnkjkjm15r1o" path="res://characters/captain/firing_rifle.res" id="8_njd7c"]
 [ext_resource type="Animation" uid="uid://cqmqweln6w170" path="res://characters/captain/fishing_cast.res" id="9_rdjvj"]
 [ext_resource type="Animation" uid="uid://b2cytol7rfemp" path="res://characters/captain/holding_walk.res" id="10_pagf0"]
-[ext_resource type="Animation" uid="uid://iwo6l4uyyeqa" path="res://characters/captain/low_crawl.res" id="11_w1v5a"]
+[ext_resource type="Animation" uid="uid://uohxy1yjoxaj" path="res://characters/captain/low_crawl.res" id="11_w1v5a"]
 [ext_resource type="Animation" uid="uid://b6orjqhpc3ihc" path="res://characters/captain/opening_a_lid.res" id="12_12t3s"]
 [ext_resource type="Animation" uid="uid://bk3og6i7qxweg" path="res://characters/captain/picking_up.res" id="13_oia4b"]
 [ext_resource type="Animation" uid="uid://psjci0hjmc8m" path="res://characters/captain/pistol_idle.res" id="14_8ob20"]
@@ -83,12 +83,15 @@
 [ext_resource type="Animation" uid="uid://ck4o67kjdmvtf" path="res://characters/captain/strike_foward_jog.res" id="81_rrlwy"]
 [ext_resource type="Animation" uid="uid://iifdk1yfvxra" path="res://characters/captain/sword_and_shield_slash.res" id="82_tj1o8"]
 [ext_resource type="Animation" uid="uid://bhha0jwo4ehdx" path="res://characters/captain/unarmed_equip_over_shoulder.res" id="83_brek6"]
-[ext_resource type="Animation" uid="uid://cuh7w7thimmya" path="res://characters/captain/walking_backwards.res" id="84_5vs7w"]
+[ext_resource type="Animation" uid="uid://bnvvn4cn8k7pe" path="res://characters/captain/walking_backwards.res" id="84_5vs7w"]
 [ext_resource type="Animation" uid="uid://c4i4axbnp6ar2" path="res://characters/captain/yelling_while_standing.res" id="85_frjw6"]
 [ext_resource type="Animation" uid="uid://bjbl430r6ygkd" path="res://characters/captain/zombie_biting.res" id="86_1mqsb"]
 [ext_resource type="Animation" uid="uid://ce1mf1hd2vgyb" path="res://characters/captain/zombie_idle.res" id="87_pcda4"]
 [ext_resource type="Animation" uid="uid://dv80tbni207c0" path="res://characters/captain/zombie_idle_(1).res" id="88_h8aqv"]
 [ext_resource type="Animation" uid="uid://cycs10ggwhj1i" path="res://characters/captain/zombie_idle_(2).res" id="89_udnq2"]
+[ext_resource type="Animation" uid="uid://b2p7xw4gcxofq" path="res://characters/captain/injured_run.res" id="90_6dvso"]
+[ext_resource type="Animation" uid="uid://1pqr5blot2r8" path="res://characters/captain/running.res" id="91_o3pys"]
+[ext_resource type="Animation" uid="uid://dvv554re6tbm7" path="res://characters/captain/crawling.res" id="91_x0iw8"]
 
 [sub_resource type="Animation" id="Animation_60dg1"]
 resource_name = "mixamo_com"
@@ -312,6 +315,7 @@ _data = {
 &"climbing_to_top": ExtResource("41_x0iw8"),
 &"closing_a_lid": ExtResource("7_6rhfq"),
 &"cow_milking": ExtResource("42_s4d4n"),
+&"crawling": ExtResource("91_x0iw8"),
 &"crouch_to_stand": ExtResource("34_3vrv4"),
 &"crouching_idle": ExtResource("33_0ihd7"),
 &"death_from_right": ExtResource("43_pdgsp"),
@@ -325,6 +329,7 @@ _data = {
 &"great_sword_slash": ExtResource("48_reoni"),
 &"holding_walk": ExtResource("10_pagf0"),
 &"idle": SubResource("Animation_60dg1"),
+&"injured_run": ExtResource("90_6dvso"),
 &"jab_cross": ExtResource("49_aic8o"),
 &"kick_to_the_groin": ExtResource("50_6p2o8"),
 &"kneeling_pointing": ExtResource("51_pce3k"),
@@ -350,6 +355,7 @@ _data = {
 &"rifle_walk": ExtResource("19_cv1ut"),
 &"rifle_walk_to_stop": ExtResource("20_pks1r"),
 &"run_with_sword": ExtResource("63_2eo2u"),
+&"running": ExtResource("91_o3pys"),
 &"sad_walk": ExtResource("64_vrcdv"),
 &"salute": ExtResource("65_x8yim"),
 &"shooting_arrow": ExtResource("66_x8aqi"),

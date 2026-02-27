@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="TutorialEntry" load_steps=2 format=3 uid="uid://dkjdllp5dhutj"]
 
-[ext_resource type="Script" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
+[ext_resource type="Script" uid="uid://cgpcdpfvco547" path="res://ui/tutorial/tutorial_entry.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
@@ -8,7 +8,6 @@ title = "Characters"
 brief_tooltip = "Captain: You control directly, provides morale aura.
 Officers: Controllable units you command.
 Men: AI-controlled, handle survival autonomously."
-implemented = true
 detailed_text = "[b]Three Ranks of Survivor[/b]
 
 [i]The Royal Navy ran on strict hierarchy. Captain Crozier commanded Terror; his officers relayed orders; the able seamen did the work. That chain of command is all that stands between your men and chaos.[/i]
@@ -39,6 +38,11 @@ Each survivor has randomly assigned traits that shape his abilities:
 • [b]Drunkard[/b] — Eats more, prone to mental breaks
 • [b]Coward[/b] — Flees danger, lower morale
 Double-click any man to see his traits and full condition.
+
+[b]Combat Roles[/b]
+• Officers and the Captain can be ordered to attack — [b]Ctrl + Left-click[/b] a hostile target
+• Men will defend themselves if attacked, but cannot be commanded to fight
+• Keep weapons on your officers so they can respond to threats immediately
 
 [b]Death[/b]
 When a survivor dies, his body remains where he fell. The sight damages the morale of those nearby. In desperate circumstances, the dead can be butchered for meat."

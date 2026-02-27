@@ -124,6 +124,15 @@ ai/
 | `target_marker` | Marker3D | Alignment point (beds, seats) |
 | `fire_position` | Vector3 | Fire location for facing (≠ target_position!) |
 
+### Threat/Combat Blackboard Variables (set by BTEntityHasThreat)
+| Variable | Type | Purpose |
+|----------|------|---------|
+| `threat_target` | Node3D | The actual threat entity (bear, attacker) |
+| `threat_position` | Vector3 | Last known position of threat |
+| `combat_target` | Node3D | Target for melee combat (set by BTDefend) |
+
+**IMPORTANT:** `threat_target` and `threat_position` are set dynamically by `bt_entity_has_threat.gd` but may NOT be in the BlackboardPlan dropdown. Use `threat_position` (Vector3) for tasks like `BTFacePosition` since it's always set when a threat is detected.
+
 ---
 
 ## Current Behavior Tree
@@ -203,6 +212,56 @@ func _tick(delta: float) -> Status:
         agent.move_to(target)
         _moving = true
     return RUNNING
+```
+
+---
+
+## Threat Detection & Flee System
+
+### BTEntityHasThreat (Condition)
+Checks for threats and sets blackboard variables:
+- **For animals (territorial):** Checks investigation target, nearby survivors
+- **For men (reactive):** Checks `last_attacker`, nearby hostile animals, berserk humans
+
+**Exports:**
+- `threat_target_var`: StringName (default `&"threat_target"`)
+- `close_range_check`: float (default 15.0) - detection range
+
+**Sets blackboard:**
+- `threat_target` (Node3D) - the threat entity
+- `threat_position` (Vector3) - threat's position
+
+### BTFlee (Action)
+Flees away from `threat_position`, with stuck detection.
+
+**Exports:**
+- `threat_position_var`: StringName (default `&"threat_position"`)
+- `flee_distance`: float (default 30.0)
+- `stuck_timeout`: float (default 2.0)
+- `stuck_threshold`: float (default 0.3)
+
+**Behavior:**
+1. Sets `speed_multiplier = 1.5` for faster movement
+2. Calls `move_to()` with `skip_animation=true` (BT controls animation)
+3. Detects stuck state, tries alternate escape angles
+4. After 3 failed attempts, returns SUCCESS (give up, face threat)
+5. Returns SUCCESS when threat is dead, far away, or unit escaped
+
+### BTFacePosition (Action)
+Rotates agent to face a target. **Use `threat_position` (Vector3), NOT `threat_target`** since threat_target may not be in BlackboardPlan.
+
+**Exports:**
+- `target_var`: StringName (default `&"target_node"`)
+
+**Supports:** Both Node3D and Vector3 targets.
+
+### FleeWhenThreatened Pattern (man_bt.tres)
+```
+FleeWhenThreatened (BTSequence):
+├── HasThreat? (BTEntityHasThreat, close_range_check=50.0)
+├── AnimationSelector (BTSelector) - picks flee animation based on health/energy
+├── Flee (BTFlee)
+└── FacePosition [threat_position]  ← face where threat was after escaping
 ```
 
 ---

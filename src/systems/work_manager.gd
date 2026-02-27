@@ -39,6 +39,46 @@ func _ready() -> void:
 	get_tree().node_removed.connect(_on_node_removed)
 
 
+func _process(delta: float) -> void:
+	_tick_assigned_constructors(delta)
+
+
+func _tick_assigned_constructors(delta: float) -> void:
+	## Periodically call add_work for manually assigned construction workers (officers).
+	## Autonomous men use BTWorkAtSite instead.
+	for unit: Node in _worker_assignments.keys():
+		if not is_instance_valid(unit):
+			continue
+		var assignment: Dictionary = _worker_assignments[unit]
+		if assignment.get("job_type", -1) != JobType.CONSTRUCTING:
+			continue
+		var site: Node = assignment.get("target", null)
+		if not is_instance_valid(site):
+			continue
+		if not site.has_method("add_work") or not site.has_method("has_all_required_materials"):
+			continue
+		if not site.has_all_required_materials():
+			continue
+
+		# Only work if unit is close enough to the site.
+		var unit_3d: Node3D = unit as Node3D
+		if not unit_3d:
+			continue
+		if unit_3d.global_position.distance_to(site.global_position) > 5.0:
+			continue
+
+		# Add work (0.1 game-hours per second, scaled by delta).
+		site.add_work(0.1 * delta, 1.0)
+
+		# Lock in place and play bash animation.
+		if "is_animation_locked" in unit:
+			unit.is_animation_locked = true
+		var anim_player: AnimationPlayer = unit.get_node_or_null("UnitModel/AnimationPlayer")
+		if anim_player and anim_player.current_animation != "bash":
+			if anim_player.has_animation("bash"):
+				anim_player.play("bash")
+
+
 func register_construction_site(site: Node) -> void:
 	## Register a new construction site.
 	if site not in _construction_sites:
@@ -159,10 +199,16 @@ func release_worker(unit: Node) -> void:
 	var job_type: JobType = assignment.get("job_type", JobType.GATHERING)
 	var target: Node = assignment.get("target", null)
 
-	# Unregister from construction site if applicable.
-	if job_type == JobType.CONSTRUCTING and is_instance_valid(target):
-		if target.has_method("unregister_worker"):
+	# Unregister from construction site and unlock animation.
+	if job_type == JobType.CONSTRUCTING:
+		if is_instance_valid(target) and target.has_method("unregister_worker"):
 			target.unregister_worker(unit)
+		if is_instance_valid(unit):
+			if "is_animation_locked" in unit:
+				unit.is_animation_locked = false
+			var anim_player: AnimationPlayer = unit.get_node_or_null("UnitModel/AnimationPlayer")
+			if anim_player:
+				anim_player.stop()
 
 	_worker_assignments.erase(unit)
 	unit.remove_from_group("construction_workers")

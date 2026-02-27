@@ -15,6 +15,7 @@ detailed_text = "[b]Mouse[/b]
 [b]Double-click[/b] — Open character stats panel
 [b]Right-click ground[/b] — Move selected unit(s) there
 [b]Right-click object[/b] — Interact (open container, use workbench, etc.)
+[b]Ctrl + Left-click[/b] — Attack a target (Officers and Captain only)
 [b]Shift + click[/b] — Add or remove a unit from your selection
 [b]Click + drag[/b] — Draw a box to select multiple units
 
@@ -34,6 +35,7 @@ detailed_text = "[b]Mouse[/b]
 [b]I[/b] — Toggle inventory for selected unit
 [b]Z[/b] — Spyglass view (requires spyglass in inventory)
 [b]M[/b] — Sextant / map view (requires sextant in inventory)
+[b]Ctrl + A[/b] — Select all units
 [b]Ctrl + 1-9[/b] — Save selected units as a control group
 [b]1-9[/b] — Recall a saved control group
 [b]ESC[/b] — Close any open panel

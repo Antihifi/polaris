@@ -51,7 +51,7 @@
 		"image": "res://inventory_icons/firewood.png",
 		"size": "Vector2i(2, 2)",
 		"category": "fuel",
-		"burn_duration": 45.0,
+		"burn_duration": 24.0,
 		"max_stack_size": 3,
 		"weight": 3.0
 	},
@@ -60,7 +60,7 @@
 		"image": "res://inventory_icons/coal.png",
 		"size": "Vector2i(2, 2)",
 		"category": "fuel",
-		"burn_duration": 90.0,
+		"burn_duration": 48.0,
 		"max_stack_size": 3,
 		"weight": 2.5
 	},
@@ -236,7 +236,7 @@
 		"image": "res://inventory_icons/blubber.png",
 		"size": "Vector2i(1, 1)",
 		"category": "fuel",
-		"burn_duration": 60.0,
+		"burn_duration": 36.0,
 		"nutritional_value": 20.0,
 		"max_stack_size": 3,
 		"weight": 2.0
@@ -246,7 +246,7 @@
 		"image": "res://inventory_icons/bear_fat.png",
 		"size": "Vector2i(1, 1)",
 		"category": "fuel",
-		"burn_duration": 75.0,
+		"burn_duration": 42.0,
 		"nutritional_value": 15.0,
 		"max_stack_size": 3,
 		"weight": 2.5

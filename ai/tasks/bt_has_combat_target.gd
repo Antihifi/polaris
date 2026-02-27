@@ -17,8 +17,9 @@ func _tick(_delta: float) -> Status:
 		return FAILURE
 
 	# First check if BTFindEnemy already found a target in blackboard
-	var bb_target: Node3D = blackboard.get_var(target_var, null)
-	if bb_target and is_instance_valid(bb_target):
+	var bb_target_ref: Variant = blackboard.get_var(target_var, null)
+	if is_instance_valid(bb_target_ref):
+		var bb_target: Node3D = bb_target_ref as Node3D
 		if not _is_target_dead(bb_target):
 			return SUCCESS
 

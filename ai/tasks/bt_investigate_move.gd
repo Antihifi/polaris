@@ -43,8 +43,8 @@ func _tick(delta: float) -> Status:
 		_investigate_pos = agent.global_position + direction * move_dist
 
 		# Start moving
-		if agent.has_method("_move_to"):
-			agent._move_to(_investigate_pos)
+		if agent.has_method("move_to"):
+			agent.move_to(_investigate_pos)
 		if agent.has_method("set_chasing"):
 			agent.set_chasing(true)  # Use faster speed
 

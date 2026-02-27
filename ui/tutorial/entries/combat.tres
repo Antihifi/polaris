@@ -5,19 +5,41 @@
 [resource]
 script = ExtResource("1")
 title = "Combat"
-brief_tooltip = "[Coming Soon]
-Wolves and polar bears threaten your crew.
-Armed units defend against wildlife."
-implemented = false
-detailed_text = "[b]Combat — Coming Soon[/b]
+brief_tooltip = "Ctrl + Left-click to attack with Officers/Captain.
+Men defend themselves automatically.
+Weapons matter — hatchets hit hardest."
+detailed_text = "[b]Fighting for Survival[/b]
 
-[i]Polar bears and wolves were a constant threat to the real expedition. Weakened, starving men travelling alone across the ice were easy prey.[/i]
+[i]Polar bears and wolves were a constant threat to the real expedition. Weakened, starving men travelling alone across the ice were easy prey. Those who carried weapons had a chance. Those who did not were found months later, bones scattered across the shingle.[/i]
 
-The arctic is not empty. Wolves hunt the weak and the isolated. Polar bears are far more dangerous still.
+The arctic is not empty. Polar bears patrol their territory and will attack intruders. Your men must be ready to fight — or to run.
 
-• Wolves target men who are alone or in poor condition
-• Polar bears are extremely difficult to fight off
-• Men armed with knives or hatchets will defend themselves
-• Wounded survivors need rest and time to recover
+[b]How to Attack[/b]
 
-Travel in groups. Keep tools distributed among your crew. A man caught alone and unarmed has little chance."
+Select an [b]Officer[/b] or the [b]Captain[/b], then [b]Ctrl + Left-click[/b] on a hostile target. The unit will move into range and engage.
+
+[b]Men[/b] cannot be ordered to attack. They will defend themselves automatically when something hits them, but they will not charge into danger on command.
+
+[b]Weapons[/b]
+
+What a man is carrying determines how well he fights:
+• [b]Hatchet[/b] — The best melee weapon. Heavy hits, can sever limbs
+• [b]Knife[/b] — Faster but weaker. Still far better than bare fists
+• [b]Unarmed[/b] — A desperate last resort. Fists alone will not save a man from a bear
+
+[b]Health & Wounds[/b]
+
+Health bars appear above units in combat. Repeated blows — especially from large animals — can sever limbs. A man who loses a leg can only crawl. A man who loses his head does not get back up.
+
+Wounded survivors bleed and need time to recover. Get them to shelter and safety.
+
+[b]Fleeing[/b]
+
+Badly wounded men will try to flee from danger. If they cannot escape, they will eventually turn and fight with whatever strength remains.
+
+[b]Tips[/b]
+
+• Travel in groups — a man caught alone by a polar bear has little chance
+• Keep hatchets and knives distributed among your officers
+• Do not send unarmed men to fight; order them to retreat instead
+• After a fight, check your men's health and get the wounded to shelter"

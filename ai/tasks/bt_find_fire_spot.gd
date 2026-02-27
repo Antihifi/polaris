@@ -14,9 +14,12 @@ func _generate_name() -> String:
 
 func _tick(_delta: float) -> Status:
 	var agent: Node3D = get_agent()
-	var fire: Node3D = blackboard.get_var(fire_node_var, null)
+	var fire_ref: Variant = blackboard.get_var(fire_node_var, null)
 
-	if not agent or not fire:
+	if not agent or not is_instance_valid(fire_ref):
+		return FAILURE
+	var fire: Node3D = fire_ref as Node3D
+	if not fire:
 		return FAILURE
 
 	# Get all survivors to check spacing

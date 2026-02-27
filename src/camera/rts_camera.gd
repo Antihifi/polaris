@@ -150,9 +150,8 @@ func _process(delta: float) -> void:
 			_is_focusing = false
 		_update_camera_position()
 
-	# Orbit around target
-	if _is_mmb_rotating and _focus_target and is_instance_valid(_focus_target):
-		orbit_center = _focus_target.global_position
+	# Orbit around current position (MMB)
+	if _is_mmb_rotating:
 		_update_camera_position()
 		return
 

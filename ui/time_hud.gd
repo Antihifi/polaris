@@ -1,11 +1,9 @@
 extends Control
-## HUD element displaying current time, date, temperature, and time scale.
+## HUD element displaying current date, temperature, and time scale controls.
 ## Always visible in the top-right corner.
 
-@onready var time_label: Label = $Panel/MarginContainer/VBoxContainer/TimeLabel
-@onready var date_label: Label = $Panel/MarginContainer/VBoxContainer/DateLabel
-@onready var temp_label: Label = $Panel/MarginContainer/VBoxContainer/TempLabel
-@onready var speed_label: Label = $Panel/MarginContainer/VBoxContainer/SpeedLabel
+@onready var date_label: Label = $Panel/MarginContainer/VBoxContainer/HBoxContainer2/DateLabel
+@onready var temp_label: Label = $Panel/MarginContainer/VBoxContainer/HBoxContainer2/TempLabel
 
 # Speed control buttons
 @onready var pause_button: Button = $"Panel/MarginContainer/VBoxContainer/HBoxContainer/Pause"
@@ -51,33 +49,17 @@ func _ready() -> void:
 	_update_speed_buttons()
 
 
-func _process(_delta: float) -> void:
-	# Update time and temperature display every frame for smooth updates
-	if _time_manager:
-		_update_time_display()
-		_update_temp_display()
-
-
 func _on_hour_passed(_hour: int, _day: int) -> void:
 	_update_display()
 
 
 func _on_time_scale_changed(_scale: float) -> void:
-	_update_speed_display()
 	_update_speed_buttons()
 
 
 func _update_display() -> void:
-	_update_time_display()
 	_update_date_display()
 	_update_temp_display()
-	_update_speed_display()
-
-
-func _update_time_display() -> void:
-	if not _time_manager or not time_label:
-		return
-	time_label.text = _time_manager.get_formatted_time()
 
 
 func _update_date_display() -> void:
@@ -104,18 +86,6 @@ func _update_temp_display() -> void:
 		temp_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))  # White - mild
 
 	temp_label.text = temp_str
-
-
-func _update_speed_display() -> void:
-	if not _time_manager or not speed_label:
-		return
-	speed_label.text = _time_manager.get_time_scale_label()
-
-	# Color paused state
-	if _time_manager.is_paused:
-		speed_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))  # Red
-	else:
-		speed_label.remove_theme_color_override("font_color")
 
 
 func _update_speed_buttons() -> void:

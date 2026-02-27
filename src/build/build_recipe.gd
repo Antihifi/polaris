@@ -53,6 +53,18 @@ func get_missing_materials(available: Dictionary) -> Dictionary:
 	return missing
 
 
+func get_result_scene() -> PackedScene:
+	## Get result scene, loading from path if needed.
+	if result_scene:
+		return result_scene
+	if result_scene_path.is_empty():
+		return null
+	if not ResourceLoader.exists(result_scene_path):
+		push_warning("BuildRecipe: Scene not found: %s" % result_scene_path)
+		return null
+	return load(result_scene_path)
+
+
 func get_placeholder_mesh() -> Mesh:
 	## Get placeholder mesh, extracting from scene if needed.
 	if placeholder_mesh:

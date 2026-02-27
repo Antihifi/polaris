@@ -8,9 +8,10 @@ const _Utils = preload("res://addons/gloot/core/utils.gd")
 ## Padding around the icon (creates border effect)
 const PADDING: int = 2
 
-var _background: ColorRect
-var _texture_rect: TextureRect
-var _stack_size_label: Label
+@onready var _background: ColorRect = %Background
+@onready var _texture_rect: TextureRect = %IconRect
+@onready var _stack_size_label: Label = %Label
+
 var _old_item: InventoryItem = null
 
 
@@ -34,31 +35,7 @@ func _ready() -> void:
 	item_changed.connect(_on_item_changed)
 	icon_stretch_mode_changed.connect(_on_icon_stretch_mode_changed)
 
-	# Black background (inset by PADDING to create border effect)
-	_background = ColorRect.new()
-	_background.color = Color.BLACK
-	_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	_texture_rect = TextureRect.new()
-	_texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_texture_rect.stretch_mode = icon_stretch_mode
-
-	# Apply inversion shader (PNG files are black, we need white)
-	var shader := Shader.new()
-	shader.code = "shader_type canvas_item;\nvoid fragment() {\n\tvec4 tex = texture(TEXTURE, UV);\n\tCOLOR = vec4(1.0 - tex.rgb, tex.a);\n}"
-	var mat := ShaderMaterial.new()
-	mat.shader = shader
-	_texture_rect.material = mat
-
-	_stack_size_label = Label.new()
-	_stack_size_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_stack_size_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_stack_size_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-
-	add_child(_background)
-	add_child(_texture_rect)
-	add_child(_stack_size_label)
 
 	resized.connect(_on_resized)
 	_on_resized()
@@ -70,6 +47,8 @@ func _ready() -> void:
 
 
 func _on_resized() -> void:
+	if not is_instance_valid(_background):
+		return
 	# Background is inset by PADDING on all sides
 	_background.position = Vector2(PADDING, PADDING)
 	_background.size = size - Vector2(PADDING * 2, PADDING * 2)

@@ -37,12 +37,15 @@ func _tick(_delta: float) -> Status:
 		return SUCCESS
 
 	# Find deposit target from blackboard.
-	var target: Node = blackboard.get_var(target_node_var, null)
+	var target_ref: Variant = blackboard.get_var(target_node_var, null)
+	var target: Node = target_ref as Node if is_instance_valid(target_ref) else null
 	if not target:
 		# Try to find nearest workbench as fallback.
 		target = _find_nearest_workbench(agent)
 
 	if not target:
+		# No target — unreserve at construction site if we were delivering.
+		_unreserve_at_site(mat_id, amount)
 		return FAILURE
 
 	# Deposit to workbench or construction site.
@@ -53,6 +56,7 @@ func _tick(_delta: float) -> Status:
 		wb_comp.deposit_material(mat_id, amount)
 		deposited = true
 	elif target.has_method("deposit_material"):
+		# deposit_material on ConstructionSite auto-clears the reservation.
 		target.deposit_material(mat_id, amount)
 		deposited = true
 
@@ -61,7 +65,19 @@ func _tick(_delta: float) -> Status:
 		blackboard.set_var(&"current_action", "Deposited " + mat_id)
 		return SUCCESS
 
+	# Deposit failed — unreserve.
+	_unreserve_at_site(mat_id, amount)
 	return FAILURE
+
+
+func _unreserve_at_site(mat_id: String, amount: int) -> void:
+	## Cancel reservation at construction site when delivery fails.
+	var target_ref: Variant = blackboard.get_var(target_node_var, null)
+	if not is_instance_valid(target_ref):
+		return
+	var target: Node = target_ref as Node
+	if target.has_method("unreserve_material"):
+		target.unreserve_material(mat_id, amount)
 
 
 func _find_nearest_workbench(agent: Node3D) -> Node3D:

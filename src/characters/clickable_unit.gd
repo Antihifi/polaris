@@ -195,7 +195,10 @@ func _ready() -> void:
 		# Force idle animation after a frame to ensure scene is ready
 		# and to override any autoplay or BT-triggered animations
 		call_deferred("_force_idle_animation")
+		# Override standing animations when legs are missing
+		animation_player.animation_started.connect(_on_animation_started)
 
+	#REFACTOR: This works well but should be a node component in editor.
 	# Create 3D positional footstep audio player
 	_footstep_player = AudioStreamPlayer3D.new()
 	_footstep_player.stream = footstep_sound
@@ -206,6 +209,7 @@ func _ready() -> void:
 	add_child(_footstep_player)
 	_footstep_player.finished.connect(_on_footstep_finished)
 
+	#REFACTOR: No reason not to be adding to groups in editor
 	# Add to groups for easy querying
 	# Only discovered units appear in roster - errant groups must be found first
 	if is_discovered:
@@ -216,6 +220,7 @@ func _ready() -> void:
 	if rank == UnitRank.CAPTAIN or (rank == UnitRank.OFFICER and is_discovered):
 		_setup_discovery_area()
 
+	#REFACTOR: No reason not to just have the controller in editor, this is so unnecessary...
 	# Add passive AI for player-controlled units (Captain, discovered Officers)
 	# Men have ManAIController; undiscovered officers get PassiveAI when discovered
 	if _should_have_passive_ai():
@@ -232,6 +237,7 @@ func _ready() -> void:
 	# Get sled puller component if present
 	sled_puller = get_node_or_null("SledPullerComponent")
 
+	#REFACTOR: We don't need backward compatibility for anything, we're not in a live enviromonet and I'm a solo dev
 	# Get CombatComponent and forward signals for backwards compatibility
 	combat = get_node_or_null("CombatComponent")
 	if combat:
@@ -243,7 +249,12 @@ func _ready() -> void:
 	else:
 		push_warning("[ClickableUnit] %s missing CombatComponent - combat won't work" % unit_name)
 
+	# Connect to dismemberment signal for collapse-to-crawl transition
+	var dc := get_node_or_null("DismembermentComponent")
+	if dc and dc.has_signal("limb_dismembered"):
+		dc.limb_dismembered.connect(_on_limb_dismembered)
 
+	#REFACTOR: not sure what this is, have never used it once
 func _unhandled_input(event: InputEvent) -> void:
 	# F9 toggles debug physics mode (bypasses navigation)
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F9:
@@ -251,7 +262,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		print("[%s] DEBUG MODE: %s (F9 toggle)" % [unit_name, "ON - walking forward only" if debug_bypass_navigation else "OFF - using navigation"])
 		get_viewport().set_input_as_handled()
 
-
+	#REFACTOR: This is an absolute disaster and could be a huge performance hit, this is a lot for physics_process, 
+	#do NOT break anything but optimize, streamline, eliminate redundancies, deprecate and archive out no longer 
+	# needed/solved debug (navigation and collision, make an archive directory for this so we have documentation to fall back on should issues reoccur
 func _physics_process(delta: float) -> void:
 	# Align selection indicator to terrain slope (before early returns so idle units align too)
 	if is_selected:
@@ -308,8 +321,11 @@ func _physics_process(delta: float) -> void:
 		# Walk in current facing direction (no pathfinding)
 		var forward: Vector3 = -global_transform.basis.z.normalized()
 		forward.y = 0.0
-		velocity.x = forward.x * movement_speed
-		velocity.z = forward.z * movement_speed
+		var debug_crawl: float = 1.0
+		if legs_remaining < 2:
+			debug_crawl = 0.075 if legs_remaining == 0 else 0.15
+		velocity.x = forward.x * movement_speed * debug_crawl
+		velocity.z = forward.z * movement_speed * debug_crawl
 
 		# Log movement for debugging (once per second to reduce spam)
 		if Engine.get_physics_frames() % 60 == 0:
@@ -349,7 +365,11 @@ func _physics_process(delta: float) -> void:
 			_terrain_mod_cache = maxf(0.25, stat_mult * slope_mult * weather_mult)
 
 			# Note: Engine.time_scale handles speed scaling via move_and_slide() delta
-			var velocity_xz := (next_pos - global_position).normalized() * movement_speed * speed_multiplier * _terrain_mod_cache
+			# Crawl penalty: independent of speed_multiplier (which is owned by encumbrance system)
+			var crawl_penalty: float = 1.0
+			if legs_remaining < 2:
+				crawl_penalty = 0.075 if legs_remaining == 0 else 0.15
+			var velocity_xz := (next_pos - global_position).normalized() * movement_speed * speed_multiplier * crawl_penalty * _terrain_mod_cache
 			velocity.x = velocity_xz.x
 			velocity.z = velocity_xz.z
 
@@ -412,6 +432,7 @@ func _on_navigation_finished() -> void:
 	reached_destination.emit()
 	_clear_player_command()
 
+## 	#REFACTOR: Move this to archive
 
 ## =====================================================================
 ## FLOOR CHECK - DEBUGGING HISTORY (2026-01-11)
@@ -465,7 +486,7 @@ func _find_terrain3d() -> Node:
 	_terrain_cache = _find_node_by_class(get_tree().current_scene, "Terrain3D")
 	return _terrain_cache
 
-
+	#REFACTOR: Is this necessary?  Determine the RIGHT method and eliminate unneded fallback
 func _find_node_by_class(node: Node, class_name_str: String) -> Node:
 	## Recursively find node by class name.
 	if node.get_class() == class_name_str:
@@ -489,6 +510,8 @@ func _find_weather_controller() -> Node:
 	return _weather_controller_cache
 
 
+
+#REFACTOR: All of these movement functions should completely be it's own move system component, AND should rely MUCH more on LimboAI BTs....
 func _get_slope_modifier() -> float:
 	## Get speed multiplier based on terrain slope. Uses exported curve.
 	var terrain := _find_terrain3d()
@@ -504,13 +527,16 @@ func _get_slope_modifier() -> float:
 	return lerpf(1.0, 0.3, clampf((slope_deg - 15.0) / 45.0, 0.0, 1.0))
 
 
-func move_to(target_position: Vector3, is_combat_chase: bool = false) -> void:
+func move_to(target_position: Vector3, is_combat_chase: bool = false, skip_animation: bool = false) -> void:
 	## Navigate to target position.
 	## Dead and undiscovered units cannot move.
 	## is_combat_chase: if true, don't disengage combat (used by BTChaseToAttackRange).
+	## skip_animation: if true, don't set walking animation (let BT handle it).
 	if is_dead:
 		return
 	if not is_discovered:
+		return
+	if not can_move:
 		return
 
 	# Disengage combat when receiving regular movement command (not combat chase)
@@ -526,11 +552,12 @@ func move_to(target_position: Vector3, is_combat_chase: bool = false) -> void:
 
 	navigation_agent.target_position = target_position
 	is_moving = true
-	# Use carry animation if carrying something
-	if is_carrying():
-		_play_animation("carry_walk")
-	else:
-		_play_animation("walking")
+	# Set animation unless BT is handling it
+	if not skip_animation:
+		if is_carrying():
+			_play_animation("carry_walk")
+		else:
+			_play_animation("walking")
 	_start_footsteps()
 	_update_speed_scale()
 
@@ -558,8 +585,11 @@ func stop() -> void:
 	# Setting velocity to zero stops avoidance computation.
 	navigation_agent.target_position = global_position
 	navigation_agent.set_velocity(Vector3.ZERO)
-	# Stay in carry pose if still carrying, otherwise idle
-	if not is_carrying():
+	# Crawling units: pause in place (no idle-on-ground animation exists)
+	if legs_remaining < 2:
+		if animation_player:
+			animation_player.pause()
+	elif not is_carrying():
 		_play_animation("idle")
 	_stop_footsteps()
 	# Reset stuck tracking
@@ -571,6 +601,9 @@ func _check_auto_unstick(delta: float) -> void:
 	## Auto-unstick detection for Officers and Captain only.
 	## Men use BT-based stuck detection in bt_move_to_blackboard.gd.
 	if rank == UnitRank.MAN:
+		return
+	# Crawling units move too slowly to meet the stuck threshold — skip
+	if legs_remaining < 2:
 		return
 	if not is_moving:
 		_stuck_no_progress_time = 0.0
@@ -644,6 +677,7 @@ func nudge(aggressive: bool = false) -> void:
 		call_deferred("move_to", target)
 
 
+	#REFACTOR: Should completely be it's own combat system component, what is the combat component even FOR?!?!?  or the BTs in LimboAI!??!?!
 # --- Combat System ---
 
 func attack_target(target: Node3D) -> void:
@@ -660,12 +694,18 @@ func attack_target(target: Node3D) -> void:
 	combat.start_combat(target)
 	_is_fleeing = false
 
-	# Set blackboard var for PassiveAIController BT to pick up
+	# Set blackboard vars for PassiveAIController BT to pick up
+	# Clear flee state (threat data) so Combat BT branch can run
+	# NOTE: player_command_active must be false — otherwise PlayerOverride
+	# wins in the BTSelector and the Combat branch never executes
 	var ai: Node = get_node_or_null("PassiveAIController")
 	if ai and ai.has_method("get_blackboard"):
 		var bb: Blackboard = ai.get_blackboard()
 		if bb:
 			bb.set_var(&"combat_target", target)
+			bb.set_var(&"player_command_active", false)
+			bb.set_var(&"threat_target", null)
+			bb.set_var(&"threat_position", Vector3.INF)
 
 	# Face the target
 	var dir := (target.global_position - global_position).normalized()
@@ -702,10 +742,6 @@ func take_damage(amount: float, attacker: Node3D = null) -> void:
 		stats.dying_cause = SurvivorStats.DeathCause.VIOLENCE
 		_on_death()
 		return
-
-	# Auto-defend for men (not officers/captain) when attacked
-	if rank == UnitRank.MAN and not is_in_combat and attacker:
-		attack_target(attacker)
 
 	stats_changed.emit()
 
@@ -800,7 +836,7 @@ func _start_flee() -> void:
 	_combat_target = null
 	combat_ended.emit()
 
-
+#REFACTOR: mental break system should be BTs in LimboAI...
 # --- Mental Break System ---
 
 func trigger_mental_break(break_type: MentalBreakType) -> void:
@@ -897,7 +933,7 @@ func _show_selection_indicator(show: bool) -> void:
 		if show:
 			_align_indicator_to_terrain(indicator, global_position)
 
-
+#REFACTOR: All indicator systems should be in it's own component, perhaps extending the Mesh3D SelectionIndicator node, should have never been this many functions in here...
 func _align_indicator_to_terrain(indicator: Node3D, world_pos: Vector3) -> void:
 	## Align a flat disc indicator's Y axis to terrain surface normal.
 	## Uses global_transform.basis so parent rotation (unit yaw) doesn't interfere.
@@ -963,6 +999,7 @@ func hide_destination_indicator() -> void:
 	_reparented_destination_indicator = null
 
 
+#REFACTOR: Animations should be handled by the BTs in LimboAI
 func _find_animation_player(node: Node) -> AnimationPlayer:
 	## Recursively search for an AnimationPlayer in the node tree.
 	for child in node.get_children():
@@ -982,20 +1019,103 @@ func _force_idle_animation() -> void:
 		_play_animation("idle")
 
 
+## Animations that require standing — forced to low_crawl when legs are missing.
+const _STANDING_ANIMS: Array[String] = [
+	"idle", "walking", "running", "carry_walk", "injured_run",
+	"standing_melee_attack_horizontal", "bash", "jab_cross", "punching",
+	"unarmed_equip_over_shoulder", "taking_item",
+]
+
+## Melee attack animations that should use ground strike when target is crawling/downed.
+const _MELEE_ATTACK_ANIMS: Array[String] = [
+	"standing_melee_attack_horizontal", "bash", "jab_cross", "punching",
+]
+
+
 func _play_animation(anim_name: String) -> void:
-	## Play an animation if the AnimationPlayer exists and has the animation.
-	## Applies animation_offset to desync animations between multiple units.
 	if not animation_player:
 		return
+
+	# Fully immobile (all limbs gone) — freeze in last pose
+	if not can_move:
+		animation_player.pause()
+		return
+
+	# Ground strike: swap attack anim when target is crawling/downed
+	if anim_name in _MELEE_ATTACK_ANIMS and _is_target_on_ground():
+		if animation_player.has_animation("standing_melee_attack_360_low"):
+			anim_name = "standing_melee_attack_360_low"
+
+	# Force crawl when legs are missing — but pause when idle (not moving)
+	var is_crawl_override: bool = false
+	if legs_remaining < 2 and anim_name in _STANDING_ANIMS:
+		if anim_name == "idle":
+			# Stopped moving — freeze in current crawl pose
+			if animation_player.current_animation == "low_crawl":
+				animation_player.pause()
+			return
+		anim_name = "low_crawl"
+		is_crawl_override = true
+
+	# Don't restart the same animation
+	if animation_player.current_animation == anim_name:
+		return
+
 	if animation_player.has_animation(anim_name):
-		animation_player.play(anim_name)
-		# Apply offset to desync animations between units
-		if animation_offset > 0.0:
-			var anim_length := animation_player.current_animation_length
-			if anim_length > 0:
-				animation_player.seek(animation_offset * anim_length, true)
-	else:
-		print("[ClickableUnit] Animation not found: ", anim_name)
+		if is_crawl_override:
+			animation_player.speed_scale = 1.0
+			animation_player.play(anim_name, -1, 0.7)
+			var anim: Animation = animation_player.get_animation(anim_name)
+			if anim and anim.loop_mode == Animation.LOOP_NONE:
+				anim.loop_mode = Animation.LOOP_LINEAR
+		else:
+			animation_player.play(anim_name)
+			if animation_offset > 0.0:
+				var anim_length := animation_player.current_animation_length
+				if anim_length > 0:
+					animation_player.seek(animation_offset * anim_length, true)
+
+
+func _on_animation_started(anim_name: StringName) -> void:
+	## Catches BT-driven animations (BTPlayAnimation bypasses _play_animation).
+	# Fully immobile — freeze immediately
+	if not can_move:
+		animation_player.pause()
+		return
+
+	# Ground strike: if attacking a downed target, use low sweep animation
+	if String(anim_name) in _MELEE_ATTACK_ANIMS and _is_target_on_ground():
+		if animation_player.has_animation(&"standing_melee_attack_360_low"):
+			animation_player.play(&"standing_melee_attack_360_low", -1, 0.3)
+			return
+
+	# Crawl overrides only apply to dismembered units
+	if legs_remaining >= 2:
+		return
+	if String(anim_name) == "low_crawl":
+		animation_player.speed_scale = 1.0
+		return
+	if String(anim_name) == "idle":
+		# Stopped moving — freeze in current crawl pose
+		if animation_player.current_animation == "low_crawl":
+			animation_player.pause()
+		return
+	if String(anim_name) in _STANDING_ANIMS:
+		animation_player.speed_scale = 1.0
+		animation_player.play(&"low_crawl", -1, 0.7)
+		var anim: Animation = animation_player.get_animation(&"low_crawl")
+		if anim and anim.loop_mode == Animation.LOOP_NONE:
+			anim.loop_mode = Animation.LOOP_LINEAR
+
+
+func _is_target_on_ground() -> bool:
+	## Check if current combat target is crawling or downed (lost legs).
+	var target: Node3D = combat_target
+	if not target or not is_instance_valid(target):
+		return false
+	if "legs_remaining" in target:
+		return target.legs_remaining < 2
+	return false
 
 
 # --- Footstep Audio ---
@@ -1030,28 +1150,39 @@ func _on_time_scale_changed(_scale: float) -> void:
 	## Called when time scale changes - update animation/audio speeds.
 	_update_speed_scale()
 
-
+#REFACTOR: Wildly unorganized, single responsibility violation, carry weights should not be in here but be pulled from the inventory protosets... 
+# what happens when we add more inventory items for example, why are they hard coded here?  this whole section needs massive drastic improvement
 func _update_speed_scale() -> void:
 	## Sync animation and footstep playback speed to movement speed and time scale.
-	## At movement_speed=1 and time_scale=1, animation plays at base_animation_speed
-	## and footsteps play at base_footstep_speed.
+	## IMPORTANT: Only apply movement speed modifiers when actually moving.
+	## Stationary animations (eating, working, etc.) should play at normal speed.
 	var time_scale := _get_time_scale()
-	var terrain_mod := _terrain_mod_cache if is_moving else 1.0
 
-	# Animation: scale by both movement speed and time scale
-	# Animation speed_scale can be 0 (paused), but we use maxf to prevent negative values
 	if animation_player:
-		animation_player.speed_scale = maxf(0.0, base_animation_speed * movement_speed * speed_multiplier * terrain_mod * time_scale)
-
-	# Footsteps: scale pitch by both movement speed and time scale
-	# IMPORTANT: pitch_scale must be > 0 or Godot throws an error
-	# When paused (time_scale=0), we stop footsteps instead of setting pitch to 0
-	if is_instance_valid(_footstep_player):
-		var pitch := base_footstep_speed * movement_speed * speed_multiplier * terrain_mod * time_scale
-		if pitch > 0.01:  # Minimum viable pitch
-			_footstep_player.pitch_scale = pitch
+		# Crawl animation manages its own speed — don't override it
+		if legs_remaining < 2 and animation_player.current_animation == "low_crawl":
+			pass
+		elif is_moving:
+			# Walking/running: apply base_animation_speed and all modifiers
+			var terrain_mod := _terrain_mod_cache
+			animation_player.speed_scale = maxf(0.0, base_animation_speed * movement_speed * speed_multiplier * terrain_mod * time_scale)
 		else:
-			# Can't set pitch to 0, so stop playback when paused
+			# Stationary: play at normal speed (just time scale)
+			# This allows taking_item, closing_a_lid, eating, etc. to play correctly
+			animation_player.speed_scale = maxf(0.0, time_scale)
+
+	# Footsteps: only apply when moving (they don't play when stationary anyway)
+	if is_instance_valid(_footstep_player):
+		if is_moving:
+			var terrain_mod := _terrain_mod_cache
+			var pitch := base_footstep_speed * movement_speed * speed_multiplier * terrain_mod * time_scale
+			if pitch > 0.01:  # Minimum viable pitch
+				_footstep_player.pitch_scale = pitch
+			else:
+				if _footstep_player.playing:
+					_footstep_player.stop()
+		else:
+			# Not moving - ensure footsteps are stopped
 			if _footstep_player.playing:
 				_footstep_player.stop()
 
@@ -1076,7 +1207,7 @@ const BASE_WALKING_HUNGER_DRAIN: float = 0.1
 func _drain_walking_energy(delta: float) -> void:
 	## Drain energy while walking. Delta is already scaled by Engine.time_scale.
 	## Encumbered units (sled pulling or carrying) drain 15-25% more energy
-	## and also drain hunger while walking.
+	## and also drain hunger while walking. Running (speed_multiplier > 1) drains more.
 	if not stats or delta <= 0.0:
 		return
 
@@ -1085,6 +1216,9 @@ func _drain_walking_energy(delta: float) -> void:
 
 	# Multiply by condition-based drain modifier
 	drain *= stats.get_energy_drain_multiplier()
+
+	# Running (fleeing, sprinting) drains more energy proportional to speed
+	drain *= speed_multiplier
 
 	# Encumbrance penalty: 15-25% extra energy drain when pulling sled or carrying
 	var encumbrance_mult := _get_encumbrance_multiplier()
@@ -1138,7 +1272,10 @@ func _get_encumbrance_multiplier() -> float:
 func _update_encumbrance_speed() -> void:
 	## Recalculate speed_multiplier based on encumbrance state.
 	## Called each physics frame to keep speed in sync with strength changes.
-	var new_mult: float = 1.0
+	## ONLY overwrites speed_multiplier when actually encumbered (carrying/pulling).
+	## When not encumbered, leaves speed_multiplier alone so BT-set values
+	## (injury limp, exhaustion crawl, etc.) persist.
+	var new_mult: float = -1.0  # Sentinel: -1 means "don't touch"
 
 	if sled_puller and sled_puller.is_pulling():
 		# Sled pulling: group speed based on weakest puller
@@ -1152,8 +1289,8 @@ func _update_encumbrance_speed() -> void:
 		var weight_factor: float = 1.0 - (_carried_item_weight / 50.0)
 		new_mult = str_factor * weight_factor
 
-	# Only update animation if multiplier changed significantly
-	if not is_equal_approx(speed_multiplier, new_mult):
+	# Only update when actually encumbered
+	if new_mult >= 0.0 and not is_equal_approx(speed_multiplier, new_mult):
 		speed_multiplier = new_mult
 		_update_speed_scale()
 
@@ -1163,9 +1300,9 @@ func update_needs(delta_hours: float, in_shelter: bool, near_fire: bool, ambient
 	if not stats:
 		return
 
-	var is_working := is_moving  # For now, moving counts as working
+	var activity_level := get_activity_level()
 	var in_bed := is_in_bed()  # Check if sleeping in actual bed for 2X bonus
-	stats.apply_hourly_decay(delta_hours, is_working, in_shelter, in_bed, near_fire, ambient_temp, in_sunlight, is_blizzard,
+	stats.apply_hourly_decay(delta_hours, activity_level, in_shelter, in_bed, near_fire, ambient_temp, in_sunlight, is_blizzard,
 		_in_captain_aura, _in_personable_aura, _butchering_horror_active)
 
 	# Tick aurora buff countdown
@@ -1234,6 +1371,11 @@ func _on_death() -> void:
 	collision_layer = 1 << 15  # Layer 16 (0-indexed as 15)
 	collision_mask = 1  # Only collide with terrain
 
+	# Stop bleeding and particle effects
+	var dc := get_node_or_null("DismembermentComponent")
+	if dc and dc.has_method("on_unit_died"):
+		dc.on_unit_died()
+
 	# Disable physics processing (movement, gravity, etc.)
 	set_physics_process(false)
 
@@ -1243,6 +1385,13 @@ func _on_death() -> void:
 
 	# Remove from survivors group (TimeManager won't update stats anymore)
 	remove_from_group("survivors")
+
+
+func _on_limb_dismembered(part: int, _position: Vector3, _limb: RigidBody3D) -> void:
+	var is_leg := part == DismembermentComponent.BodyPart.LEFT_LEG or part == DismembermentComponent.BodyPart.RIGHT_LEG
+	if is_leg and animation_player:
+		animation_player.speed_scale = 1.0
+		animation_player.play(&"low_crawl", -1, 0.7)
 
 
 func get_display_info() -> Dictionary:
@@ -1259,7 +1408,7 @@ func get_display_info() -> Dictionary:
 		"is_moving": is_moving
 	}
 
-
+#REFACTOR: Should completely be it's own inventory component, are we using and calling Gloot effectively here???
 # --- Inventory ---
 
 func _setup_inventory() -> void:
@@ -1368,25 +1517,21 @@ func enter_fire_warmth(warmth_area: Node) -> void:
 	## Called by WarmthArea when unit enters heat source range.
 	if warmth_area and warmth_area not in _active_heat_sources:
 		_active_heat_sources.append(warmth_area)
-		print("[ClickableUnit] %s entered fire warmth (sources: %d)" % [unit_name, _active_heat_sources.size()])
 
 
 func exit_fire_warmth(warmth_area: Node) -> void:
 	## Called by WarmthArea when unit exits heat source range.
 	_active_heat_sources.erase(warmth_area)
-	print("[ClickableUnit] %s exited fire warmth (sources: %d)" % [unit_name, _active_heat_sources.size()])
 
 
 func enter_shelter(shelter_area: Node) -> void:
 	## Called by ShelterArea when unit enters shelter.
 	_current_shelter = shelter_area
-	print("[ClickableUnit] %s entered shelter" % unit_name)
 
 
 func exit_shelter() -> void:
 	## Called by ShelterArea when unit exits shelter.
 	_current_shelter = null
-	print("[ClickableUnit] %s exited shelter" % unit_name)
 
 
 func is_in_bed() -> bool:
@@ -1439,6 +1584,47 @@ func is_near_captain() -> bool:
 func is_near_personable() -> bool:
 	## Returns true if unit is within range of a personable crew member's aura.
 	return _in_personable_aura
+
+
+func get_activity_level() -> int:
+	## Returns current activity level for energy recovery calculation.
+	## See SurvivorStats.ActivityLevel enum.
+	## SLEEPING: In bed - fastest recovery (25/hr)
+	## RESTING: Crouching by fire or sitting - moderate recovery (15/hr)
+	## LIGHT: Idle/standing - slow passive regen (5/hr)
+	## INTENSIVE: Walking, combat, hauling, building - no regen, drains energy
+
+	# SLEEPING: In bed
+	if is_in_bed():
+		return SurvivorStats.ActivityLevel.SLEEPING
+
+	# INTENSIVE: Combat, moving, or carrying
+	if is_in_combat or is_moving or is_carrying():
+		return SurvivorStats.ActivityLevel.INTENSIVE
+
+	# Check current animation for resting poses
+	var anim := animation_player.current_animation if animation_player else ""
+
+	# RESTING: Crouching by fire
+	if anim == "crouching_idle" and is_near_fire():
+		return SurvivorStats.ActivityLevel.RESTING
+
+	# RESTING: Sitting on crate (regardless of fire)
+	if anim == "sitting_depressed":
+		return SurvivorStats.ActivityLevel.RESTING
+
+	# Check BT for intensive work (building, gathering)
+	if is_animation_locked:
+		var ai: Node = get_node_or_null("ManAIController")
+		if ai and ai.has_method("get_blackboard"):
+			var bb = ai.get_blackboard()
+			if bb:
+				var action: String = bb.get_var(&"current_action", "")
+				if "Building" in action or "Gathering" in action:
+					return SurvivorStats.ActivityLevel.INTENSIVE
+
+	# LIGHT: Default idle state
+	return SurvivorStats.ActivityLevel.LIGHT
 
 
 func enter_captain_aura() -> void:
@@ -1581,7 +1767,7 @@ func _trigger_bark_category(category: String) -> void:
 	## Uses the unit's own bark() method which delegates to BarkManager.
 	bark(category, 4.0)
 
-
+#REFACTOR: Should be its own system component
 # --- Discovery System (Errant Groups) ---
 
 func _setup_discovery_area() -> void:
@@ -1703,7 +1889,7 @@ func _show_discovery_popup() -> void:
 	# Queue free after animation completes
 	tween.chain().tween_callback(popup.queue_free)
 
-
+#REFACTOR: Should completely be it's own component, part of above since this is tied to discoverable groups of errant men
 # --- Leash System (Errant Groups) ---
 
 func is_leashed() -> bool:
@@ -1789,7 +1975,13 @@ var hunger: float:
 var energy: float:
 	get: return stats.energy if stats else 100.0
 
+var energy_percent: float:  ## Alias for BT compatibility
+	get: return stats.energy if stats else 100.0
+
 var health: float:
+	get: return stats.health if stats else 100.0
+
+var health_percent: float:  ## Alias for BT compatibility
 	get: return stats.health if stats else 100.0
 
 var morale: float:
@@ -1816,6 +2008,46 @@ var is_hunger_satisfied: bool:
 
 var is_energy_satisfied: bool:
 	get: return energy >= 80.0
+
+# Dismemberment state (read from DismembermentComponent for BT checks)
+var is_dismembered: bool:
+	get:
+		var dc := get_node_or_null("DismembermentComponent")
+		if not dc: return false
+		for val in dc._dismembered.values():
+			if val: return true
+		return false
+
+var right_arm_dismembered: bool:
+	get:
+		var dc := get_node_or_null("DismembermentComponent")
+		if not dc: return false
+		return dc._dismembered.get(DismembermentComponent.BodyPart.RIGHT_ARM, false) or dc._dismembered.get(DismembermentComponent.BodyPart.RIGHT_HAND, false)
+
+var legs_remaining: int:
+	get:
+		var dc := get_node_or_null("DismembermentComponent")
+		if not dc: return 2
+		var count := 2
+		if dc._dismembered.get(DismembermentComponent.BodyPart.LEFT_LEG, false):
+			count -= 1
+		if dc._dismembered.get(DismembermentComponent.BodyPart.RIGHT_LEG, false):
+			count -= 1
+		return count
+
+var arms_remaining: int:
+	get:
+		var dc := get_node_or_null("DismembermentComponent")
+		if not dc: return 2
+		var count := 2
+		if dc._dismembered.get(DismembermentComponent.BodyPart.LEFT_ARM, false):
+			count -= 1
+		if dc._dismembered.get(DismembermentComponent.BodyPart.RIGHT_ARM, false):
+			count -= 1
+		return count
+
+var can_move: bool:
+	get: return legs_remaining > 0 or arms_remaining > 0
 
 
 # ============================================================================
@@ -1972,6 +2204,7 @@ func bark_now(text: String, duration: float = -1.0) -> void:
 		_bark_manager.bark_immediate(self, text, duration)
 
 
+#REFACTOR: Should completely be it's own  system component, 
 # ============================================================================
 # CARRY SYSTEM METHODS
 # ============================================================================
@@ -2018,7 +2251,6 @@ func start_carrying(material_id: String, amount: int) -> void:
 	item.scale = Vector3(0.6, 0.6, 0.6)
 
 	_disable_item_collision(item)
-	print("[%s] Started carrying %s x%d" % [unit_name, material_id, amount])
 
 
 func stop_carrying() -> Dictionary:
@@ -2046,7 +2278,6 @@ func stop_carrying() -> Dictionary:
 	else:
 		_play_animation("idle")
 
-	print("[%s] Stopped carrying" % unit_name)
 	return result
 
 ## Property wrapper for BTCheckAgentProperty.

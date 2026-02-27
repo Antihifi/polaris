@@ -11,7 +11,8 @@ signal materials_changed
 var stored_materials: Dictionary = {
 	"scrap_wood": 0,
 	"nails": 0,
-	"scrap_sails": 0
+	"scrap_sails": 0,
+	"firewood": 0
 }
 
 ## Construction sites created from this workbench.
@@ -120,6 +121,20 @@ func withdraw_material(material_id: String, count: int) -> int:
 func get_all_materials() -> Dictionary:
 	## Get a copy of all stored materials.
 	return stored_materials.duplicate()
+
+
+func can_convert_to_firewood() -> bool:
+	## Check if we have scrap_wood to convert to firewood.
+	return get_stored_material_count("scrap_wood") >= 1
+
+
+func convert_to_firewood() -> bool:
+	## Convert 1 scrap_wood into 5 firewood. Returns true on success.
+	if not can_convert_to_firewood():
+		return false
+	withdraw_material("scrap_wood", 1)
+	deposit_material("firewood", 5)
+	return true
 
 
 func _on_placement_confirmed(position: Vector3, rotation_y: float, recipe: BuildRecipe) -> void:
@@ -282,8 +297,9 @@ func _remove_from_resource_groups(node: Node) -> void:
 		_remove_from_resource_groups(child)
 
 
-func _on_site_complete(site: ConstructionSite) -> void:
+func _on_site_complete(result_scene: PackedScene, site: ConstructionSite) -> void:
 	## Handle construction site completion.
+	## result_scene is emitted by the signal, site is bound via .bind()
 	active_sites.erase(site)
 
 

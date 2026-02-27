@@ -20,6 +20,12 @@ enum ShelterType {
 
 
 func _ready() -> void:
+	# Don't provide shelter benefits if part of a construction site
+	if _is_under_construction():
+		monitoring = false
+		print("[ShelterArea] Disabled - under construction")
+		return
+
 	_connect_signals()
 	# Auto-configure collision to detect survivor bodies (layer 2)
 	collision_layer = 0
@@ -32,6 +38,19 @@ func _ready() -> void:
 	print("[ShelterArea] Ready at %s, type=%s, monitoring=%s" % [
 		global_position, ShelterType.keys()[shelter_type], monitoring
 	])
+
+
+func _is_under_construction() -> bool:
+	## Check if any ancestor is a ConstructionSite.
+	var node: Node = get_parent()
+	while node:
+		if node is ConstructionSite:
+			return true
+		# Also check by group in case the class isn't loaded yet
+		if node.is_in_group("construction_sites"):
+			return true
+		node = node.get_parent()
+	return false
 
 
 func _connect_signals() -> void:

@@ -8,6 +8,8 @@ class_name BTFindNearestResource
 @export var target_node_var: StringName = &"target_node"
 ## Maximum search distance in meters. 0 = unlimited.
 @export var max_distance: float = 100.0
+## For construction_sites: only find sites that need unreserved materials (delivery mode).
+@export var filter_needs_delivery: bool = false
 
 func _generate_name() -> String:
 	if max_distance > 0.0:
@@ -47,6 +49,13 @@ func _tick(_delta: float) -> Status:
 		# If leashed, only consider resources within leash boundary
 		if is_leashed and agent.has_method("is_within_leash"):
 			if not agent.is_within_leash(node.global_position):
+				continue
+
+		# For delivery mode: skip construction sites that don't need unreserved materials.
+		# This prevents units from starting delivery trips when the site is fully stocked/reserved.
+		if filter_needs_delivery and node.has_method("get_materials_needed"):
+			var needed: Dictionary = node.get_materials_needed(true)
+			if needed.is_empty():
 				continue
 
 		# Skip occupied positions for single-occupancy resources (beds, seats, etc.)

@@ -999,6 +999,96 @@ Combat deaths follow the same rules as any death:
 
 ---
 
+## Factions
+
+### Overview
+Units can split off into hostile factions during the game, creating internal conflict that threatens survival. This mechanic is inspired by *The Terror* and *Kenshi*, representing the breakdown of social order under extreme conditions.
+
+### MVP Implementation
+
+**Trigger:** Scripted event when morale conditions deteriorate sufficiently across the crew.
+
+**Sequence:**
+1. Small cutscene and dialog plays
+2. Units split into two camps
+3. Crozier commands one camp (player-controlled)
+4. Other camp becomes hostile (AI-controlled)
+
+**Gameplay:** Player must manage their remaining loyal forces while dealing with a hostile faction on the same island.
+
+### Desired Implementation (Post-MVP)
+
+**The Mutiny:**
+One set of units overpowers and imprisons another set in a mutiny scenario.
+
+| Phase | Description |
+|-------|-------------|
+| **Imprisonment** | Mutineers lock loyal units in a makeshift "brig" (similar to Kenshi's cage/enslavement system) |
+| **Escape** | Captain must free himself and gather loyal forces |
+| **Resolution** | Player chooses: retake control by force, ignore mutineers and continue southward march, or negotiate |
+
+**Brig Mechanics:**
+- Units in brig cannot act (similar to incapacitated state)
+- Brig is a physical location that can be guarded
+- Escape requires: picking locks, overpowering guards, or outside rescue
+- Imprisoned units suffer morale/health drain over time
+
+### Faction Triggers
+
+**Primary Condition:** Low morale across a significant portion of the crew.
+
+**Required Elements:**
+| Requirement | Details |
+|-------------|---------|
+| Low morale threshold | X% of units below 25% morale (TBD) |
+| Faction leader | At least one "Well Liked" individual OR an Officer willing to defect |
+| Critical mass | Minimum number of potential defectors (3-5 units) |
+
+**Contributing Factors:**
+- Prolonged food scarcity
+- Multiple recent deaths
+- Cannibalism discovered/witnessed
+- Failed expeditions
+- Captain's poor decisions (player choices)
+- Proximity to "Combative" or "Coward" traits (amplifies tension)
+
+### Faction Leader Requirements
+
+Not all units can lead a mutiny. Valid faction leaders must have:
+
+| Trait/Role | Why |
+|------------|-----|
+| "Well Liked" | Has social influence, others will follow |
+| Officer | Has authority and command experience |
+| High morale (relative) | Still has will to act rather than despair |
+
+**Irony:** The very traits that make someone a good leader also make them a potential rival.
+
+### Faction Behavior
+
+**Hostile Faction AI:**
+- Defends their camp territory
+- Competes for resources (may raid player stockpiles)
+- Will attack player units that enter their territory
+- Maintains basic survival behavior (eat, sleep, warm)
+
+**Potential Outcomes:**
+| Outcome | Description |
+|---------|-------------|
+| Player victory | Defeat/capture hostile faction, reclaim full control |
+| Coexistence | Both factions survive separately, competing for resources |
+| Player defeat | Player faction wiped out (game over) |
+| Reconciliation | Negotiate reunion (requires specific conditions) |
+
+### Historical Authenticity
+This mechanic mirrors historical accounts of polar expeditions:
+- Franklin expedition crews reportedly split into factions
+- Some groups attempted escape while others remained with ships
+- Leadership disputes and mental deterioration led to violent conflict
+- "The Terror" novel/series depicts exactly this scenario
+
+---
+
 ## Native Interaction
 
 ### Native Camp

@@ -15,7 +15,10 @@ func _enter() -> void:
 	var agent: Node3D = get_agent()
 	if not agent:
 		return
-	var target: Node3D = blackboard.get_var(target_var, null)
+	var target_ref: Variant = blackboard.get_var(target_var, null)
+	if not is_instance_valid(target_ref):
+		return
+	var target: Node3D = target_ref as Node3D
 	# Use CombatComponent if available, otherwise try direct methods
 	var combat = agent.get_node_or_null("CombatComponent")
 	if combat:
@@ -39,11 +42,10 @@ func _tick(_delta: float) -> Status:
 	if not agent:
 		return FAILURE
 
-	var target: Node3D = blackboard.get_var(target_var, null)
-
-	# No target - fail
-	if not target or not is_instance_valid(target):
+	var target_ref: Variant = blackboard.get_var(target_var, null)
+	if not is_instance_valid(target_ref):
 		return FAILURE
+	var target: Node3D = target_ref as Node3D
 
 	# Target is dead - success (combat won)
 	if _is_target_dead(target):

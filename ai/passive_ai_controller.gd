@@ -78,5 +78,15 @@ func set_enabled(value: bool) -> void:
 		_bt_player.active = value
 
 
+func set_player_command_active(active: bool) -> void:
+	## Set player command flag on the blackboard. Clears threat data so flee releases.
+	if _blackboard:
+		_blackboard.set_var(&"player_command_active", active)
+		if active:
+			# Clear threat so BTFlee returns SUCCESS and releases the unit
+			_blackboard.set_var(&"threat_target", null)
+			_blackboard.set_var(&"threat_position", Vector3.INF)
+
+
 func get_blackboard() -> Blackboard:
 	return _blackboard
