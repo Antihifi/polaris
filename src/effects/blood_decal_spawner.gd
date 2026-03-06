@@ -2,11 +2,8 @@ class_name BloodDecalSpawner extends Node
 ## Spawns blood decals when entities take damage.
 ## Add as child to any combatant with CombatComponent.
 
-enum DecalType { GROUND_POOL, ENTITY_DRIP }
-
 @export_category("Scenes")
 @export var pool_decal_scene: PackedScene
-@export var drip_decal_scene: PackedScene
 
 @export_category("Timing")
 @export var lifetime_seconds: float = 900.0  # 1 game day = 15 real minutes
@@ -16,12 +13,10 @@ enum DecalType { GROUND_POOL, ENTITY_DRIP }
 @export_category("Sizes")
 @export var pool_min_size: float = 1.5  # Larger pools
 @export var pool_max_size: float = 4.0
-@export var drip_height: float = 3.0  # Needs to be large enough to hit the mesh
 
 @export_category("Limits")
 @export var max_decals: int = 50
 @export var spawn_chance: float = 0.85  # More blood
-@export var drip_damage_threshold: float = 3.0  # Lower = more drips
 
 var _active_decals: Array[Node3D] = []
 var _combat_component: Node = null
@@ -59,19 +54,15 @@ func _find_terrain() -> void:
 		_terrain = terrain_nodes[0]
 
 
-func _on_took_damage(amount: float, _attacker: Node3D) -> void:
+func _on_took_damage(_amount: float, _attacker: Node3D) -> void:
 	if randf() > spawn_chance:
 		return
 
 	var parent_pos: Vector3 = get_parent().global_position
 
-	# Always spawn ground pool
+	# Spawn ground pool
 	if pool_decal_scene:
 		_spawn_pool(parent_pos)
-
-	# Spawn drip on entity for significant hits
-	if drip_decal_scene and amount >= drip_damage_threshold:
-		_spawn_drip()
 
 
 func _on_limb_dismembered(_part: int, position: Vector3, _limb: RigidBody3D) -> void:
@@ -107,30 +98,6 @@ func _spawn_pool(position: Vector3, duration: float = 0.0) -> void:
 	tween.set_trans(Tween.TRANS_QUAD)
 	var actual_duration := duration if duration > 0.0 else expand_duration
 	tween.tween_property(decal, "size", target_size, actual_duration)
-
-	_schedule_cleanup(decal)
-
-
-func _spawn_drip(target: Node3D = null) -> void:
-	_enforce_limit()
-
-	var decal: Node3D = drip_decal_scene.instantiate()
-	var target_size := Vector3(0.8, drip_height, 0.8)
-
-	# Parent to target (severed limb) or owning entity
-	var parent: Node3D = target if target else get_parent()
-	decal.position = Vector3(0, 2.0, 0)  # Above entity center
-	decal.rotation.y = randf() * TAU
-	decal.set("size", Vector3(0.5, 1.0, 0.5))  # Start with enough Y to hit mesh
-
-	parent.add_child(decal)
-	_active_decals.append(decal)
-
-	# Expand downward
-	var tween: Tween = decal.create_tween()
-	tween.set_ease(Tween.EASE_OUT)
-	tween.set_trans(Tween.TRANS_SINE)
-	tween.tween_property(decal, "size", target_size, expand_duration * 1.5)
 
 	_schedule_cleanup(decal)
 

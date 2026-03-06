@@ -1,4 +1,4 @@
-[gd_resource type="AnimationLibrary" load_steps=94 format=3 uid="uid://b0ge5cs2gvvmk"]
+[gd_resource type="AnimationLibrary" load_steps=95 format=3 uid="uid://b0ge5cs2gvvmk"]
 
 [ext_resource type="Animation" uid="uid://d4e6787ptogww" path="res://characters/captain/zombie_dying.res" id="1_q6ypb"]
 [ext_resource type="Animation" uid="uid://bd8l0twbfypc3" path="res://characters/captain/walking.res" id="2_is6yv"]
@@ -92,6 +92,7 @@
 [ext_resource type="Animation" uid="uid://b2p7xw4gcxofq" path="res://characters/captain/injured_run.res" id="90_6dvso"]
 [ext_resource type="Animation" uid="uid://1pqr5blot2r8" path="res://characters/captain/running.res" id="91_o3pys"]
 [ext_resource type="Animation" uid="uid://dvv554re6tbm7" path="res://characters/captain/crawling.res" id="91_x0iw8"]
+[ext_resource type="Animation" uid="uid://lrgs3nweycq" path="res://characters/captain/drawing_knife.res" id="93_x0iw8"]
 
 [sub_resource type="Animation" id="Animation_60dg1"]
 resource_name = "mixamo_com"
@@ -320,6 +321,7 @@ _data = {
 &"crouching_idle": ExtResource("33_0ihd7"),
 &"death_from_right": ExtResource("43_pdgsp"),
 &"dismissing_gesture": ExtResource("44_4saj4"),
+&"drawing_knife": ExtResource("93_x0iw8"),
 &"drunk_walk": ExtResource("45_17bam"),
 &"dying": ExtResource("1_q6ypb"),
 &"firing_rifle": ExtResource("8_njd7c"),

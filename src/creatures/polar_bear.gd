@@ -37,7 +37,8 @@ func _init() -> void:
 	damage = 35.0
 	attack_speed = 1.8
 	attack_range = 2.5
-	movement_speed = 4.0
+	movement_speed = 5.0
+	turn_speed = 5.0
 
 	# Behavior - base aggro_range, gets multiplied by aggro_multiplier in BT
 	aggro_range = 30.0
@@ -96,7 +97,8 @@ func _connect_animation_signals() -> void:
 func _on_animation_started(anim_name: StringName) -> void:
 	match anim_name:
 		&"PolarBearALL_Idle":
-			# Face target and roar during the wind-up idle before attack
+			# Stop movement, face target, and roar during the wind-up idle before attack
+			stop()
 			_face_target()
 			_play_roar()
 		&"PolarBearALL_Attack", &"PolarBearALL_Attack2", &"PolarBearALL_Attack3":
@@ -141,6 +143,27 @@ func _schedule_strike_sound() -> void:
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
 	_update_combat_roar(delta)
+	_apply_charge_knockback()
+
+
+func _apply_charge_knockback() -> void:
+	## Knock units aside when charging (chasing). Uses existing AttackHitBox Area3D.
+	if not _is_chasing or is_dead or not attack_hitbox:
+		return
+	for body in attack_hitbox.get_overlapping_bodies():
+		if not body.is_in_group("survivors"):
+			continue
+		var ragdoll := body.get_node_or_null("RagdollComponent")
+		if not ragdoll or ragdoll.is_ragdolling:
+			continue
+		# Push sideways relative to bear's heading so bear runs through
+		var bear_forward := -global_transform.basis.z.normalized()
+		var side := bear_forward.cross(Vector3.UP).normalized()
+		var to_unit := (body.global_position - global_position).normalized()
+		if to_unit.dot(side) < 0.0:
+			side = -side
+		side.y = 0.15
+		ragdoll.trigger_ragdoll(side.normalized(),20.0)
 
 
 func _update_combat_roar(delta: float) -> void:

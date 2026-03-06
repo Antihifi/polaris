@@ -52,7 +52,7 @@ func _on_resized() -> void:
 	# Background is inset by PADDING on all sides
 	_background.position = Vector2(PADDING, PADDING)
 	_background.size = size - Vector2(PADDING * 2, PADDING * 2)
-	_stack_size_label.size = size
+	_stack_size_label.set_deferred("size", size)
 
 
 func _on_item_changed() -> void:
@@ -107,7 +107,7 @@ func _update_stack_size() -> void:
 		_stack_size_label.text = ""
 	else:
 		_stack_size_label.text = "%d" % stack_size
-	_stack_size_label.size = size
+	_stack_size_label.set_deferred("size", size)
 
 
 func _refresh() -> void:

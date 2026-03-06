@@ -7,8 +7,12 @@ class_name BTInvestigateMove
 @export var investigate_distance: float = 20.0
 @export var investigation_position_var: StringName = &"investigation_position"
 @export var arrival_tolerance: float = 3.0
+@export var stuck_timeout: float = 3.0
+@export var stuck_threshold: float = 0.3  ## Minimum distance per second to not be "stuck"
 
 var _investigate_pos: Vector3 = Vector3.INF
+var _last_position: Vector3 = Vector3.INF
+var _stuck_timer: float = 0.0
 
 
 func _generate_name() -> String:
@@ -17,6 +21,13 @@ func _generate_name() -> String:
 
 func _enter() -> void:
 	_investigate_pos = Vector3.INF
+	_last_position = Vector3.INF
+	_stuck_timer = 0.0
+	# Guard against null overrides from .tres serialization
+	if stuck_timeout <= 0.0:
+		stuck_timeout = 3.0
+	if stuck_threshold <= 0.0:
+		stuck_threshold = 0.3
 
 
 func _tick(delta: float) -> Status:
@@ -54,6 +65,19 @@ func _tick(delta: float) -> Status:
 		if agent.has_method("set_chasing"):
 			agent.set_chasing(false)
 		return SUCCESS
+
+	# Stuck detection - give up investigating
+	if _last_position != Vector3.INF:
+		var moved := agent.global_position.distance_to(_last_position)
+		if moved < stuck_threshold * delta:
+			_stuck_timer += delta
+			if _stuck_timer >= stuck_timeout:
+				if agent.has_method("set_chasing"):
+					agent.set_chasing(false)
+				return FAILURE
+		else:
+			_stuck_timer = 0.0
+	_last_position = agent.global_position
 
 	# Still moving
 	return RUNNING

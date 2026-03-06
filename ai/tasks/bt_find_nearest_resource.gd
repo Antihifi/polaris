@@ -51,11 +51,15 @@ func _tick(_delta: float) -> Status:
 			if not agent.is_within_leash(node.global_position):
 				continue
 
-		# For delivery mode: skip construction sites that don't need unreserved materials.
-		# This prevents units from starting delivery trips when the site is fully stocked/reserved.
-		if filter_needs_delivery and node.has_method("get_materials_needed"):
-			var needed: Dictionary = node.get_materials_needed(true)
-			if needed.is_empty():
+		# For delivery mode: skip sites that are fully stocked, have enough deliverers,
+		# or have no workbench with needed materials (prevents walking to empty workbench
+		# which blocks GatheringSequence from ever reaching the ship).
+		if filter_needs_delivery:
+			if node.has_method("has_all_required_materials") and node.has_all_required_materials():
+				continue
+			if node.has_method("needs_more_deliverers") and not node.needs_more_deliverers():
+				continue
+			if not _workbench_has_needed_materials(agent, node):
 				continue
 
 		# Skip occupied positions for single-occupancy resources (beds, seats, etc.)
@@ -92,6 +96,9 @@ func _tick(_delta: float) -> Status:
 	if nearest:
 		blackboard.set_var(target_position_var, nearest.global_position)
 		blackboard.set_var(target_node_var, nearest)
+		# Register as deliverer immediately (before walking) to prevent other units piling on.
+		if filter_needs_delivery and nearest.has_method("register_deliverer"):
+			nearest.register_deliverer(agent)
 		# Set material_id for ship resources (strip "ship_" prefix)
 		if resource_group.begins_with("ship_"):
 			blackboard.set_var(&"material_id", resource_group.substr(5))
@@ -118,3 +125,17 @@ func _tick(_delta: float) -> Status:
 	else:
 		print("[BTFindResource] FAIL: %d nodes in '%s' but all occupied or too far" % [total_nodes, resource_group])
 	return FAILURE
+
+
+func _workbench_has_needed_materials(agent: Node3D, site: Node) -> bool:
+	## Check if any workbench has at least 1 unit of a material the site needs.
+	if not site.has_method("get_materials_needed"):
+		return false
+	var needed: Dictionary = site.get_materials_needed()
+	for wb: Node in agent.get_tree().get_nodes_in_group("workbenches"):
+		for child: Node in wb.get_children():
+			if child is WorkbenchComponent:
+				for mat_id: String in needed:
+					if child.get_stored_material_count(mat_id) > 0:
+						return true
+	return false

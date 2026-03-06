@@ -1307,7 +1307,7 @@ func _setup_game_ui() -> void:
 	)
 
 	# Connect inventory item action (e.g. Place Tent from crate, Carve body parts)
-	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	var container_panel: InventoryPanel = inventory_hud.get_container_panel()
 	if container_panel:
 		container_panel.item_action_requested.connect(func(item: InventoryItem, action: String):
 			if action == "place" and tent_placement_manager:
@@ -1318,7 +1318,7 @@ func _setup_game_ui() -> void:
 		)
 
 	# Also connect unit panel so carving works from unit inventory
-	var unit_panel: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+	var unit_panel: InventoryPanel = null  # Dynamic unit panels handle this now
 	if unit_panel:
 		unit_panel.item_action_requested.connect(func(item: InventoryItem, action: String):
 			if action == "place" and tent_placement_manager:
@@ -1330,7 +1330,7 @@ func _setup_game_ui() -> void:
 
 	# Enable carve button when unit inventory opens (check if unit has knife)
 	inventory_hud.unit_inventory_opened.connect(func(unit: ClickableUnit):
-		var up: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+		var up: InventoryPanel = null  # Dynamic unit panels handle this now
 		if up and unit:
 			var has_knife: bool = unit.has_method("has_item_by_id") and unit.has_item_by_id("knife")
 			up.set_carve_enabled(has_knife)
@@ -1619,7 +1619,7 @@ func _on_butcher_confirmed(corpse: Node3D) -> void:
 
 
 func _open_corpse_inventory(corpse: Node, corpse_inv: Inventory) -> void:
-	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	var container_panel: InventoryPanel = inventory_hud.get_container_panel()
 	if not container_panel:
 		return
 	var corpse_name: String = corpse.unit_name if "unit_name" in corpse else "Corpse"

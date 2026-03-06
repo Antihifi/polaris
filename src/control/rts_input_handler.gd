@@ -56,6 +56,8 @@ const FORMATION_SPACING: float = 2.0
 
 
 func _ready() -> void:
+	# Must keep receiving input during pause so player can select units
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	# Try to find camera if not set
 	if not camera:
 		camera = get_viewport().get_camera_3d()
@@ -107,7 +109,7 @@ func _handle_left_click_down(screen_position: Vector2) -> void:
 	var ctrl_held := Input.is_key_pressed(KEY_CTRL)
 
 	# Ctrl+click = attack command — check for ANY living entity (unit or animal)
-	if ctrl_held and has_selection():
+	if ctrl_held and has_selection() and not get_tree().paused:
 		var attack_target := _raycast_for_any_entity(screen_position)
 		if attack_target and attack_target not in selected_units:
 			_issue_attack_command(attack_target)
@@ -647,6 +649,8 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	## If clicking on a workbench, emit workbench_clicked signal.
 	## If clicking on a construction site, emit construction_site_clicked or assign officer.
 	## Non-lead sled pullers are filtered out - they follow their leader automatically.
+	if get_tree().paused:
+		return  # No movement/interaction commands while paused
 
 	# Check if right-clicking on a severed limb (uses layer 16)
 	var clicked_limb := _raycast_for_severed_limb(screen_position)

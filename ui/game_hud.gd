@@ -15,6 +15,9 @@ var _panel_manager: UnitPanelManager = null
 
 
 func _ready() -> void:
+	# Must keep receiving input during pause so player can unpause / change speed
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	# Create panel manager for multi-panel support
 	_panel_manager = UnitPanelManager.new()
 	_panel_manager.name = "UnitPanelManager"

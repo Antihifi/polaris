@@ -266,6 +266,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	#do NOT break anything but optimize, streamline, eliminate redundancies, deprecate and archive out no longer 
 	# needed/solved debug (navigation and collision, make an archive directory for this so we have documentation to fall back on should issues reoccur
 func _physics_process(delta: float) -> void:
+	# Skip all physics when engine is paused (delta=0 causes NaN in NavigationAgent3D avoidance)
+	if is_zero_approx(delta):
+		return
+
 	# Align selection indicator to terrain slope (before early returns so idle units align too)
 	if is_selected:
 		var sel_indicator := get_node_or_null("SelectionIndicator")
@@ -274,6 +278,11 @@ func _physics_process(delta: float) -> void:
 
 	# Skip physics during locked animations (sitting, sleeping)
 	if is_animation_locked:
+		return
+
+	# Skip physics during ragdoll (simulation + recovery animation)
+	var ragdoll_comp := get_node_or_null("RagdollComponent")
+	if ragdoll_comp and ragdoll_comp.is_ragdolling:
 		return
 
 	# Safety: Ensure death is processed even if take_damage() somehow didn't trigger it
@@ -388,9 +397,10 @@ func _physics_process(delta: float) -> void:
 		terrain_height = terrain.data.get_height(global_position)
 
 	# Undiscovered units: snap to terrain, skip physics (no collision available)
-	if not is_discovered and is_finite(terrain_height):
-		global_position.y = terrain_height
-		velocity.y = 0  # No gravity for snapped units
+	if not is_discovered:
+		if is_finite(terrain_height):
+			global_position.y = terrain_height
+		velocity.y = 0
 	else:
 		# Apply gravity (required for move_and_slide to handle slopes - from Terrain3D demo)
 		velocity.y -= 40.0 * delta
@@ -414,6 +424,10 @@ func _physics_process(delta: float) -> void:
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
 	# Skip movement during locked animations (sitting, sleeping, etc.)
 	if is_animation_locked:
+		return
+	# Skip movement during ragdoll (simulation + recovery)
+	var _ragdoll := get_node_or_null("RagdollComponent")
+	if _ragdoll and _ragdoll.is_ragdolling:
 		return
 	# Skip avoidance for support pullers - they mirror leader only
 	if sled_puller and sled_puller.should_follow_leader():
@@ -537,6 +551,9 @@ func move_to(target_position: Vector3, is_combat_chase: bool = false, skip_anima
 	if not is_discovered:
 		return
 	if not can_move:
+		return
+	var _ragdoll := get_node_or_null("RagdollComponent")
+	if _ragdoll and _ragdoll.is_ragdolling:
 		return
 
 	# Disengage combat when receiving regular movement command (not combat chase)
@@ -1352,8 +1369,10 @@ func _on_death() -> void:
 		navigation_agent.target_position = global_position
 		navigation_agent.set_velocity(Vector3.ZERO)
 
-	# Play death animation
-	_play_animation("dying")
+	# Ragdoll on death — unit stays where they fall, no death animation
+	var ragdoll_comp := get_node_or_null("RagdollComponent")
+	if ragdoll_comp and not ragdoll_comp.is_ragdolling:
+		ragdoll_comp.trigger_ragdoll(Vector3.ZERO, 0.0)
 
 	# Disable AI behavior trees (both ManAIController for Men and PassiveAIController for Officers)
 	var ai_controller := get_node_or_null("ManAIController")

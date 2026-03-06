@@ -101,6 +101,8 @@ const SEXTANT_DISTANCE: float = 45.0  # Reduced from 80
 
 
 func _ready() -> void:
+	# Camera must keep processing during pause so player can look around
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_find_terrain()
 	_saved_fov = fov
 	var pmin := deg_to_rad(pitch_min_deg)

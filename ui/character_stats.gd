@@ -66,6 +66,11 @@ var _morale_trend: ColorRect
 # Unstuck button (added by user in editor, optional)
 var _unstuck_button: Button = null
 
+# Drag-to-detach support
+var _dragger: PanelDragger = PanelDragger.new()
+var is_detached: bool:
+	get: return _dragger.is_detached
+
 ## Height offset above character's position (in world units)
 @export var world_height_offset: float = 4.0
 ## Screen space offset to nudge panel position
@@ -133,6 +138,11 @@ func _ready() -> void:
 	flourish_bottom1.visible = true
 	flourish_bottom2.visible = false
 	_set_panel_width(false)
+
+	# Connect drag handles: flourishes and name panel
+	flourish_top1.gui_input.connect(_on_drag_input)
+	flourish_top2.gui_input.connect(_on_drag_input)
+	name_panel.gui_input.connect(_on_drag_input)
 
 	# Start hidden
 	visible = false
@@ -347,6 +357,12 @@ func _on_close_button_pressed() -> void:
 	hide_panel()
 
 
+func _on_drag_input(event: InputEvent) -> void:
+	## Handle drag on flourish or name panel to detach from auto-follow.
+	_dragger.handle_input(event, self)
+
+
+
 func _on_unstuck_pressed() -> void:
 	## Manual unstuck button pressed - nudge the current unit.
 	if _current_unit and _current_unit.has_method("nudge"):
@@ -356,7 +372,8 @@ func _on_unstuck_pressed() -> void:
 func _process(_delta: float) -> void:
 	if not visible or not _current_unit or not _camera:
 		return
-	_update_panel_position()
+	if not _dragger.is_detached:
+		_update_panel_position()
 	# Always update action label in real-time
 	_update_action()
 
@@ -401,6 +418,7 @@ func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
 	if _unstuck_button:
 		_unstuck_button.visible = is_officer_or_captain
 
+	_dragger.reset()
 	_update_display()
 	_update_panel_position()
 	visible = true
@@ -408,6 +426,7 @@ func show_for_unit(unit: ClickableUnit, camera: Camera3D = null) -> void:
 
 func hide_panel() -> void:
 	## Hide the stats panel and clean up.
+	_dragger.reset()
 	if _current_unit and is_instance_valid(_current_unit):
 		if _current_unit.stats_changed.is_connected(_on_stats_changed):
 			_current_unit.stats_changed.disconnect(_on_stats_changed)

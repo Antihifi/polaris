@@ -64,6 +64,9 @@ var _character_spawner: Node = null
 
 
 func _ready() -> void:
+	# Autoload must keep running during get_tree().paused so we can toggle pause
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	# Connect to TimeManager signals
 	if has_node("/root/TimeManager"):
 		var time_manager := get_node("/root/TimeManager")

@@ -26,6 +26,7 @@ var _action_item: InventoryItem = null
 var _vbox: VBoxContainer = null
 var _carve_enabled: bool = false
 var _header: HBoxContainer = null
+var _flourish_top: NinePatchRect = null
 
 # Drag-to-detach support
 var _dragger: PanelDragger = PanelDragger.new()
@@ -41,10 +42,14 @@ func _ready() -> void:
 	_vbox = _grid_container.get_parent() as VBoxContainer
 	_header = _title_label.get_parent() as HBoxContainer
 
+	_flourish_top = _vbox.get_node("FlourishTop") as NinePatchRect
+
 	_close_button.pressed.connect(_on_close_pressed)
 	_title_label.text = title
 
 	_header.gui_input.connect(_on_header_drag_input)
+	_flourish_top.mouse_filter = Control.MOUSE_FILTER_STOP
+	_flourish_top.gui_input.connect(_on_header_drag_input)
 
 	_setup_grid_control(_grid_container)
 
@@ -56,7 +61,9 @@ func _ready() -> void:
 	custom_minimum_size = Vector2.ZERO
 	reset_size()
 
-	hide()
+	# Hide the root Control (hides both flourish and panel)
+	visible = false
+	get_parent().hide()
 
 
 func _setup_grid_control(parent: Control) -> void:
@@ -93,8 +100,9 @@ func _process(_delta: float) -> void:
 
 
 func _on_header_drag_input(event: InputEvent) -> void:
-	## Handle drag on header to detach panel from auto-follow.
-	_dragger.handle_input(event, self)
+	## Handle drag on header/flourish to detach panel from auto-follow.
+	## Moves the parent Control (root) so flourish and panel move together.
+	_dragger.handle_input(event, get_parent())
 
 
 func reset_drag() -> void:
@@ -111,14 +119,16 @@ func show_inventory(inv: Inventory, display_title: String = "") -> void:
 	if not display_title.is_empty():
 		title = display_title
 	_hide_action_button()
-	show()
+	visible = true
+	get_parent().show()
 
 
 func hide_panel() -> void:
 	_inventory = null
 	_dragger.reset()
 	_hide_action_button()
-	hide()  # Hide first to prevent mouse events during cleanup
+	visible = false
+	get_parent().hide()  # Hide root Control to hide flourish + panel
 	if _grid_ctrl:
 		# Defer inventory cleanup to avoid gloot crash during mouse_exited processing
 		call_deferred("_deferred_clear_grid")

@@ -18,8 +18,8 @@ var linked_workbench: Node = null
 ## Materials that have been deposited at this site.
 var materials_deposited: Dictionary = {}
 
-## Materials currently being hauled to this site (reserved but not yet deposited).
-var materials_reserved: Dictionary = {}
+## Units currently delivering materials to this site.
+var active_deliverers: Array[Node] = []
 
 ## Construction progress (0.0 to 1.0).
 var construction_progress: float = 0.0
@@ -47,9 +47,8 @@ func get_progress_percent() -> float:
 	return construction_progress * 100.0
 
 
-func get_materials_needed(exclude_reserved: bool = false) -> Dictionary:
+func get_materials_needed() -> Dictionary:
 	## Get dictionary of materials still needed: {id: amount}.
-	## If exclude_reserved is true, also subtracts in-flight reservations.
 	if not recipe:
 		return {}
 	var needed: Dictionary = {}
@@ -57,8 +56,6 @@ func get_materials_needed(exclude_reserved: bool = false) -> Dictionary:
 		var required: int = recipe.required_materials[mat_id]
 		var deposited: int = materials_deposited.get(mat_id, 0)
 		var remaining: int = required - deposited
-		if exclude_reserved:
-			remaining -= materials_reserved.get(mat_id, 0)
 		if remaining > 0:
 			needed[mat_id] = remaining
 	return needed
@@ -84,34 +81,29 @@ func deposit_material(material_id: String, count: int) -> int:
 
 	var accepted: int = mini(count, can_accept)
 	materials_deposited[material_id] = deposited + accepted
-	# Clear reservation for the deposited amount.
-	unreserve_material(material_id, accepted)
 	material_deposited.emit(material_id, accepted)
 
 	return accepted
 
 
-func reserve_material(material_id: String, count: int) -> int:
-	## Reserve materials for hauling. Returns amount actually reserved.
-	var needed: int = _get_unreserved_need(material_id)
-	var reserved: int = mini(count, needed)
-	if reserved > 0:
-		materials_reserved[material_id] = materials_reserved.get(material_id, 0) + reserved
-	return reserved
+func needs_more_deliverers() -> bool:
+	## Check if more delivery units are needed. Auto-prunes dead/freed units.
+	active_deliverers = active_deliverers.filter(func(u: Node) -> bool: return is_instance_valid(u))
+	var total_needed: int = 0
+	for val: int in get_materials_needed().values():
+		total_needed += val
+	return active_deliverers.size() < total_needed
 
 
-func unreserve_material(material_id: String, count: int) -> void:
-	## Cancel a reservation (unit failed to deliver or materials deposited).
-	var current: int = materials_reserved.get(material_id, 0)
-	materials_reserved[material_id] = maxi(current - count, 0)
+func register_deliverer(unit: Node) -> void:
+	## Register a unit as delivering to this site.
+	if unit not in active_deliverers:
+		active_deliverers.append(unit)
 
 
-func _get_unreserved_need(material_id: String) -> int:
-	## How many more of this material can be reserved?
-	var required: int = recipe.required_materials.get(material_id, 0) if recipe else 0
-	var deposited: int = materials_deposited.get(material_id, 0)
-	var reserved: int = materials_reserved.get(material_id, 0)
-	return maxi(required - deposited - reserved, 0)
+func unregister_deliverer(unit: Node) -> void:
+	## Unregister a unit from delivering.
+	active_deliverers.erase(unit)
 
 
 func add_work(hours: float, efficiency: float = 1.0) -> void:
@@ -187,8 +179,8 @@ func cancel_construction() -> void:
 				if count > 0:
 					linked_workbench.add_materials(mat_id, count)
 
-	# Clear all reservations.
-	materials_reserved.clear()
+	# Clear deliverers.
+	active_deliverers.clear()
 
 	# Unregister all workers.
 	for worker in active_workers.duplicate():

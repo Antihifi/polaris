@@ -119,12 +119,12 @@ func _ready() -> void:
 	butcher_panel.butcher_confirmed.connect(_on_butcher_confirmed)
 
 	# Connect inventory item action (e.g. Place Tent from crate, Carve body parts)
-	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	var container_panel: InventoryPanel = inventory_hud.get_container_panel()
 	if container_panel:
 		container_panel.item_action_requested.connect(_on_inventory_item_action)
 
 	# Also connect unit panel so carving works from unit inventory
-	var unit_panel: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+	var unit_panel: InventoryPanel = null  # Dynamic unit panels handle this now
 	if unit_panel:
 		unit_panel.item_action_requested.connect(_on_inventory_item_action)
 
@@ -283,7 +283,7 @@ func _on_inventory_item_action(item: InventoryItem, action: String) -> void:
 
 func _on_unit_inventory_opened(unit: ClickableUnit) -> void:
 	## Enable/disable carve button based on whether the unit has a knife.
-	var unit_panel: InventoryPanel = inventory_hud.get_node_or_null("%UnitPanel")
+	var unit_panel: InventoryPanel = null  # Dynamic unit panels handle this now
 	if unit_panel and unit:
 		var has_knife: bool = unit.has_method("has_item_by_id") and unit.has_item_by_id("knife")
 		unit_panel.set_carve_enabled(has_knife)
@@ -394,7 +394,7 @@ func _add_animal_body_parts(animal: Animal, inv: Inventory) -> void:
 
 func _open_corpse_inventory(corpse: Node, corpse_inv: Inventory) -> void:
 	## Open the corpse inventory in the container panel.
-	var container_panel: InventoryPanel = inventory_hud.get_node_or_null("%ContainerPanel")
+	var container_panel: InventoryPanel = inventory_hud.get_container_panel()
 	if not container_panel:
 		return
 	# Get name - animals have animal_name, units have unit_name

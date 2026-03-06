@@ -22,6 +22,8 @@ const UNIT_COLLISION_LAYER: int = 2
 
 
 func _ready() -> void:
+	# Must keep receiving input during pause so player can recall control groups
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	# Initialize control groups
 	for i in range(1, 10):
 		control_groups[i] = []

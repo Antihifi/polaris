@@ -2,6 +2,7 @@ class_name UnitPanelManager extends Node
 ## Manages multiple CharacterStats and InventoryPanel instances.
 ## Spawns new panels on double-click, tracks unit->panel mapping,
 ## handles focus/bring-to-front, and cleans up on unit death/removal.
+## Owns tether lines for detached stats panels (same pattern as InventoryHUD).
 
 signal panel_opened(unit: ClickableUnit)
 signal panel_closed(unit: ClickableUnit)
@@ -11,19 +12,78 @@ const CharacterStatsScene: PackedScene = preload("res://ui/character_stats.tscn"
 const MAX_STATS_PANELS: int = 6
 const MAX_INVENTORY_PANELS: int = 4
 
+## Height offset above objects in world units (for tether target position)
+var world_height_offset: float = 4.0
+
 ## Active panels: unit instance_id -> panel
 var _stats_panels: Dictionary = {}
+var _stats_units: Dictionary = {}
+var _stats_tethers: Dictionary = {}
 var _inventory_panels: Dictionary = {}
 ## Focus order: most recently focused panel's unit ID at end
 var _focus_order: Array[int] = []
 
 var _stats_parent: CanvasLayer = null
 var _inventory_parent: CanvasLayer = null
+var _camera: Camera3D = null
 
 
 func setup(stats_parent: CanvasLayer, inventory_parent: CanvasLayer = null) -> void:
 	_stats_parent = stats_parent
 	_inventory_parent = inventory_parent
+
+
+func _process(_delta: float) -> void:
+	if _stats_panels.is_empty():
+		return
+	if not _camera:
+		_camera = get_viewport().get_camera_3d()
+	if not _camera:
+		return
+
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+
+	for uid: int in _stats_panels.keys():
+		var panel: Control = _stats_panels[uid]
+		var unit: ClickableUnit = _stats_units.get(uid) as ClickableUnit
+		var tether: Line2D = _stats_tethers.get(uid) as Line2D
+		if not is_instance_valid(panel) or not panel.visible or not is_instance_valid(unit):
+			if tether and is_instance_valid(tether):
+				tether.visible = false
+			continue
+		if panel.is_detached:
+			if tether:
+				_update_tether(tether, panel, unit, viewport_size)
+		else:
+			if tether and is_instance_valid(tether):
+				tether.visible = false
+
+
+func _create_tether_line() -> Line2D:
+	## Create a tether line for a drag-detached panel.
+	var line := Line2D.new()
+	line.width = 1.0
+	line.default_color = Color(0.8, 0.8, 0.8, 0.4)
+	line.z_index = -1
+	line.visible = false
+	_stats_parent.add_child(line)
+	return line
+
+
+func _update_tether(line: Line2D, panel: Control, target_node: Node3D, viewport_size: Vector2) -> void:
+	## Update a tether line from a detached panel to its target object.
+	if not line or not target_node or not _camera:
+		if line:
+			line.visible = false
+		return
+	var world_pos: Vector3 = target_node.global_position + Vector3(0, world_height_offset, 0)
+	var in_frustum: bool = _camera.is_position_in_frustum(world_pos)
+	var target_screen: Vector2 = _camera.unproject_position(world_pos)
+	if not in_frustum:
+		target_screen = target_screen.clamp(Vector2.ZERO, viewport_size)
+	var panel_center: Vector2 = panel.position + panel.size / 2.0
+	line.points = PackedVector2Array([panel_center, target_screen])
+	line.visible = true
 
 
 func open_stats_for_unit(unit: ClickableUnit) -> Control:
@@ -41,7 +101,10 @@ func open_stats_for_unit(unit: ClickableUnit) -> Control:
 	_stats_parent.add_child(panel)
 	panel.show_for_unit(unit)
 	_stats_panels[uid] = panel
+	_stats_units[uid] = unit
 	_focus_order.append(uid)
+	# Create tether line
+	_stats_tethers[uid] = _create_tether_line()
 	# Connect cleanup signals
 	if panel.has_signal("closed"):
 		panel.closed.connect(_on_stats_panel_closed.bind(uid))
@@ -112,12 +175,14 @@ func _on_stats_panel_closed(uid: int) -> void:
 	if uid in _stats_panels:
 		var panel: Control = _stats_panels[uid]
 		_stats_panels.erase(uid)
+		_stats_units.erase(uid)
 		_focus_order.erase(uid)
-		# Clean up tether line if it exists
-		if is_instance_valid(panel) and panel.has_method("get_tether_line"):
-			var tether: Line2D = panel.get_tether_line()
-			if tether and is_instance_valid(tether):
+		# Clean up tether line
+		if uid in _stats_tethers:
+			var tether: Line2D = _stats_tethers[uid]
+			if is_instance_valid(tether):
 				tether.queue_free()
+			_stats_tethers.erase(uid)
 		if is_instance_valid(panel):
 			panel.queue_free()
 

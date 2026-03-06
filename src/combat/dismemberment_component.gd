@@ -101,8 +101,11 @@ func _ready() -> void:
 
 func _cache_physical_bones() -> void:
 	for child in _skeleton.get_children():
-		if child is PhysicalBone3D:
-			_physical_bones.append(child)
+		if child is PhysicalBoneSimulator3D:
+			for bone in child.get_children():
+				if bone is PhysicalBone3D:
+					_physical_bones.append(bone)
+			break
 
 
 func _scan_pre_placed_limbs() -> void:
@@ -162,8 +165,10 @@ func _enable_limb_collision(limb: RigidBody3D) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if not _is_simulation and _skeleton:
-		_follow_bones()
+	# _follow_bones() is NOT called — PhysicalBoneSimulator3D handles
+	# bone sync automatically in Godot 4.5. Manually setting PhysicalBone3D
+	# transforms causes their collision shapes to push the CharacterBody3D.
+	pass
 
 
 func _process(delta: float) -> void:
@@ -229,6 +234,10 @@ func _follow_bones() -> void:
 
 func _on_took_damage(_amount: float, attacker: Node3D) -> void:
 	if not attacker or _is_simulation:
+		return
+	# Skip dismemberment during ragdoll knockback
+	var ragdoll := _unit.get_node_or_null("RagdollComponent")
+	if ragdoll and ragdoll.is_ragdolling:
 		return
 
 	# Test mode: 100% dismemberment, random limb (no head)
@@ -529,7 +538,15 @@ func _hide_animated_bone(bone_id: int) -> void:
 
 func _start_ragdoll() -> void:
 	_is_simulation = true
-	_skeleton.physical_bones_start_simulation()
+	var ragdoll := _unit.get_node_or_null("RagdollComponent")
+	if ragdoll:
+		ragdoll.trigger_ragdoll(Vector3.DOWN, 0.0)
+	else:
+		# Fallback: start simulation directly on the simulator
+		for child in _skeleton.get_children():
+			if child is PhysicalBoneSimulator3D:
+				child.physical_bones_start_simulation()
+				break
 
 
 func _spawn_blood(bone_id: int, pos: Vector3) -> void:

@@ -4,6 +4,9 @@ Guidance for Claude Code when working with this repository.
 
 ## CRITICAL RULES
 
+### No Guessing — ASK
+**NEVER guess, assume, or write defensive fallback code when unsure.** If you don't know the answer, the file is too large to read, or the requirement is ambiguous — **ASK the user.** Do not invent plausible-looking solutions. Do not add "just in case" code paths. Wrong code that looks right is worse than no code at all.
+
 ### No Commits Without Testing
 **NEVER commit/push until user has tested and given explicit permission.**
 
@@ -50,7 +53,7 @@ cat "/mnt/c/Users/antih/AppData/Roaming/Godot/app_userdata/Polaris/logs/godot.lo
 
 **Polaris** - Arctic survival RTS inspired by The Terror/Franklin expedition. Players manage 10-16 crew members surviving until rescue.
 
-- **Engine:** Godot 4.5 (mobile renderer)
+- **Engine:** Godot 4.5 (Forward+ renderer)
 - **Main Scene:** `main.tscn`
 - **Godot Path:** `/mnt/c/Users/antih/Desktop/Godot_v4.5.1-stable_win64_console.exe`
 

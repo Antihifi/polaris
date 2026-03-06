@@ -99,8 +99,7 @@ func _withdraw_from_workbench(agent: Node3D) -> Status:
 
 	if not site.has_method("get_materials_needed"):
 		return FAILURE
-	# Exclude already-reserved materials to prevent multiple units grabbing the same thing.
-	var needed: Dictionary = site.get_materials_needed(true)
+	var needed: Dictionary = site.get_materials_needed()
 	if needed.is_empty():
 		return FAILURE
 
@@ -113,11 +112,6 @@ func _withdraw_from_workbench(agent: Node3D) -> Status:
 		return FAILURE
 
 	for mat_id: String in needed:
-		# Reserve at the site first (dibs).
-		if site.has_method("reserve_material"):
-			var reserved: int = site.reserve_material(mat_id, 1)
-			if reserved <= 0:
-				continue
 		var withdrawn: int = wb_comp.withdraw_material(mat_id, 1)
 		if withdrawn > 0:
 			if agent.has_method("start_carrying"):
@@ -127,11 +121,10 @@ func _withdraw_from_workbench(agent: Node3D) -> Status:
 			blackboard.set_var(&"is_delivering", true)
 			blackboard.set_var(&"current_action", "Hauling " + mat_id)
 			return SUCCESS
-		else:
-			# Withdrawal failed — unreserve the dibs.
-			if site.has_method("unreserve_material"):
-				site.unreserve_material(mat_id, 1)
 
+	# Nothing available at workbench — unregister so another unit can try later.
+	if site.has_method("unregister_deliverer"):
+		site.unregister_deliverer(agent)
 	return FAILURE
 
 

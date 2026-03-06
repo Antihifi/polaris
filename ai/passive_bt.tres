@@ -314,7 +314,6 @@ value = SubResource("BBVariant_p8nnf")
 [sub_resource type="BTAction" id="BTAction_macxb"]
 script = ExtResource("3_5vunk")
 resource_group = "bed_positions"
-filter_needs_delivery = null
 
 [sub_resource type="BTAction" id="BTAction_dqseb"]
 script = ExtResource("4_rxmcr")

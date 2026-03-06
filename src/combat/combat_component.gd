@@ -77,6 +77,15 @@ func take_damage(amount: float, attacker: Node3D = null) -> void:
 	health -= amount
 	took_damage.emit(amount, attacker)
 
+	# Trigger ragdoll for heavy hits (bears do 35 damage)
+	if attacker and is_instance_valid(attacker) and amount >= 20.0 and owner_node:
+		var ragdoll := owner_node.get_node_or_null("RagdollComponent")
+		if ragdoll and not ragdoll.is_ragdolling:
+			var dir := (owner_node.global_position - attacker.global_position).normalized()
+			dir.y = 0.3
+			dir = dir.normalized()
+			ragdoll.trigger_ragdoll(dir, ragdoll.impulse_strength)
+
 
 func _on_death() -> void:
 	_is_dead = true

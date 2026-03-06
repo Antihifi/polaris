@@ -12,6 +12,7 @@ class_name Animal extends CharacterBody3D
 @export var attack_range: float = 2.0
 @export var movement_speed: float = 3.0
 @export var chase_speed_multiplier: float = 1.5
+@export var turn_speed: float = 10.0
 
 ## Runtime speed multiplier (used by BT tasks like flee, chase, etc.)
 var speed_multiplier: float = 1.0
@@ -80,6 +81,10 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Skip all physics when engine is paused (delta=0 causes NaN in NavigationAgent3D avoidance)
+	if is_zero_approx(delta):
+		return
+
 	if is_dead:
 		return
 
@@ -216,7 +221,7 @@ func _process_movement(delta: float) -> void:
 	velocity.z = direction.z * current_speed
 
 	if direction.length_squared() > 0.01:
-		rotation.y = lerp_angle(rotation.y, atan2(direction.x, direction.z), 10.0 * delta)
+		rotation.y = lerp_angle(rotation.y, atan2(direction.x, direction.z), turn_speed * delta)
 
 	move_and_slide()
 

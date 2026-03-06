@@ -6,7 +6,8 @@ signal closed
 signal site_cancelled(site: ConstructionSite)
 
 @onready var panel: Panel = $Panel
-@onready var title_label: Label = $Panel/MarginContainer/VBoxContainer/TitleLabel
+@onready var title_label: Label = $Panel/MarginContainer/VBoxContainer/HBoxContainer/TitleLabel
+@onready var close_button: Button = $Panel/MarginContainer/VBoxContainer/HBoxContainer/CloseButton
 @onready var progress_bar: ProgressBar = $Panel/MarginContainer/VBoxContainer/ProgressBar
 @onready var materials_label: Label = $Panel/MarginContainer/VBoxContainer/MaterialsLabel
 @onready var workers_label: Label = $Panel/MarginContainer/VBoxContainer/WorkersLabel
@@ -23,6 +24,7 @@ var _camera: Camera3D = null
 
 func _ready() -> void:
 	cancel_button.pressed.connect(_on_cancel_pressed)
+	close_button.pressed.connect(hide_panel)
 	visible = false
 
 

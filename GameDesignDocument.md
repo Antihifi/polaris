@@ -776,6 +776,30 @@ See [tools/CLAUDE.md](tools/CLAUDE.md) for detailed technical documentation incl
 | Fire Pit | Wood, Stones | Warmth, cooking |
 | Workshop | Wood, Nails, Tools | Crafting station |
 
+### Tent Upgrades
+
+Tents can be upgraded with animal pelts to dramatically improve their effectiveness:
+
+**Seal Pelt Insulated Tent:**
+- **Materials:** Existing Tent + 3-4 Seal Pelts
+- **Effect:** Functions as a combined fire + tent — provides warmth equivalent to fire proximity but contained within the tent's interior
+- **Capacity:** Max 3 occupants
+- **Warmth radius:** Interior only (no external warmth like a fire pit)
+- **Buffs:**
+  - Large temperature regeneration (comparable to fire proximity + basic shelter combined)
+  - Morale boost to occupants (+1.0/hr while inside)
+  - Greatly increased energy regeneration (+7.0 energy/hr, between tent and improved shelter)
+
+**Bearskin Floor:**
+- **Materials:** Existing Tent + 1 Large Pelt (polar bear)
+- **Effect:** Similar buffs to seal pelt insulation but less pronounced
+- **Buffs:**
+  - Moderate temperature regeneration bonus (+2.0 warmth/hr on top of base tent)
+  - Small morale boost to occupants (+0.5/hr while inside)
+  - Increased energy regeneration (+5.0 energy/hr)
+
+**Stacking:** Seal pelt insulation and bearskin floor can be combined on the same tent for maximum comfort. A fully upgraded tent is one of the most valuable shelters in the game and creates strong incentive to hunt dangerous wildlife.
+
 ---
 
 ## Crafting
@@ -1096,10 +1120,29 @@ This mechanic mirrors historical accounts of polar expeditions:
 - Neutral disposition, can trade
 
 ### Trade
-**You Give → You Get:**
-- Western goods (tools, metal) → Native gear (superior cold protection)
-- Western goods → Food (whale meat, seal meat)
-- Western goods → Information
+
+**Trade Goods (What Inuit Want):**
+
+| Category | Items | Trade Value |
+|----------|-------|-------------|
+| **Iron/Metal** | Knives, stoves, nails, scrap metal, tools | High — most practical value to Inuit |
+| **Firearms** | Rifles, shotguns | Very High — 1 rifle = 4 seals (*North Water* tribute). Limited supply: 4-5 rifles/shotguns per game, so trading one is a major strategic decision |
+| **Valuables** | Silverware, gold jewelry, pocket watches, medals | Moderate — Inuit know these hold value to *other* white men (whalers, traders). No survival value but recognized as currency |
+| **Curiosities** | Books, maps, compasses | Low — minor novelty value |
+
+**What You Get:**
+
+| You Give | You Get |
+|----------|---------|
+| Iron/Metal goods | Native cold gear (superior protection), pelts |
+| Firearms | Large food supply (seals, whale meat), dogs |
+| Valuables | Food (moderate), information, minor gear |
+| Mixed goods | Navigation knowledge, hunting spots, survival tips |
+
+**Trade Notes:**
+- Valuables are otherwise useless dead weight — trading them is always worth it
+- Rifles are scarce enough that trading even one meaningfully impacts combat/hunting capability
+- Inuit may refuse trades if disposition drops (e.g., hostile encounters, theft)
 
 ### Information Rewards
 - Hunting spots (+hunting efficiency)

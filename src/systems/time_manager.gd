@@ -76,6 +76,9 @@ const SEASON_CONFIG: Dictionary = {
 
 
 func _ready() -> void:
+	# Autoload must keep running during get_tree().paused so we can unpause
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	# Find Sky3D in the scene tree (deferred to ensure scene is ready)
 	call_deferred("_find_sky3d")
 
@@ -145,8 +148,36 @@ func _configure_sky3d() -> void:
 			tod._update_celestial_coords()
 			print("[TimeManager] Forced celestial coords update")
 
+	# Arctic sky tuning — applied here so procedural mode gets the same values as main.tscn
+	_configure_sky3d_arctic_sky()
+
 	# Set initial time scale
 	_update_sky3d_time_scale()
+
+
+func _configure_sky3d_arctic_sky() -> void:
+	## Tune SkyDome for arctic night visibility.
+	## At high latitudes the sun barely dips below horizon, so the default shader
+	## thresholds leave too much scatter and crush star brightness.
+	## Applied in code so procedural mode gets the same values as main.tscn.
+	if not sky3d or not sky3d.sky:
+		return
+
+	var dome: Node = sky3d.sky
+
+	# Atmosphere: darker nights at high latitude
+	dome.atm_darkness = 0.75          # Default 0.5 — stronger extinction at night
+	dome.atm_sun_intensity = 12.0     # Default 18.0 — less residual scatter
+
+	# Stars: brighter milky way and star field
+	# adjust_contrast() in shader = mix(val, val³, alpha) — high alpha crushes dim pixels
+	dome.starmap_color = Color(1.0, 1.0, 1.0, 0.15)  # Full brightness, minimal contrast crush
+	dome.star_field_color = Color(2.0, 2.0, 2.0, 1.0) # Boost individual star brightness
+
+	# Night sky ambient contribution (Sky3D property, not SkyDome)
+	sky3d.night_sky_contribution = 0.3  # Default 0.7 — less ambient wash
+
+	print("[TimeManager] Arctic sky tuning applied (stars + atmosphere)")
 
 
 func _find_node_by_class(node: Node, class_name_str: String) -> Node:
@@ -269,21 +300,19 @@ func _update_season_from_sky3d() -> void:
 
 func _update_sky3d_time_scale() -> void:
 	## Update Sky3D's time progression based on our time scale.
-	if not sky3d:
+	## Uses game_time_enabled rather than pause()/resume() because:
+	##   - game_time_enabled saves state AND calls pause()/resume() internally
+	##   - pause() alone only stops the Timer without setting the state flag,
+	##     so any external resume() call would restart time unexpectedly
+	if not sky3d or not sky3d.tod:
 		return
 
 	if is_paused or time_scale <= 0.0:
-		# Use game_time_enabled property - more reliable than pause()/resume()
-		# pause() only stops the timer, but game_time_enabled fully disables time progression
 		sky3d.game_time_enabled = false
-		print("[TimeManager] Sky3D paused (game_time_enabled = false)")
 	else:
-		# Adjust minutes_per_day based on time scale
-		# Base: 15 minutes per day, faster speeds = shorter real-time days
 		var new_minutes_per_day := minutes_per_game_day / time_scale
 		sky3d.minutes_per_day = new_minutes_per_day
 		sky3d.game_time_enabled = true
-		print("[TimeManager] Sky3D speed set to ", new_minutes_per_day, " minutes/day (", time_scale, "x)")
 
 #TODO: FIX NEAR FIRE CHECK TO SEND TO TIME MANAGER?
 
@@ -318,7 +347,11 @@ func _update_survivor_needs() -> void:
 func pause() -> void:
 	is_paused = true
 	time_scale = 0.0
-	Engine.time_scale = 0.0
+	# Use scene tree pause instead of Engine.time_scale = 0 to avoid NaN transforms.
+	# Engine.time_scale = 0 causes the physics solver to divide by zero timestep,
+	# producing NaN for all active RigidBody3D and PhysicalBone3D nodes.
+	get_tree().paused = true
+	Engine.time_scale = 1.0
 	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 
@@ -326,6 +359,7 @@ func pause() -> void:
 func unpause() -> void:
 	is_paused = false
 	time_scale = 1.0
+	get_tree().paused = false
 	Engine.time_scale = 1.0
 	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
@@ -342,7 +376,12 @@ func set_time_scale(scale: float) -> void:
 	## Set time scale. 0 = paused, 1 = normal, 2 = fast, 4 = faster.
 	time_scale = clampf(scale, 0.0, 4.0)
 	is_paused = time_scale <= 0.0
-	Engine.time_scale = time_scale
+	if is_paused:
+		get_tree().paused = true
+		Engine.time_scale = 1.0
+	else:
+		get_tree().paused = false
+		Engine.time_scale = time_scale
 	_update_sky3d_time_scale()
 	time_scale_changed.emit(time_scale)
 
